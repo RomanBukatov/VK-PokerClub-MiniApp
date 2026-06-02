@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="PokerClub.Api/PokerClub.Api.csproj" />
+  <Project Path="PokerClub.Domain/PokerClub.Domain.csproj" />
+  <Project Path="PokerClub.Infrastructure/PokerClub.Infrastructure.csproj" />
+</Solution>
