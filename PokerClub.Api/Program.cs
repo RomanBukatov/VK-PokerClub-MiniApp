@@ -13,6 +13,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 
 // Регистрируем сервисы бизнес-логики
 builder.Services.AddScoped<ITournamentService, TournamentService>();
+builder.Services.AddScoped<IRatingService, RatingService>();
 
 builder.Services.AddControllers();
 
