@@ -7,6 +7,15 @@ public interface ITournamentService
     // Получить расписание (активные турниры) по городу/клубу
     Task<List<Tournament>> GetScheduleAsync(int? cityId, int? clubId);
     
+    // Получить детальную информацию о турнире
+    Task<Tournament?> GetTournamentByIdAsync(int id);
+
+    // Получить турниры, на которые записан пользователь
+    Task<List<Tournament>> GetUserTournamentsAsync(string vkId);
+    
     // Запись на турнир (с проверками)
     Task<(bool Success, string Message)> RegisterPlayerAsync(int tournamentId, string vkId);
+
+    // Отмена записи на турнир
+    Task<(bool Success, string Message)> CancelRegistrationAsync(int tournamentId, string vkId);
 }

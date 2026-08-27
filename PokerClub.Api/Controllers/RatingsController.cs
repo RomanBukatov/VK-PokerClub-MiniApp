@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
+using PokerClub.Api.DTOs;
+using PokerClub.Api.Filters;
 using PokerClub.Domain.Interfaces;
 
 namespace PokerClub.Api.Controllers;
@@ -15,27 +17,33 @@ public class RatingsController : ControllerBase
     }
 
     [HttpGet("leaderboard")]
-    public async Task<IActionResult> GetLeaderboard([FromQuery] int limit = 50)
+    public async Task<ActionResult<List<LeaderboardUserDto>>> GetLeaderboard([FromQuery] int limit = 50)
     {
+        if (limit <= 0) limit = 50;
+        if (limit > 100) limit = 100;
+
         var users = await _ratingService.GetLeaderboardAsync(limit);
         
-        var result = users.Select((u, index) => new 
-        {
-            Rank = index + 1,
+        var result = users.Select((u, index) => new LeaderboardUserDto(
+            index + 1,
             u.Id,
             u.VkId,
             u.FirstName,
             u.LastName,
             u.AvatarUrl,
             u.TotalRating
-        });
+        )).ToList();
 
         return Ok(result);
     }
 
     [HttpPost("admin/assign-points")]
+    [VkAuthorize(RequireAdmin = true)]
     public async Task<IActionResult> AssignPoints([FromBody] AssignPointsRequest request)
     {
+        if (request.UserPoints == null || request.UserPoints.Count == 0)
+            return BadRequest(new { Message = "Список очков пользователей не может быть пустым." });
+
         var (success, message) = await _ratingService.AssignPointsAndFinishTournamentAsync(
             request.TournamentId, 
             request.UserPoints);
@@ -46,5 +54,3 @@ public class RatingsController : ControllerBase
         return Ok(new { Message = message });
     }
 }
-
-public record AssignPointsRequest(int TournamentId, Dictionary<int, int> UserPoints);
