@@ -11,7 +11,7 @@ import { ProfilePanel } from './panels/ProfilePanel';
 import { TournamentDetailModal } from './panels/TournamentDetailModal';
 import { AdminTournamentsPanel } from './panels/admin/AdminTournamentsPanel';
 import { AdminCreateTournamentPanel } from './panels/admin/AdminCreateTournamentPanel';
-import logoSvg from './assets/logo.svg';
+import { CURRENT_BRANDING } from './config/branding';
 
 export function App() {
   const { isAuthenticated, activeTab, setUser } = useUserStore();
@@ -35,7 +35,7 @@ export function App() {
   if (isInitializing) {
     return (
       <div className="max-w-md mx-auto min-h-screen bg-[#01201a] flex flex-col items-center justify-center p-6 text-center select-none">
-        <img src={logoSvg} alt="Monte Carlo" className="h-14 object-contain animate-pulse mb-3" />
+        <img src={CURRENT_BRANDING.assets.logoSvg} alt={CURRENT_BRANDING.clubName} className="h-14 object-contain animate-pulse mb-3" />
         <div className="text-xs text-[#8fa89b]">Загрузка приложения...</div>
       </div>
     );

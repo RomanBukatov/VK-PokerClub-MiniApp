@@ -1,9 +1,7 @@
 import React from 'react';
 import { useUserStore } from '../store/useUserStore';
 import { initVkBridge, triggerHaptic } from '../utils/vkBridge';
-import logoSvg from '../assets/logo.svg';
-import chipGoldImg from '../assets/chip_gold.png';
-import cardsBgImg from '../assets/cards_bg.png';
+import { CURRENT_BRANDING } from '../config/branding';
 
 export const WelcomePanel: React.FC = () => {
   const { setUser } = useUserStore();
@@ -20,21 +18,21 @@ export const WelcomePanel: React.FC = () => {
     <div className="min-h-screen bg-[#01201a] relative flex flex-col justify-between p-6 overflow-hidden select-none">
       {/* 3D золотая фишка в левой верхней части */}
       <img
-        src={chipGoldImg}
+        src={CURRENT_BRANDING.assets.chipGoldImg}
         alt=""
         className="absolute -top-10 -left-12 w-48 h-48 object-contain pointer-events-none opacity-90 filter drop-shadow-2xl"
       />
 
       {/* Игральные карты в нижней части */}
       <img
-        src={cardsBgImg}
+        src={CURRENT_BRANDING.assets.cardsBgImg}
         alt=""
         className="absolute -bottom-16 -right-10 w-80 h-96 object-contain pointer-events-none opacity-80 filter drop-shadow-2xl"
       />
 
       {/* Верхний логотип по центру */}
       <div className="pt-12 flex justify-center z-10">
-        <img src={logoSvg} alt="Monte Carlo Poker Club" className="h-14 object-contain" />
+        <img src={CURRENT_BRANDING.assets.logoSvg} alt={CURRENT_BRANDING.clubName} className="h-14 object-contain" />
       </div>
 
       {/* Центральный блок текстов */}

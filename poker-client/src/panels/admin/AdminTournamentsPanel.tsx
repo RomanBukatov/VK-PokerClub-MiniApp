@@ -5,6 +5,7 @@ import { useUserStore } from '../../store/useUserStore';
 import { AdminAssignPointsModal } from './AdminAssignPointsModal';
 import { triggerHaptic } from '../../utils/vkBridge';
 import { TournamentStatus, type Tournament } from '../../types';
+import { CURRENT_BRANDING } from '../../config/branding';
 
 export const AdminTournamentsPanel: React.FC = () => {
   const { tournaments, isLoading, fetchAdminSchedule } = useTournamentsStore();
@@ -101,7 +102,7 @@ export const AdminTournamentsPanel: React.FC = () => {
 
               {/* Информация о клубе и игроках */}
               <div className="flex items-center justify-between text-xs text-[#8fa89b] pt-0.5">
-                <span>{t.clubName || 'Monte Carlo'} · {t.cityName || 'Пермь'}</span>
+                <span>{t.clubName || CURRENT_BRANDING.clubName} · {t.cityName || CURRENT_BRANDING.defaultCityName}</span>
                 <span className="text-[#c39a44] font-semibold">
                   {isFinished ? 'Скорректировать очки →' : 'Участники и начисление →'}
                 </span>

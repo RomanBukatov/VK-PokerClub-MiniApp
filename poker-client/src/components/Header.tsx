@@ -2,7 +2,7 @@ import React from 'react';
 import { MapPin, ChevronDown, Shield, User } from 'lucide-react';
 import { useUserStore } from '../store/useUserStore';
 import { triggerHaptic } from '../utils/vkBridge';
-import logoSvg from '../assets/logo.svg';
+import { CURRENT_BRANDING } from '../config/branding';
 
 interface HeaderProps {
   title?: string;
@@ -82,7 +82,7 @@ export const Header: React.FC<HeaderProps> = ({ title, subtitle }) => {
             </button>
           )}
 
-          <img src={logoSvg} alt="Monte Carlo" className="h-7 object-contain" />
+          <img src={CURRENT_BRANDING.assets.logoSvg} alt={CURRENT_BRANDING.clubName} className="h-7 object-contain" />
         </div>
       </div>
 

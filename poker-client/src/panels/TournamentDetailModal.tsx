@@ -5,7 +5,7 @@ import { useUserStore } from '../store/useUserStore';
 import { formatCurrency, formatChips } from '../utils/formatters';
 import { triggerHaptic } from '../utils/vkBridge';
 import { TournamentStatus } from '../types';
-import logoSvg from '../assets/logo.svg';
+import { CURRENT_BRANDING } from '../config/branding';
 
 export const TournamentDetailModal: React.FC = () => {
   const { 
@@ -155,7 +155,7 @@ export const TournamentDetailModal: React.FC = () => {
           >
             <ChevronLeft className="w-7 h-7" />
           </button>
-          <img src={logoSvg} alt="Monte Carlo" className="h-7 object-contain" />
+          <img src={CURRENT_BRANDING.assets.logoSvg} alt={CURRENT_BRANDING.clubName} className="h-7 object-contain" />
         </div>
 
         {/* Заголовок и дата турнира */}
@@ -232,7 +232,7 @@ export const TournamentDetailModal: React.FC = () => {
               <span>АДРЕС КЛУБА</span>
             </div>
             <div className="text-sm font-semibold text-white">
-              {t.clubAddress || (t.clubName ? `${t.clubName}, ${t.cityName || ''}` : 'Монастырская улица, 59, Пермь')}
+              {t.clubAddress || (t.clubName ? `${t.clubName}, ${t.cityName || ''}` : CURRENT_BRANDING.defaultAddress)}
             </div>
           </div>
 
@@ -256,7 +256,7 @@ export const TournamentDetailModal: React.FC = () => {
             <p className="text-xs text-[#d1e0d7] leading-relaxed whitespace-pre-line">
               {t.description || (
                 <>
-                  Турнир для гостей и членов клуба Monte Carlo.
+                  Турнир для гостей и членов клуба {CURRENT_BRANDING.clubName}.
                   {'\n\n'}• Стартовый стек — {formatChips(t.startingChips || 10000)} фишек
                   {'\n'}• Формат — {t.format || 'No Limit Holdem'}
                   {'\n'}• Блайнд-апы — 15 минут
