@@ -29,12 +29,24 @@ export const useUserStore = create<UserState>((set) => ({
   activeTab: 'schedule',
   isCityModalOpen: false,
 
-  setUser: (user) => set({ 
-    vkUser: user, 
-    isAuthenticated: !!user,
-    isAdmin: user?.isAdmin ?? false
+  setUser: (user) => {
+    const isAdmin = user?.isAdmin === true;
+    set({
+      vkUser: user,
+      isAuthenticated: !!user,
+      isAdmin,
+      activeTab: isAdmin ? 'admin-tournaments' : 'schedule',
+    });
+  },
+  setIsAdmin: (isAdmin) => set((state) => {
+    let nextTab = state.activeTab;
+    if (isAdmin && state.activeTab === 'schedule') {
+      nextTab = 'admin-tournaments';
+    } else if (!isAdmin && (state.activeTab === 'admin-tournaments' || state.activeTab === 'admin-create')) {
+      nextTab = 'schedule';
+    }
+    return { isAdmin, activeTab: nextTab };
   }),
-  setIsAdmin: (isAdmin) => set({ isAdmin }),
   setSelectedCity: (cityId, cityName) => set({ selectedCityId: cityId, selectedCityName: cityName, selectedClubId: null }),
   setSelectedClub: (clubId) => set({ selectedClubId: clubId }),
   setActiveTab: (tab) => set({ activeTab: tab }),

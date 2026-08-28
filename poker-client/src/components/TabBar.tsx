@@ -59,7 +59,7 @@ export const TabBar: React.FC = () => {
                   : 'text-[#738f80] hover:text-white'
               }`}
             >
-              Турниры
+              Управление
             </button>
 
             <button
@@ -81,7 +81,7 @@ export const TabBar: React.FC = () => {
                   : 'text-[#738f80] hover:text-white'
               }`}
             >
-              Настройки
+              Создать
             </button>
           </>
         )}

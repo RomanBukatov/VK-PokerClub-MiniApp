@@ -1,4 +1,5 @@
 import React from 'react';
+import { MapPin, ChevronDown, Shield, User } from 'lucide-react';
 import { useUserStore } from '../store/useUserStore';
 import { triggerHaptic } from '../utils/vkBridge';
 import logoSvg from '../assets/logo.svg';
@@ -9,7 +10,7 @@ interface HeaderProps {
 }
 
 export const Header: React.FC<HeaderProps> = ({ title, subtitle }) => {
-  const { activeTab, isAdmin, setIsAdmin, setIsCityModalOpen, selectedCityName } = useUserStore();
+  const { activeTab, isAdmin, setIsAdmin, setIsCityModalOpen, selectedCityName, vkUser } = useUserStore();
 
   const getHeaderInfo = () => {
     if (title && subtitle) return { title, subtitle };
@@ -33,46 +34,66 @@ export const Header: React.FC<HeaderProps> = ({ title, subtitle }) => {
   const headerInfo = getHeaderInfo();
 
   return (
-    <header className="px-5 pt-4 pb-3 flex items-center justify-between safe-top">
-      {/* Левая часть: Заголовок и подзаголовок */}
-      <div className="flex flex-col">
-        <div className="flex items-center gap-2">
-          <h1 className="text-2xl font-extrabold text-white tracking-tight leading-none">
-            {headerInfo.title}
-          </h1>
-
-          {/* Город с кликом для смены */}
-          <button
-            onClick={() => { triggerHaptic('light'); setIsCityModalOpen(true); }}
-            className="text-[11px] text-[#7d9b8c] hover:text-[#c39a44] transition-colors flex items-center gap-0.5 mt-0.5"
-            title="Сменить город"
-          >
-            <span>• {selectedCityName}</span>
-          </button>
-        </div>
-
-        <p className="text-xs text-[#8fa89b] mt-1 font-normal">
-          {headerInfo.subtitle}
-        </p>
-      </div>
-
-      {/* Правая часть: Оригинальный векторный логотип Monte Carlo из Figma */}
-      <div className="flex items-center gap-3">
+    <header className="px-5 pt-4 pb-3 flex flex-col gap-2.5 safe-top">
+      {/* Верхняя строка: Логотип и переключатель режима / города */}
+      <div className="flex items-center justify-between">
+        {/* Кнопка выбора города */}
         <button
+          type="button"
           onClick={() => {
             triggerHaptic('light');
-            setIsAdmin(!isAdmin);
+            setIsCityModalOpen(true);
           }}
-          className="opacity-95 hover:opacity-100 transition-opacity active:scale-95 flex flex-col items-end"
-          title="Переключить режим Администратора"
+          className="bg-[#0a231b] border border-[#1e533f] hover:border-[#c39a44] text-[#a4c9b7] hover:text-white px-3 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1.5 shadow-sm active:scale-95 transition-all"
+          title="Сменить город"
         >
-          <img src={logoSvg} alt="Monte Carlo" className="h-8 object-contain" />
-          {isAdmin && (
-            <span className="text-[9px] font-bold text-[#c39a44] tracking-widest uppercase mt-0.5">
-              ADMIN
-            </span>
-          )}
+          <MapPin className="w-3.5 h-3.5 text-[#c39a44] shrink-0" />
+          <span className="truncate max-w-[130px]">{selectedCityName}</span>
+          <ChevronDown className="w-3.5 h-3.5 text-[#7d9b8c] shrink-0" />
         </button>
+
+        {/* Правая часть: Админ переключатель и логотип */}
+        <div className="flex items-center gap-2.5">
+          {vkUser?.isAdmin && (
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('light');
+                setIsAdmin(!isAdmin);
+              }}
+              className={`px-2.5 py-1 rounded-full text-xs font-semibold border transition-all active:scale-95 flex items-center gap-1.5 shadow-sm ${
+                isAdmin
+                  ? 'bg-[#c39a44]/20 border-[#c39a44] text-[#e5c06e]'
+                  : 'bg-[#0a231b] border-[#1e533f] text-[#8fa89b] hover:text-white'
+              }`}
+              title="Переключить режим"
+            >
+              {isAdmin ? (
+                <>
+                  <Shield className="w-3 h-3 text-[#c39a44]" />
+                  <span>Администратор</span>
+                </>
+              ) : (
+                <>
+                  <User className="w-3 h-3 text-[#8fa89b]" />
+                  <span>Режим игрока</span>
+                </>
+              )}
+            </button>
+          )}
+
+          <img src={logoSvg} alt="Monte Carlo" className="h-7 object-contain" />
+        </div>
+      </div>
+
+      {/* Нижняя строка: Заголовок и подзаголовок текущего раздела */}
+      <div>
+        <h1 className="text-2xl font-extrabold text-white tracking-tight leading-tight">
+          {headerInfo.title}
+        </h1>
+        <p className="text-xs text-[#8fa89b] font-normal mt-0.5">
+          {headerInfo.subtitle}
+        </p>
       </div>
     </header>
   );

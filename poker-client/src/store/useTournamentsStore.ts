@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import axios from 'axios';
 import type { Tournament, TournamentDetail } from '../types';
 import { tournamentsApi } from '../api/tournamentsApi';
 
@@ -10,15 +11,27 @@ interface TournamentsState {
   isActionLoading: boolean;
   isDetailModalOpen: boolean;
   statusFilter: 'all' | 'open' | 'announced';
+  actionError: string | null;
 
   fetchSchedule: (cityId?: number | null, clubId?: number | null) => Promise<void>;
   fetchMyTournaments: () => Promise<void>;
   openDetail: (id: number) => Promise<void>;
   closeDetail: () => void;
   setStatusFilter: (filter: 'all' | 'open' | 'announced') => void;
+  setActionError: (err: string | null) => void;
   registerToTournament: (tournamentId: number) => Promise<boolean>;
   unregisterFromTournament: (tournamentId: number) => Promise<boolean>;
 }
+
+const extractErrorMessage = (err: unknown, defaultMessage: string): string => {
+  if (axios.isAxiosError(err)) {
+    return (err.response?.data as { message?: string } | undefined)?.message || err.message || defaultMessage;
+  }
+  if (err instanceof Error) {
+    return err.message;
+  }
+  return defaultMessage;
+};
 
 export const useTournamentsStore = create<TournamentsState>((set, get) => ({
   tournaments: [],
@@ -28,6 +41,7 @@ export const useTournamentsStore = create<TournamentsState>((set, get) => ({
   isActionLoading: false,
   isDetailModalOpen: false,
   statusFilter: 'all',
+  actionError: null,
 
   fetchSchedule: async (cityId, clubId) => {
     set({ isLoading: true });
@@ -51,23 +65,26 @@ export const useTournamentsStore = create<TournamentsState>((set, get) => ({
   },
 
   openDetail: async (id: number) => {
-    set({ isActionLoading: true });
+    set({ isActionLoading: true, actionError: null });
     try {
       const detail = await tournamentsApi.getTournament(id);
-      set({ selectedTournament: detail, isDetailModalOpen: true });
-    } catch (err) {
+      set({ selectedTournament: detail, isDetailModalOpen: true, actionError: null });
+    } catch (err: unknown) {
       console.error('Ошибка загрузки деталей турнира:', err);
+      set({ actionError: extractErrorMessage(err, 'Ошибка загрузки деталей турнира') });
     } finally {
       set({ isActionLoading: false });
     }
   },
 
-  closeDetail: () => set({ isDetailModalOpen: false, selectedTournament: null }),
+  closeDetail: () => set({ isDetailModalOpen: false, selectedTournament: null, actionError: null }),
 
   setStatusFilter: (filter) => set({ statusFilter: filter }),
 
+  setActionError: (err) => set({ actionError: err }),
+
   registerToTournament: async (tournamentId: number) => {
-    set({ isActionLoading: true });
+    set({ isActionLoading: true, actionError: null });
     try {
       await tournamentsApi.register(tournamentId);
       const detail = await tournamentsApi.getTournament(tournamentId);
@@ -78,11 +95,13 @@ export const useTournamentsStore = create<TournamentsState>((set, get) => ({
             ? { ...t, isUserRegistered: true, registeredCount: t.registeredCount + 1 }
             : t
         ),
+        actionError: null,
       }));
       get().fetchMyTournaments();
       return true;
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('Ошибка записи на турнир:', err);
+      set({ actionError: extractErrorMessage(err, 'Ошибка записи на турнир') });
       return false;
     } finally {
       set({ isActionLoading: false });
@@ -90,7 +109,7 @@ export const useTournamentsStore = create<TournamentsState>((set, get) => ({
   },
 
   unregisterFromTournament: async (tournamentId: number) => {
-    set({ isActionLoading: true });
+    set({ isActionLoading: true, actionError: null });
     try {
       await tournamentsApi.unregister(tournamentId);
       const detail = await tournamentsApi.getTournament(tournamentId);
@@ -101,11 +120,13 @@ export const useTournamentsStore = create<TournamentsState>((set, get) => ({
             ? { ...t, isUserRegistered: false, registeredCount: Math.max(0, t.registeredCount - 1) }
             : t
         ),
+        actionError: null,
       }));
       get().fetchMyTournaments();
       return true;
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('Ошибка отмены записи на турнир:', err);
+      set({ actionError: extractErrorMessage(err, 'Ошибка отмены записи на турнир') });
       return false;
     } finally {
       set({ isActionLoading: false });

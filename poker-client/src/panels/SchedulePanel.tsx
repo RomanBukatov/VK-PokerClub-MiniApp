@@ -3,6 +3,7 @@ import { useTournamentsStore } from '../store/useTournamentsStore';
 import { useUserStore } from '../store/useUserStore';
 import { formatCurrency, formatChips } from '../utils/formatters';
 import { triggerHaptic } from '../utils/vkBridge';
+import { TournamentStatus } from '../types';
 import type { Tournament } from '../types';
 
 export const SchedulePanel: React.FC = () => {
@@ -49,6 +50,103 @@ export const SchedulePanel: React.FC = () => {
     }
   };
 
+  const renderCardButton = (t: Tournament, seatsInfo: ReturnType<typeof getSeatsInfo>) => {
+    if (t.status === TournamentStatus.Announced) {
+      return (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            handleCardClick(t.id);
+          }}
+          className="w-full py-3 px-4 rounded-full font-bold text-sm transition-all shadow-lg bg-[#192d23] text-[#a4c9b7] border border-[#1e533f] hover:border-[#c39a44] hover:text-white active:scale-[0.98]"
+        >
+          Подробнее
+        </button>
+      );
+    }
+
+    if (t.status === TournamentStatus.RegistrationOpen) {
+      if (t.isUserRegistered) {
+        return (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleCardClick(t.id);
+            }}
+            className="w-full py-3 px-4 rounded-full font-bold text-sm transition-all shadow-lg bg-[#192d23] text-[#c39a44] border border-[#c39a44]/60 hover:bg-[#1f372b] active:scale-[0.98] flex items-center justify-center gap-2"
+          >
+            <span className="w-2 h-2 rounded-full bg-[#c39a44]" />
+            Вы записаны
+          </button>
+        );
+      }
+
+      if (seatsInfo.isFull) {
+        return (
+          <button
+            type="button"
+            disabled
+            className="w-full py-3 px-4 rounded-full font-bold text-sm shadow-lg bg-neutral-800/80 text-neutral-400 border border-neutral-700/50 cursor-not-allowed"
+          >
+            Мест нет
+          </button>
+        );
+      }
+
+      return (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            handleCardClick(t.id);
+          }}
+          className="w-full py-3 px-4 rounded-full font-bold text-sm transition-all shadow-lg bg-[#c39a44] text-white hover:brightness-105 active:scale-[0.98]"
+        >
+          Зарегистрироваться
+        </button>
+      );
+    }
+
+    if (t.status === TournamentStatus.Running) {
+      return (
+        <button
+          type="button"
+          disabled
+          className="w-full py-3 px-4 rounded-full font-bold text-sm shadow-lg bg-neutral-800/80 text-neutral-400 border border-neutral-700/50 cursor-not-allowed"
+        >
+          Идет турнир
+        </button>
+      );
+    }
+
+    if (t.status === TournamentStatus.Finished) {
+      return (
+        <button
+          type="button"
+          disabled
+          className="w-full py-3 px-4 rounded-full font-bold text-sm shadow-lg bg-neutral-800/80 text-neutral-400 border border-neutral-700/50 cursor-not-allowed"
+        >
+          Турнир завершен
+        </button>
+      );
+    }
+
+    return (
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          handleCardClick(t.id);
+        }}
+        className="w-full py-3 px-4 rounded-full font-bold text-sm transition-all shadow-lg bg-[#192d23] text-white border border-white/10"
+      >
+        Подробнее
+      </button>
+    );
+  };
+
   return (
     <div className="px-5 pb-24 animate-fade-in space-y-4">
       {isLoading ? (
@@ -69,9 +167,31 @@ export const SchedulePanel: React.FC = () => {
               onClick={() => handleCardClick(t.id)}
               className="p-5 rounded-3xl bg-black/50 border border-white/10 shadow-xl shadow-black/40 active:scale-[0.99] transition-all cursor-pointer"
             >
-              {/* Дата и время */}
-              <div className="text-[11px] font-bold text-[#d1e0d7] uppercase tracking-wider mb-2">
-                {formatCardDate(t.startTime)}
+              {/* Дата и статус */}
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-[11px] font-bold text-[#d1e0d7] uppercase tracking-wider">
+                  {formatCardDate(t.startTime)}
+                </div>
+                {t.status === TournamentStatus.Announced && (
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-blue-950/70 border border-blue-500/40 text-blue-300">
+                    Анонс
+                  </span>
+                )}
+                {t.status === TournamentStatus.RegistrationOpen && t.isUserRegistered && (
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-[#192d23] border border-[#c39a44]/60 text-[#c39a44]">
+                    Вы записаны
+                  </span>
+                )}
+                {t.status === TournamentStatus.Running && (
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-950/70 border border-emerald-500/40 text-emerald-300">
+                    Идет турнир
+                  </span>
+                )}
+                {t.status === TournamentStatus.Finished && (
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-neutral-900 border border-neutral-700 text-neutral-400">
+                    Завершен
+                  </span>
+                )}
               </div>
 
               {/* Название турнира */}
@@ -99,7 +219,7 @@ export const SchedulePanel: React.FC = () => {
                 </div>
                 <div className="flex items-center gap-3">
                   <span className="text-sm font-bold text-white whitespace-nowrap">
-                    {seatsInfo.text}
+                    {seatsInfo.text} ({t.registeredCount || 0} / {t.maxSeats || 30})
                   </span>
                   <div className="flex-1 h-2 rounded-full bg-[#132c20] overflow-hidden">
                     <div
@@ -111,21 +231,7 @@ export const SchedulePanel: React.FC = () => {
               </div>
 
               {/* Кнопка регистрации */}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleCardClick(t.id);
-                }}
-                className={`w-full py-3 px-4 rounded-full font-bold text-sm transition-all shadow-lg ${
-                  t.isUserRegistered
-                    ? 'bg-[#192d23] text-[#c39a44] border border-[#c39a44]/50'
-                    : seatsInfo.isFull
-                    ? 'bg-neutral-800 text-neutral-400'
-                    : 'bg-[#c39a44] text-white hover:brightness-105 active:scale-[0.98]'
-                }`}
-              >
-                {t.isUserRegistered ? 'Место подтверждено' : seatsInfo.isFull ? 'Мест нет' : 'Зарегистрироваться'}
-              </button>
+              {renderCardButton(t, seatsInfo)}
             </div>
           );
         })

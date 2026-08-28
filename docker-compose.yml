@@ -1,18 +1,58 @@
-version: '3.8'
-
 services:
   poker-db:
     image: postgres:16-alpine
     container_name: poker_postgres_db
     restart: always
     environment:
-      POSTGRES_USER: ${DB_USER}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER:-poker_admin}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-super_secret_poker_pass_2026}
+      POSTGRES_DB: ${DB_NAME:-poker_club_db}
     ports:
-      - "${DB_PORT}:5432" 
+      - "${DB_PORT:-5439}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-poker_admin} -d ${DB_NAME:-poker_club_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - poker-network
+
+  poker-api:
+    build:
+      context: .
+      dockerfile: PokerClub.Api/Dockerfile
+    container_name: poker_backend_api
+    restart: always
+    depends_on:
+      poker-db:
+        condition: service_healthy
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:5052
+      - ConnectionStrings__DefaultConnection=Host=poker-db;Port=5432;Database=${DB_NAME:-poker_club_db};Username=${DB_USER:-poker_admin};Password=${DB_PASSWORD:-super_secret_poker_pass_2026}
+    ports:
+      - "5052:5052"
+    networks:
+      - poker-network
+
+  poker-client:
+    build:
+      context: ./poker-client
+      dockerfile: Dockerfile
+    container_name: poker_frontend_client
+    restart: always
+    depends_on:
+      - poker-api
+    ports:
+      - "3000:80"
+    networks:
+      - poker-network
 
 volumes:
   pgdata:
+
+networks:
+  poker-network:
+    driver: bridge

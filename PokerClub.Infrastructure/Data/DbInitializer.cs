@@ -142,44 +142,45 @@ public static class DbInitializer
 
         // 5. Записи игроков (Registrations)
         var registrations = new List<Registration>();
+        var otherUsers = users.Where(u => u.VkId != "123456789").ToList();
 
-        // 18 игроков на Freeroll Tournament (включая тестового пользователя Станислава Кострова)
-        for (int i = 0; i < 18 && i < users.Count; i++)
+        // 18 игроков на Freeroll Tournament (без тестового пользователя Станислава Кострова)
+        for (int i = 0; i < 18 && i < otherUsers.Count; i++)
         {
             registrations.Add(new Registration
             {
                 TournamentId = tour1.Id,
-                UserId = users[i].Id,
+                UserId = otherUsers[i].Id,
                 Status = RegStatus.Active,
                 CreatedAt = DateTime.UtcNow.AddHours(-i)
             });
         }
 
         // 5 игроков на DeepStack
-        for (int i = 0; i < 5 && i < users.Count; i++)
+        for (int i = 0; i < 5 && i < otherUsers.Count; i++)
         {
             registrations.Add(new Registration
             {
                 TournamentId = tour2.Id,
-                UserId = users[i].Id,
+                UserId = otherUsers[i].Id,
                 Status = RegStatus.Active,
                 CreatedAt = DateTime.UtcNow.AddHours(-i)
             });
         }
 
-        // 28 игроков на Sunday Grand (из 30 мест — статус «Осталось мало мест»)
-        for (int i = 0; i < 25 && i < users.Count; i++)
+        // 25 игроков на Sunday Grand (из 30 мест — статус «Осталось мало мест»)
+        for (int i = 0; i < 25 && i < otherUsers.Count; i++)
         {
             registrations.Add(new Registration
             {
                 TournamentId = tour3.Id,
-                UserId = users[i].Id,
+                UserId = otherUsers[i].Id,
                 Status = RegStatus.Active,
                 CreatedAt = DateTime.UtcNow.AddHours(-i)
             });
         }
 
-        // 20 игроков на завершенный Weekly Club Cup с начисленными очками
+        // 20 игроков на завершенный Weekly Club Cup с начисленными очками (включая тестового пользователя с 70 очками)
         int[] cupPoints = { 100, 70, 50, 35, 20, 10, 10, 10, 10, 10, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5 };
         for (int i = 0; i < 20 && i < users.Count; i++)
         {
