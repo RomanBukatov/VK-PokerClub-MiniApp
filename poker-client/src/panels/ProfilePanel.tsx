@@ -4,6 +4,7 @@ import { useTournamentsStore } from '../store/useTournamentsStore';
 import { useRatingsStore } from '../store/useRatingsStore';
 import { formatChips, formatCurrency } from '../utils/formatters';
 import { triggerHaptic } from '../utils/vkBridge';
+import { TournamentStatus } from '../types';
 
 export const ProfilePanel: React.FC = () => {
   const { vkUser } = useUserStore();
@@ -19,15 +20,27 @@ export const ProfilePanel: React.FC = () => {
     ? leaderboard.find((u) => u.vkId === vkUser.id.toString())
     : null;
 
-  const userRank = userEntry?.rank || 50;
-  const userRating = userEntry?.totalRating || 420;
+  const upcomingTournament = myTournaments.find(
+    (t) => t.isUserRegistered && t.status !== TournamentStatus.Finished && t.status !== TournamentStatus.Canceled
+  );
 
-  const upcomingTournament = myTournaments.find((t) => t.isUserRegistered);
+  const finishedTournaments = myTournaments.filter(
+    (t) => t.status === TournamentStatus.Finished
+  );
 
   const getInitials = (first?: string, last?: string) => {
-    const f = first?.[0] || 'А';
-    const l = last?.[0] || 'С';
+    const f = first?.[0] || 'И';
+    const l = last?.[0] || 'П';
     return `${f}${l}`.toUpperCase();
+  };
+
+  const formatHistoryDate = (dateStr: string) => {
+    try {
+      const date = new Date(dateStr);
+      return date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
+    } catch {
+      return 'Недавно';
+    }
   };
 
   return (
@@ -44,10 +57,10 @@ export const ProfilePanel: React.FC = () => {
 
         <div>
           <h2 className="text-lg font-extrabold text-white">
-            {vkUser?.first_name || 'Андрей'} {vkUser?.last_name || 'Смирнов'}
+            {vkUser?.first_name} {vkUser?.last_name}
           </h2>
           <p className="text-xs text-[#8fa89b] mt-0.5">
-            {myTournaments.length > 0 ? `${myTournaments.length} сыгранных турниров` : '12 сыгранных турниров'}
+            {myTournaments.length} {myTournaments.length === 1 ? 'турнир' : myTournaments.length < 5 ? 'турнира' : 'турниров'}
           </p>
         </div>
       </div>
@@ -59,12 +72,12 @@ export const ProfilePanel: React.FC = () => {
             ТЕКУЩИЙ СЕЗОН
           </div>
           <div className="text-xl font-extrabold text-white">
-            # {userRank}
+            {userEntry ? `# ${userEntry.rank}` : 'Не в рейтинге'}
           </div>
         </div>
 
         <div className="text-2xl font-black text-white">
-          {userRating} очков
+          {userEntry ? `${userEntry.totalRating.toLocaleString('ru-RU')} очков` : '0 очков'}
         </div>
       </div>
 
@@ -89,7 +102,7 @@ export const ProfilePanel: React.FC = () => {
 
             <div className="flex flex-wrap gap-2">
               <span className="px-3 py-0.5 rounded-full text-xs font-semibold text-white bg-black/70 border border-[#1a3b2b]">
-                {upcomingTournament.format || 'no limit'}
+                {upcomingTournament.format || 'NL Holdem'}
               </span>
               <span className="px-3 py-0.5 rounded-full text-xs font-semibold text-white bg-black/70 border border-[#1a3b2b]">
                 стартовый стек {formatChips(upcomingTournament.startingChips || 10000)}
@@ -122,23 +135,34 @@ export const ProfilePanel: React.FC = () => {
           История
         </h3>
 
-        <div className="space-y-3">
-          <div className="p-4 px-5 rounded-3xl bg-black/40 border border-white/10 flex items-center justify-between shadow-md">
-            <div>
-              <div className="text-[10px] text-[#8fa89b] mb-0.5">18 июля</div>
-              <div className="text-sm font-bold text-white">Freeroll Tournament</div>
-            </div>
-            <div className="text-lg font-extrabold text-white">+100</div>
+        {finishedTournaments.length === 0 ? (
+          <div className="p-5 rounded-3xl bg-black/40 border border-white/5 text-center text-xs text-[#8fa89b]">
+            Сыграйте первый турнир, чтобы набрать очки и войти в историю клуба!
           </div>
-
-          <div className="p-4 px-5 rounded-3xl bg-black/40 border border-white/10 flex items-center justify-between shadow-md">
-            <div>
-              <div className="text-[10px] text-[#8fa89b] mb-0.5">12 июля</div>
-              <div className="text-sm font-bold text-white">Freeroll Tournament</div>
-            </div>
-            <div className="text-lg font-extrabold text-white">+40</div>
+        ) : (
+          <div className="space-y-3">
+            {finishedTournaments.map((t) => (
+              <div
+                key={t.id}
+                onClick={() => {
+                  triggerHaptic('light');
+                  openDetail(t.id);
+                }}
+                className="p-4 px-5 rounded-3xl bg-black/40 border border-white/10 flex items-center justify-between shadow-md cursor-pointer hover:border-white/20 transition-all"
+              >
+                <div>
+                  <div className="text-[10px] text-[#8fa89b] mb-0.5">
+                    {formatHistoryDate(t.startTime)}
+                  </div>
+                  <div className="text-sm font-bold text-white">{t.title}</div>
+                </div>
+                <div className="text-sm font-extrabold text-[#c39a44]">
+                  Завершен
+                </div>
+              </div>
+            ))}
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

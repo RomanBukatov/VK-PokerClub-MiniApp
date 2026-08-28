@@ -28,9 +28,8 @@ export const AdminAssignPointsModal: React.FC<AdminAssignPointsModalProps> = ({
       .then((data) => {
         setDetail(data);
         const initial: Record<number, number> = {};
-        data.participants.forEach((p, idx) => {
-          // Инициализируем стандартными очками
-          initial[p.userId] = idx === 0 ? 2840 : idx === 1 ? 1800 : idx === 2 ? 1000 : 200;
+        data.participants.forEach((p) => {
+          initial[p.userId] = 0;
         });
         setPointsMap(initial);
       })
@@ -47,6 +46,38 @@ export const AdminAssignPointsModal: React.FC<AdminAssignPointsModalProps> = ({
       ...prev,
       [userId]: isNaN(val) ? 0 : Math.max(0, val),
     }));
+  };
+
+  const applyPresetTop3 = () => {
+    triggerHaptic('light');
+    if (!detail) return;
+    const preset = [100, 60, 30];
+    const next: Record<number, number> = {};
+    detail.participants.forEach((p, idx) => {
+      next[p.userId] = idx < preset.length ? preset[idx] : 0;
+    });
+    setPointsMap(next);
+  };
+
+  const applyPreset6Max = () => {
+    triggerHaptic('light');
+    if (!detail) return;
+    const preset = [100, 70, 50, 35, 20, 10];
+    const next: Record<number, number> = {};
+    detail.participants.forEach((p, idx) => {
+      next[p.userId] = idx < preset.length ? preset[idx] : 0;
+    });
+    setPointsMap(next);
+  };
+
+  const applyPresetEven = () => {
+    triggerHaptic('light');
+    if (!detail) return;
+    const next: Record<number, number> = {};
+    detail.participants.forEach((p) => {
+      next[p.userId] = 10;
+    });
+    setPointsMap(next);
   };
 
   const handleSubmit = async () => {
@@ -75,6 +106,15 @@ export const AdminAssignPointsModal: React.FC<AdminAssignPointsModalProps> = ({
     return `${f}${l}`.toUpperCase();
   };
 
+  const formatSubtitleDate = (dateStr: string) => {
+    try {
+      const date = new Date(dateStr);
+      return date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
+    } catch {
+      return 'Недавно';
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 bg-[#01201a] overflow-y-auto animate-fade-in flex flex-col justify-between p-5 pb-8 safe-bottom">
       <div>
@@ -91,7 +131,7 @@ export const AdminAssignPointsModal: React.FC<AdminAssignPointsModalProps> = ({
               Начисление очков
             </h1>
             <p className="text-xs text-[#8fa89b] mt-0.5">
-              {tournament.title} · 18 июля
+              {tournament.title} · {formatSubtitleDate(tournament.startTime)}
             </p>
           </div>
         </div>
@@ -101,6 +141,36 @@ export const AdminAssignPointsModal: React.FC<AdminAssignPointsModalProps> = ({
             {errorMsg}
           </div>
         )}
+
+        {/* Быстрые шаблоны начисления */}
+        <div className="mb-4 p-3 rounded-2xl bg-black/40 border border-white/10 space-y-2">
+          <div className="text-[11px] font-bold text-[#8fa89b] uppercase tracking-wider">
+            Быстрые шаблоны:
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={applyPresetTop3}
+              type="button"
+              className="flex-1 py-1.5 px-2 rounded-full bg-black/60 border border-[#1a3b2b] text-[11px] font-bold text-white hover:border-[#c39a44] active:scale-95 transition-all"
+            >
+              🏆 Топ-3
+            </button>
+            <button
+              onClick={applyPreset6Max}
+              type="button"
+              className="flex-1 py-1.5 px-2 rounded-full bg-black/60 border border-[#1a3b2b] text-[11px] font-bold text-white hover:border-[#c39a44] active:scale-95 transition-all"
+            >
+              ⚡ 6-Max
+            </button>
+            <button
+              onClick={applyPresetEven}
+              type="button"
+              className="flex-1 py-1.5 px-2 rounded-full bg-black/60 border border-[#1a3b2b] text-[11px] font-bold text-white hover:border-[#c39a44] active:scale-95 transition-all"
+            >
+              🎯 По 10 всем
+            </button>
+          </div>
+        </div>
 
         {/* Заголовки таблицы */}
         <div className="flex items-center justify-between px-3 text-[10px] font-bold text-[#7d9b8c] uppercase tracking-wider mb-2">
@@ -119,12 +189,15 @@ export const AdminAssignPointsModal: React.FC<AdminAssignPointsModalProps> = ({
           </div>
         ) : (
           <div className="space-y-2.5">
-            {detail.participants.map((p) => (
+            {detail.participants.map((p, idx) => (
               <div
                 key={p.userId}
                 className="p-3 px-4 rounded-2xl bg-black/40 border border-white/10 flex items-center justify-between shadow-md"
               >
                 <div className="flex items-center gap-3">
+                  <span className="w-4 text-xs font-bold text-gray-400 text-center">
+                    #{idx + 1}
+                  </span>
                   <div className="w-8 h-8 rounded-full bg-[#606a66] flex items-center justify-center font-bold text-xs text-white overflow-hidden shrink-0">
                     {p.avatarUrl ? (
                       <img src={p.avatarUrl} alt="" className="w-full h-full object-cover" />

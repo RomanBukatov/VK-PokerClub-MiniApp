@@ -78,11 +78,12 @@ using (var scope = app.Services.CreateScope())
     {
         var context = services.GetRequiredService<AppDbContext>();
         await context.Database.MigrateAsync();
+        await DbInitializer.SeedAsync(context);
     }
     catch (Exception ex)
     {
         var logger = services.GetRequiredService<ILogger<Program>>();
-        logger.LogError(ex, "Ошибка при выполнении автоматических миграций базы данных.");
+        logger.LogError(ex, "Ошибка при выполнении автоматических миграций или сида базы данных.");
     }
 }
 

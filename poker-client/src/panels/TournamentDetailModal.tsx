@@ -25,7 +25,7 @@ export const TournamentDetailModal: React.FC = () => {
 
   const t = selectedTournament;
   const isRegistered = t.isUserRegistered || 
-    (vkUser && t.participants.some(p => p.vkId === vkUser.id.toString()));
+    (vkUser && t.participants?.some(p => p.vkId === vkUser.id.toString()));
 
   const handleRegister = async () => {
     triggerHaptic('heavy');
@@ -36,6 +36,41 @@ export const TournamentDetailModal: React.FC = () => {
     setIsCancelConfirmOpen(false);
     triggerHaptic('medium');
     await unregisterFromTournament(t.id);
+  };
+
+  const formatCardDate = (dateStr: string) => {
+    try {
+      const date = new Date(dateStr);
+      const time = date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+      const now = new Date();
+      const isToday = date.toDateString() === now.toDateString();
+      if (isToday) return `СЕГОДНЯ · ${time}`;
+      
+      const day = date.getDate();
+      const month = date.toLocaleDateString('ru-RU', { month: 'long' }).toUpperCase();
+      return `${day} ${month} · ${time}`;
+    } catch {
+      return 'СЕГОДНЯ · 19:00';
+    }
+  };
+
+  const getStartTimeString = (dateStr: string) => {
+    try {
+      const date = new Date(dateStr);
+      return date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+    } catch {
+      return '19:00';
+    }
+  };
+
+  const getRegEndString = (dateStr: string) => {
+    try {
+      const date = new Date(dateStr);
+      date.setMinutes(date.getMinutes() - 15);
+      return `в ${date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`;
+    } catch {
+      return 'в 18:45';
+    }
   };
 
   return (
@@ -81,7 +116,7 @@ export const TournamentDetailModal: React.FC = () => {
 
               <div className="flex flex-wrap gap-1.5">
                 <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold text-white bg-black/70 border border-[#1a3b2b]">
-                  {t.format || 'no limit'}
+                  {t.format || 'NL Holdem'}
                 </span>
                 <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold text-white bg-black/70 border border-[#1a3b2b]">
                   стартовый стек {formatChips(t.startingChips || 10000)}
@@ -101,7 +136,7 @@ export const TournamentDetailModal: React.FC = () => {
               <div>
                 <div className="text-[10px] uppercase font-bold text-[#8fa89b]">ВРЕМЯ</div>
                 <div className="text-sm font-bold text-white mt-0.5">
-                  19:00
+                  {getStartTimeString(t.startTime)}
                 </div>
               </div>
             </div>
@@ -139,13 +174,13 @@ export const TournamentDetailModal: React.FC = () => {
               {t.title}
             </h1>
             <div className="text-xs font-bold text-[#d1e0d7] uppercase tracking-wider mb-3">
-              СЕГОДНЯ · 19:00
+              {formatCardDate(t.startTime)}
             </div>
 
             {/* Пиллы параметров */}
             <div className="flex flex-wrap gap-2 mb-4">
               <span className="px-3 py-1 rounded-full text-xs font-semibold text-white bg-black/70 border border-[#1a3b2b]">
-                {t.format || 'no limit'}
+                {t.format || 'NL Holdem'}
               </span>
               <span className="px-3 py-1 rounded-full text-xs font-semibold text-white bg-black/70 border border-[#1a3b2b]">
                 стартовый стек {formatChips(t.startingChips || 10000)}
@@ -191,7 +226,7 @@ export const TournamentDetailModal: React.FC = () => {
                   КОНЕЦ РЕГИСТРАЦИИ
                 </div>
                 <div className="text-sm font-bold text-white">
-                  в 18:45
+                  {getRegEndString(t.startTime)}
                 </div>
               </div>
 
@@ -200,20 +235,15 @@ export const TournamentDetailModal: React.FC = () => {
                 <div className="text-[10px] uppercase font-bold text-[#8fa89b] tracking-wider mb-1">
                   О ТУРНИРЕ
                 </div>
-                <p className="text-xs text-white/90 leading-relaxed">
+                <p className="text-xs text-white/90 leading-relaxed whitespace-pre-line">
                   {t.description || (
                     <>
-                      Бесплатный турнир для всех желающих.<br /><br />
-                      • Стартовый стек — 10 000 фишек<br />
-                      • Блайнд-апы — 15 минут<br />
-                      • Поздняя регистрация — 3 часа<br /><br />
-                      Re-Buy<br />
-                      • 20 000 — 1000 ₽<br />
-                      • Premium 40 000 — 1500 ₽<br /><br />
-                      Add-on<br />
-                      • 20 000 — 500 ₽<br />
-                      • 40 000 — 1000 ₽<br />
-                      • 60 000 — 1500 ₽ + 🍺
+                      Бесплатный турнир для всех желающих.
+                      {'\n\n'}• Стартовый стек — 10 000 фишек
+                      {'\n'}• Блайнд-апы — 15 минут
+                      {'\n'}• Поздняя регистрация — 3 часа
+                      {'\n\n'}Re-Buy: 20 000 — 1000 ₽
+                      {'\n'}Add-on: 40 000 — 1000 ₽
                     </>
                   )}
                 </p>
