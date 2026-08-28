@@ -14,6 +14,7 @@ interface TournamentsState {
   actionError: string | null;
 
   fetchSchedule: (cityId?: number | null, clubId?: number | null) => Promise<void>;
+  fetchAdminSchedule: (cityId?: number | null, clubId?: number | null) => Promise<void>;
   fetchMyTournaments: () => Promise<void>;
   openDetail: (id: number) => Promise<void>;
   closeDetail: () => void;
@@ -46,10 +47,22 @@ export const useTournamentsStore = create<TournamentsState>((set, get) => ({
   fetchSchedule: async (cityId, clubId) => {
     set({ isLoading: true });
     try {
-      const data = await tournamentsApi.getSchedule(cityId ?? undefined, clubId ?? undefined);
+      const data = await tournamentsApi.getSchedule(cityId ?? undefined, clubId ?? undefined, false);
       set({ tournaments: data });
     } catch (err) {
       console.error('Ошибка загрузки расписания турниров:', err);
+    } finally {
+      set({ isLoading: false });
+    }
+  },
+
+  fetchAdminSchedule: async (cityId, clubId) => {
+    set({ isLoading: true });
+    try {
+      const data = await tournamentsApi.getSchedule(cityId ?? undefined, clubId ?? undefined, true);
+      set({ tournaments: data });
+    } catch (err) {
+      console.error('Ошибка загрузки турниров для управления:', err);
     } finally {
       set({ isLoading: false });
     }

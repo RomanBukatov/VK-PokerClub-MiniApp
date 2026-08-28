@@ -43,5 +43,6 @@ public record RegisteredPlayerDto(
     string? LastName,
     string? AvatarUrl,
     int TotalRating,
-    DateTime RegisteredAt
+    DateTime RegisteredAt,
+    int PointsEarned = 0
 );

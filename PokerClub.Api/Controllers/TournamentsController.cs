@@ -21,9 +21,10 @@ public class TournamentsController : ControllerBase
     [HttpGet("schedule")]
     public async Task<ActionResult<List<TournamentScheduleDto>>> GetSchedule(
         [FromQuery] int? cityId, 
-        [FromQuery] int? clubId)
+        [FromQuery] int? clubId,
+        [FromQuery] bool includeFinished = false)
     {
-        var schedule = await _tournamentService.GetScheduleAsync(cityId, clubId);
+        var schedule = await _tournamentService.GetScheduleAsync(cityId, clubId, includeFinished);
         var currentVkId = HttpContext.GetVkUserId();
 
         var result = schedule.Select(t => new TournamentScheduleDto(
@@ -38,9 +39,9 @@ public class TournamentsController : ControllerBase
             t.ClubId,
             t.Club?.Name,
             t.Club?.City?.Name,
-            t.Registrations.Count(r => r.Status == RegStatus.Active),
+            t.Registrations.Count(r => r.Status == RegStatus.Active || r.Status == RegStatus.Played),
             !string.IsNullOrWhiteSpace(currentVkId) && 
-            t.Registrations.Any(r => r.User?.VkId == currentVkId && r.Status == RegStatus.Active)
+            t.Registrations.Any(r => r.User?.VkId == currentVkId && (r.Status == RegStatus.Active || r.Status == RegStatus.Played))
         )).ToList();
 
         return Ok(result);
@@ -54,16 +55,20 @@ public class TournamentsController : ControllerBase
             return NotFound(new { Message = "Турнир не найден." });
 
         var currentVkId = HttpContext.GetVkUserId();
-        var activeRegistrations = t.Registrations.Where(r => r.Status == RegStatus.Active).ToList();
+        var relevantRegistrations = t.Registrations
+            .Where(r => r.Status == RegStatus.Active || r.Status == RegStatus.Played)
+            .OrderBy(r => r.CreatedAt)
+            .ToList();
 
-        var participants = activeRegistrations.Select(r => new RegisteredPlayerDto(
+        var participants = relevantRegistrations.Select(r => new RegisteredPlayerDto(
             r.UserId,
             r.User?.VkId ?? string.Empty,
             r.User?.FirstName,
             r.User?.LastName,
             r.User?.AvatarUrl,
             r.User?.TotalRating ?? 0,
-            r.CreatedAt
+            r.CreatedAt,
+            r.PointsEarned
         )).ToList();
 
         var result = new TournamentDetailDto(
@@ -79,9 +84,9 @@ public class TournamentsController : ControllerBase
             t.Club?.Name,
             t.Club?.City?.Name,
             t.Club?.Address,
-            activeRegistrations.Count,
+            relevantRegistrations.Count,
             !string.IsNullOrWhiteSpace(currentVkId) && 
-            activeRegistrations.Any(r => r.User?.VkId == currentVkId),
+            relevantRegistrations.Any(r => r.User?.VkId == currentVkId),
             participants
         );
 

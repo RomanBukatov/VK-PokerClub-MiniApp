@@ -317,11 +317,23 @@ export const TournamentDetailModal: React.FC = () => {
                         <div className="text-xs font-bold text-white flex items-center gap-1.5 truncate">
                           <span className="truncate">{playerName}</span>
                           {isCurrentPlayer && (
-                            <span className="text-[10px] text-[#c39a44] font-semibold px-1.5 py-0.2 bg-[#c39a44]/10 rounded">
+                            <span className="text-[10px] text-[#c39a44] font-semibold px-1.5 py-0.5 bg-[#c39a44]/10 rounded">
                               Вы
                             </span>
                           )}
                         </div>
+                        {player.vkId && (
+                          <a
+                            href={`https://vk.com/id${player.vkId}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="text-[10px] text-[#7d9b8c] hover:text-[#c39a44] transition-colors truncate flex items-center gap-0.5"
+                          >
+                            <span>VK ID: {player.vkId}</span>
+                            <span className="text-[#c39a44] text-[9px]">↗</span>
+                          </a>
+                        )}
                       </div>
                     </div>
 

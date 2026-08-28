@@ -29,7 +29,8 @@ export const AdminAssignPointsModal: React.FC<AdminAssignPointsModalProps> = ({
         setDetail(data);
         const initial: Record<number, number> = {};
         data.participants.forEach((p) => {
-          initial[p.userId] = 0;
+          // Предзаполняем ранее начисленными очками или 0
+          initial[p.userId] = p.pointsEarned ?? 0;
         });
         setPointsMap(initial);
       })
@@ -80,6 +81,9 @@ export const AdminAssignPointsModal: React.FC<AdminAssignPointsModalProps> = ({
     setPointsMap(next);
   };
 
+  // Проверка на потенциальную опечатку (человеческий фактор: > 5000 очков)
+  const hasSuspiciouslyHighPoints = Object.values(pointsMap).some((pts) => pts > 5000);
+
   const handleSubmit = async () => {
     triggerHaptic('heavy');
     setSubmitting(true);
@@ -115,6 +119,13 @@ export const AdminAssignPointsModal: React.FC<AdminAssignPointsModalProps> = ({
     }
   };
 
+  const openVkProfile = (vkId: string) => {
+    triggerHaptic('light');
+    if (vkId && !vkId.startsWith('100')) {
+      window.open(`https://vk.com/id${vkId}`, '_blank');
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 bg-[#01201a] overflow-y-auto animate-fade-in flex flex-col justify-between p-5 pb-8 safe-bottom">
       <div>
@@ -128,7 +139,7 @@ export const AdminAssignPointsModal: React.FC<AdminAssignPointsModalProps> = ({
           </button>
           <div>
             <h1 className="text-2xl font-extrabold text-white">
-              Начисление очков
+              {tournament.status === 3 ? 'Корректировка очков' : 'Начисление очков'}
             </h1>
             <p className="text-xs text-[#8fa89b] mt-0.5">
               {tournament.title} · {formatSubtitleDate(tournament.startTime)}
@@ -139,6 +150,14 @@ export const AdminAssignPointsModal: React.FC<AdminAssignPointsModalProps> = ({
         {errorMsg && (
           <div className="mb-4 p-3 rounded-2xl bg-red-950/80 border border-red-500/40 text-red-400 text-xs">
             {errorMsg}
+          </div>
+        )}
+
+        {/* Защита от человеческого фактора: предупреждение при высоком числе очков */}
+        {hasSuspiciouslyHighPoints && (
+          <div className="mb-4 p-3 rounded-2xl bg-amber-950/80 border border-amber-500/40 text-amber-300 text-xs flex items-center gap-2">
+            <span>⚠️</span>
+            <span>Внимание: введено более 5 000 очков одному из игроков. Убедитесь, что нет опечатки в количестве нулей.</span>
           </div>
         )}
 
@@ -174,11 +193,11 @@ export const AdminAssignPointsModal: React.FC<AdminAssignPointsModalProps> = ({
 
         {/* Заголовки таблицы */}
         <div className="flex items-center justify-between px-3 text-[10px] font-bold text-[#7d9b8c] uppercase tracking-wider mb-2">
-          <span>ИГРОК</span>
+          <span>УЧАСТНИК (РЕЦЕПШЕН)</span>
           <span>ОЧКИ</span>
         </div>
 
-        {/* Список игроков с полями ввода */}
+        {/* Список игроков с полями ввода и контактами */}
         {loading ? (
           <div className="py-12 text-center text-xs text-[#8fa89b] animate-pulse">
             Загрузка списка игроков...
@@ -192,10 +211,10 @@ export const AdminAssignPointsModal: React.FC<AdminAssignPointsModalProps> = ({
             {detail.participants.map((p, idx) => (
               <div
                 key={p.userId}
-                className="p-3 px-4 rounded-2xl bg-black/40 border border-white/10 flex items-center justify-between shadow-md"
+                className="p-3 px-4 rounded-2xl bg-black/40 border border-white/10 flex items-center justify-between shadow-md gap-2"
               >
-                <div className="flex items-center gap-3">
-                  <span className="w-4 text-xs font-bold text-gray-400 text-center">
+                <div className="flex items-center gap-3 min-w-0 flex-1">
+                  <span className="w-4 text-xs font-bold text-gray-400 text-center shrink-0">
                     #{idx + 1}
                   </span>
                   <div className="w-8 h-8 rounded-full bg-[#606a66] flex items-center justify-center font-bold text-xs text-white overflow-hidden shrink-0">
@@ -205,18 +224,37 @@ export const AdminAssignPointsModal: React.FC<AdminAssignPointsModalProps> = ({
                       getInitials(p.firstName, p.lastName)
                     )}
                   </div>
-                  <span className="text-sm font-semibold text-white">
-                    {p.firstName} {p.lastName}
-                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-semibold text-white truncate">
+                      {p.firstName} {p.lastName}
+                    </div>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <button
+                        type="button"
+                        onClick={() => openVkProfile(p.vkId)}
+                        className="text-[10px] text-[#7d9b8c] hover:text-[#c39a44] transition-colors truncate flex items-center gap-1"
+                        title="Открыть VK профиль"
+                      >
+                        <span>VK ID: {p.vkId}</span>
+                        <span className="text-[#c39a44] text-[9px]">↗</span>
+                      </button>
+                      <span className="text-[10px] text-[#46625b]">· Рейтинг: {p.totalRating}</span>
+                    </div>
+                  </div>
                 </div>
 
-                <div className="relative">
+                <div className="relative shrink-0">
                   <input
                     type="number"
                     min="0"
+                    max="100000"
                     value={pointsMap[p.userId] ?? 0}
                     onChange={(e) => handlePointChange(p.userId, e.target.value)}
-                    className="w-24 py-1.5 px-3 rounded-full bg-black/80 border border-[#46625b] text-center font-bold text-sm text-white focus:outline-none focus:border-[#c39a44]"
+                    className={`w-24 py-1.5 px-3 rounded-full bg-black/80 border text-center font-bold text-sm text-white focus:outline-none ${
+                      (pointsMap[p.userId] ?? 0) > 5000
+                        ? 'border-amber-500 text-amber-300'
+                        : 'border-[#46625b] focus:border-[#c39a44]'
+                    }`}
                   />
                 </div>
               </div>
@@ -232,7 +270,7 @@ export const AdminAssignPointsModal: React.FC<AdminAssignPointsModalProps> = ({
           disabled={submitting || !detail || detail.participants.length === 0}
           className="w-full py-4 px-6 rounded-full bg-[#c39a44] text-white font-bold text-sm shadow-xl hover:brightness-105 active:scale-[0.98] transition-all disabled:opacity-50"
         >
-          {submitting ? 'Сохранение...' : 'Сохранить и начислить рейтинг'}
+          {submitting ? 'Пересчет рейтинга...' : tournament.status === 3 ? 'Скорректировать и пересчитать рейтинг' : 'Сохранить и начислить рейтинг'}
         </button>
       </div>
     </div>

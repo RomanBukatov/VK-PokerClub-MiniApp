@@ -44,6 +44,9 @@ public class RatingsController : ControllerBase
         if (request.UserPoints == null || request.UserPoints.Count == 0)
             return BadRequest(new { Message = "Список очков пользователей не может быть пустым." });
 
+        if (request.UserPoints.Values.Any(p => p < 0 || p > 100000))
+            return BadRequest(new { Message = "Количество очков должно быть от 0 до 100 000." });
+
         var (success, message) = await _ratingService.AssignPointsAndFinishTournamentAsync(
             request.TournamentId, 
             request.UserPoints);

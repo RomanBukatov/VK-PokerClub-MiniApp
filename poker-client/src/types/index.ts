@@ -39,6 +39,7 @@ export interface RegisteredPlayer {
   avatarUrl?: string;
   totalRating: number;
   registeredAt: string;
+  pointsEarned?: number;
 }
 
 export interface Tournament {

@@ -40,10 +40,7 @@ public class RatingService : IRatingService
             if (tournament == null)
                 return (false, "Турнир не найден.");
 
-            if (tournament.Status == TournamentStatus.Finished)
-                return (false, "Турнир уже завершен. Очки были начислены ранее.");
-
-            // 1. Проставляем очки и статус сыграно для участников
+            // 1. Проставляем/обновляем очки и статус сыграно для участников
             foreach (var reg in tournament.Registrations)
             {
                 if (userPoints.TryGetValue(reg.UserId, out int points))
