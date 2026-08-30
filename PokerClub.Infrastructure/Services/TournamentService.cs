@@ -174,4 +174,51 @@ public class TournamentService : ITournamentService
 
         return (true, "Запись на турнир успешно отменена.");
     }
+
+    public async Task<(bool Success, Tournament? Tournament, string Message)> CreateTournamentAsync(
+        int clubId,
+        string title,
+        string? format,
+        decimal buyIn,
+        int maxSeats,
+        DateTime startTime,
+        string? description)
+    {
+        if (string.IsNullOrWhiteSpace(title))
+            return (false, null, "Название турнира не может быть пустым.");
+
+        var club = await _context.Clubs
+            .Include(c => c.City)
+            .FirstOrDefaultAsync(c => c.Id == clubId);
+
+        if (club == null)
+        {
+            // Если клуб с таким ID не найден, берем первый доступный клуб
+            club = await _context.Clubs.Include(c => c.City).FirstOrDefaultAsync();
+            if (club == null)
+                return (false, null, "Клуб не найден в базе данных.");
+            clubId = club.Id;
+        }
+
+        var tournament = new Tournament
+        {
+            ClubId = clubId,
+            Title = title.Trim(),
+            Format = string.IsNullOrWhiteSpace(format) ? "NL Holdem" : format.Trim(),
+            BuyIn = Math.Max(0, buyIn),
+            MaxSeats = maxSeats > 0 ? maxSeats : 30,
+            StartTime = startTime.Kind == DateTimeKind.Unspecified 
+                ? DateTime.SpecifyKind(startTime, DateTimeKind.Utc) 
+                : startTime.ToUniversalTime(),
+            Description = description?.Trim(),
+            Status = TournamentStatus.RegistrationOpen,
+            CreatedAt = DateTime.UtcNow,
+            Club = club
+        };
+
+        _context.Tournaments.Add(tournament);
+        await _context.SaveChangesAsync();
+
+        return (true, tournament, "Турнир успешно создан!");
+    }
 }

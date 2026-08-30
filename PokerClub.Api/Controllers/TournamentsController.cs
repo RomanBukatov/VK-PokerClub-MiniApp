@@ -153,4 +153,52 @@ public class TournamentsController : ControllerBase
 
         return Ok(new { Message = message });
     }
+
+    [HttpPost]
+    [VkAuthorize(RequireAdmin = true)]
+    public async Task<ActionResult<TournamentScheduleDto>> CreateTournament([FromBody] CreateTournamentRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Title))
+            return BadRequest(new { Message = "Название турнира обязательно для заполнения." });
+
+        if (request.Title.Trim().Length < 3)
+            return BadRequest(new { Message = "Название турнира должно содержать не менее 3 символов." });
+
+        if (request.MaxSeats <= 0 || request.MaxSeats > 1000)
+            return BadRequest(new { Message = "Количество мест должно быть в диапазоне от 1 до 1 000." });
+
+        if (request.BuyIn < 0)
+            return BadRequest(new { Message = "Бай-ин не может быть отрицательным." });
+
+        var (success, tournament, message) = await _tournamentService.CreateTournamentAsync(
+            request.ClubId,
+            request.Title,
+            request.Format,
+            request.BuyIn,
+            request.MaxSeats,
+            request.StartTime,
+            request.Description
+        );
+
+        if (!success || tournament == null)
+            return BadRequest(new { Message = message });
+
+        var result = new TournamentScheduleDto(
+            tournament.Id,
+            tournament.Title,
+            tournament.Format,
+            tournament.BuyIn,
+            tournament.Description,
+            tournament.MaxSeats,
+            tournament.StartTime,
+            tournament.Status,
+            tournament.ClubId,
+            tournament.Club?.Name,
+            tournament.Club?.City?.Name,
+            0,
+            false
+        );
+
+        return CreatedAtAction(nameof(GetTournament), new { id = tournament.Id }, result);
+    }
 }

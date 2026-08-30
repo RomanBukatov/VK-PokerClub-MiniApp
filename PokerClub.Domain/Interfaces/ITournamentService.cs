@@ -18,4 +18,15 @@ public interface ITournamentService
 
     // Отмена записи на турнир
     Task<(bool Success, string Message)> CancelRegistrationAsync(int tournamentId, string vkId);
+
+    // Создание нового турнира (админ)
+    Task<(bool Success, Tournament? Tournament, string Message)> CreateTournamentAsync(
+        int clubId,
+        string title,
+        string? format,
+        decimal buyIn,
+        int maxSeats,
+        DateTime startTime,
+        string? description
+    );
 }
