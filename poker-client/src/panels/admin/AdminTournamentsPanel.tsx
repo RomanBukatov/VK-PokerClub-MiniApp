@@ -5,7 +5,6 @@ import { useUserStore } from '../../store/useUserStore';
 import { AdminAssignPointsModal } from './AdminAssignPointsModal';
 import { triggerHaptic } from '../../utils/vkBridge';
 import { TournamentStatus, type Tournament } from '../../types';
-import { CURRENT_BRANDING } from '../../config/branding';
 
 export const AdminTournamentsPanel: React.FC = () => {
   const { tournaments, isLoading, fetchAdminSchedule } = useTournamentsStore();
@@ -34,37 +33,8 @@ export const AdminTournamentsPanel: React.FC = () => {
     }
   };
 
-  const getStatusBadge = (t: Tournament) => {
-    if (t.status === TournamentStatus.Finished) {
-      return (
-        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#142820] text-[#c39a44] border border-[#c39a44]/40">
-          🏆 Завершен · Очки начислены
-        </span>
-      );
-    }
-    if (t.status === TournamentStatus.RegistrationOpen) {
-      return (
-        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#0d2a1c] text-[#34d399] border border-[#34d399]/30">
-          🟢 Идет запись ({t.registeredCount}/{t.maxSeats})
-        </span>
-      );
-    }
-    if (t.status === TournamentStatus.Announced) {
-      return (
-        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-950/50 text-blue-300 border border-blue-400/30">
-          🔵 Анонс ({t.registeredCount} в списке)
-        </span>
-      );
-    }
-    return null;
-  };
-
   return (
     <div className="px-5 pb-24 animate-fade-in space-y-4">
-      <div className="text-[11px] text-[#8fa89b] px-1 font-medium">
-        📋 Список турниров клуба. Нажмите на событие для просмотра участников на ресепшене или начисления/корректировки очков:
-      </div>
-
       {isLoading ? (
         <div className="py-16 text-center text-xs text-[#8fa89b] animate-pulse">
           Загрузка игр для управления...
@@ -81,38 +51,43 @@ export const AdminTournamentsPanel: React.FC = () => {
             <div
               key={t.id}
               onClick={() => handleOpenAssign(t)}
-              className="p-5 rounded-3xl bg-black/50 border border-white/10 shadow-xl shadow-black/40 active:scale-[0.99] transition-all cursor-pointer space-y-2.5 hover:border-white/20"
+              className="p-5 rounded-3xl bg-black/50 border border-white/10 shadow-xl shadow-black/40 active:scale-[0.99] transition-all cursor-pointer space-y-2"
             >
               {/* Верхняя строка: Дата, статус и шеврон */}
-              <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center justify-between">
                 <span className="text-[11px] font-bold text-[#d1e0d7] uppercase tracking-wider">
                   {formatCardDate(t.startTime)}
                 </span>
 
-                <div className="flex items-center gap-2">
-                  {getStatusBadge(t)}
-                  <ChevronRight className="w-4 h-4 text-white/50" />
+                <div className="flex items-center gap-3">
+                  {isFinished ? (
+                    <span className="text-xs font-bold text-[#46625b]">
+                      Начислено
+                    </span>
+                  ) : (
+                    <span className="text-xs font-bold text-[#d72a4b]">
+                      Не начислено
+                    </span>
+                  )}
+                  <ChevronRight className="w-5 h-5 text-white/70" />
                 </div>
               </div>
 
               {/* Название турнира */}
-              <h2 className="text-lg font-extrabold text-white">
+              <h2 className="text-xl font-extrabold text-white">
                 {t.title}
               </h2>
 
-              {/* Информация о клубе и игроках */}
-              <div className="flex items-center justify-between text-xs text-[#8fa89b] pt-0.5">
-                <span>{t.clubName || CURRENT_BRANDING.clubName} · {t.cityName || CURRENT_BRANDING.defaultCityName}</span>
-                <span className="text-[#c39a44] font-semibold">
-                  {isFinished ? 'Скорректировать очки →' : 'Участники и начисление →'}
-                </span>
+              {/* Количество игроков */}
+              <div className="text-xs text-[#8fa89b]">
+                {t.registeredCount || 0} игроков
               </div>
             </div>
           );
         })
       )}
 
-      {/* Модальное окно начисления очков и участников */}
+      {/* Модальное окно начисления очков */}
       {selectedTournamentForPoints && (
         <AdminAssignPointsModal
           tournament={selectedTournamentForPoints}
