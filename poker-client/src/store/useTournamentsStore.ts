@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import axios from 'axios';
 import type { Tournament, TournamentDetail } from '../types';
 import { tournamentsApi } from '../api/tournamentsApi';
+import { useUserStore } from './useUserStore';
 
 interface TournamentsState {
   tournaments: Tournament[];
@@ -99,7 +100,13 @@ export const useTournamentsStore = create<TournamentsState>((set, get) => ({
   registerToTournament: async (tournamentId: number) => {
     set({ isActionLoading: true, actionError: null });
     try {
-      await tournamentsApi.register(tournamentId);
+      const vkUser = useUserStore.getState().vkUser;
+      await tournamentsApi.register(tournamentId, {
+        vkId: vkUser?.id.toString(),
+        firstName: vkUser?.first_name,
+        lastName: vkUser?.last_name,
+        avatarUrl: vkUser?.photo_200 || vkUser?.photo_100,
+      });
       const detail = await tournamentsApi.getTournament(tournamentId);
       set((state) => ({
         selectedTournament: detail,

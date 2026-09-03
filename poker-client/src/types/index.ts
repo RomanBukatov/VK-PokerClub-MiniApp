@@ -98,3 +98,11 @@ export interface CreateTournamentRequest {
   startingChips?: number;
   blindLevelMinutes?: number;
 }
+
+export interface RegisterPlayerPayload {
+  tournamentId: number;
+  vkId?: string;
+  firstName?: string;
+  lastName?: string;
+  avatarUrl?: string;
+}

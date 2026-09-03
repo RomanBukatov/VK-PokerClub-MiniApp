@@ -12,7 +12,7 @@ export const TabBar: React.FC = () => {
   };
 
   return (
-    <div className="fixed bottom-4 left-0 right-0 z-40 flex justify-center px-4 pointer-events-none">
+    <div className="fixed bottom-4 left-0 right-0 z-40 flex justify-center px-4 pointer-events-none pb-[env(safe-area-inset-bottom)]">
       <nav className="pointer-events-auto flex items-center bg-[#06120d]/90 backdrop-blur-xl border border-white/10 p-1 rounded-full shadow-2xl shadow-black/80 max-w-xs w-full justify-between">
         {!isAdmin ? (
           <>

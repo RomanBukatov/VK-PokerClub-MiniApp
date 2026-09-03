@@ -59,12 +59,20 @@ export async function initVkBridge(): Promise<VkUser> {
       photo_200: userInfo.photo_200,
       photo_100: userInfo.photo_100,
       city: userInfo.city,
-      isAdmin: true,
+      isAdmin: false,
     };
   } catch (err) {
-    console.warn('VK Bridge не ответил или вернул ошибку. Применен fallback на мок-профиль.', err);
-    localStorage.setItem('vk_test_user_id', MOCK_USER.id.toString());
-    return MOCK_USER;
+    console.warn('VK Bridge не ответил или вернул ошибку. Применен fallback.', err);
+    if (!isVkEnvironment && import.meta.env.DEV) {
+      localStorage.setItem('vk_test_user_id', MOCK_USER.id.toString());
+      return MOCK_USER;
+    }
+    return {
+      id: 1,
+      first_name: 'Гость',
+      last_name: 'Клуба',
+      isAdmin: false,
+    };
   }
 }
 

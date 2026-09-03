@@ -14,7 +14,13 @@ public interface ITournamentService
     Task<List<Tournament>> GetUserTournamentsAsync(string vkId);
     
     // Запись на турнир (с проверками)
-    Task<(bool Success, string Message)> RegisterPlayerAsync(int tournamentId, string vkId);
+    Task<(bool Success, string Message)> RegisterPlayerAsync(
+        int tournamentId, 
+        string vkId, 
+        string? firstName = null, 
+        string? lastName = null, 
+        string? avatarUrl = null
+    );
 
     // Отмена записи на турнир
     Task<(bool Success, string Message)> CancelRegistrationAsync(int tournamentId, string vkId);

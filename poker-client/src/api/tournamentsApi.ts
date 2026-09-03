@@ -22,10 +22,13 @@ export const tournamentsApi = {
     return response.data;
   },
 
-  async register(tournamentId: number, vkId?: string): Promise<{ message: string }> {
+  async register(
+    tournamentId: number, 
+    profile?: { vkId?: string; firstName?: string; lastName?: string; avatarUrl?: string }
+  ): Promise<{ message: string }> {
     const response = await apiClient.post<{ message: string }>('/api/tournaments/register', {
       tournamentId,
-      vkId,
+      ...profile,
     });
     return response.data;
   },

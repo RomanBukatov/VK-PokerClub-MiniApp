@@ -130,7 +130,12 @@ public class TournamentsController : ControllerBase
         if (string.IsNullOrWhiteSpace(vkId))
             return BadRequest(new { Message = "VK ID пользователя не определен." });
 
-        var (success, message) = await _tournamentService.RegisterPlayerAsync(request.TournamentId, vkId);
+        var (success, message) = await _tournamentService.RegisterPlayerAsync(
+            request.TournamentId, 
+            vkId,
+            request.FirstName,
+            request.LastName,
+            request.AvatarUrl);
         
         if (!success)
             return BadRequest(new { Message = message });

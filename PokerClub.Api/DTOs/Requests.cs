@@ -2,7 +2,10 @@ namespace PokerClub.Api.DTOs;
 
 public record RegisterPlayerRequest(
     int TournamentId,
-    string? VkId = null
+    string? VkId = null,
+    string? FirstName = null,
+    string? LastName = null,
+    string? AvatarUrl = null
 );
 
 public record CancelRegistrationRequest(

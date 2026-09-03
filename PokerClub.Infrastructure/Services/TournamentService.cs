@@ -71,16 +71,24 @@ public class TournamentService : ITournamentService
             .ToListAsync();
     }
 
-    public async Task<(bool Success, string Message)> RegisterPlayerAsync(int tournamentId, string vkId)
+    public async Task<(bool Success, string Message)> RegisterPlayerAsync(
+        int tournamentId, 
+        string vkId,
+        string? firstName = null,
+        string? lastName = null,
+        string? avatarUrl = null)
     {
         using var transaction = await _context.Database.BeginTransactionAsync();
         try
         {
-            // 1. Блокировка строки турнира в PostgreSQL (FOR UPDATE) для 100% защиты от race conditions и овербукинга
+            // 1. Атомарно лочим строку турнира без подзапросов (исключает ошибку 0A000 в Postgres)
+            await _context.Database.ExecuteSqlInterpolatedAsync(
+                $"SELECT \"Id\" FROM \"Tournaments\" WHERE \"Id\" = {tournamentId} FOR UPDATE");
+
+            // 2. Загружаем турнир со всеми связями стандартным EF Core запросом в той же транзакции
             var tournament = await _context.Tournaments
-                .FromSqlInterpolated($"SELECT * FROM \"Tournaments\" WHERE \"Id\" = {tournamentId} FOR UPDATE")
                 .Include(t => t.Registrations)
-                .FirstOrDefaultAsync();
+                .FirstOrDefaultAsync(t => t.Id == tournamentId);
 
             if (tournament == null)
                 return (false, "Турнир не найден.");
@@ -88,18 +96,43 @@ public class TournamentService : ITournamentService
             if (tournament.Status != TournamentStatus.RegistrationOpen)
                 return (false, "Регистрация на этот турнир закрыта или еще не началась.");
 
-            // 2. Ищем или создаем юзера (т.к. это VK Mini App, он может зайти впервые)
+            // 3. Ищем или создаем юзера с сохранением реальных данных из VK
             var user = await _context.Users.FirstOrDefaultAsync(u => u.VkId == vkId);
             if (user == null)
             {
                 user = new User
                 {
                     VkId = vkId,
-                    FirstName = "Игрок",
-                    LastName = "VK"
+                    FirstName = !string.IsNullOrWhiteSpace(firstName) ? firstName.Trim() : "Игрок",
+                    LastName = !string.IsNullOrWhiteSpace(lastName) ? lastName.Trim() : "VK",
+                    AvatarUrl = avatarUrl?.Trim()
                 };
                 _context.Users.Add(user);
                 await _context.SaveChangesAsync();
+            }
+            else
+            {
+                // Обновляем актуальные данные профиля, если они переданы
+                bool updated = false;
+                if (!string.IsNullOrWhiteSpace(firstName) && user.FirstName != firstName.Trim())
+                {
+                    user.FirstName = firstName.Trim();
+                    updated = true;
+                }
+                if (!string.IsNullOrWhiteSpace(lastName) && user.LastName != lastName.Trim())
+                {
+                    user.LastName = lastName.Trim();
+                    updated = true;
+                }
+                if (!string.IsNullOrWhiteSpace(avatarUrl) && user.AvatarUrl != avatarUrl.Trim())
+                {
+                    user.AvatarUrl = avatarUrl.Trim();
+                    updated = true;
+                }
+                if (updated)
+                {
+                    await _context.SaveChangesAsync();
+                }
             }
 
             // 3. Проверяем существующую регистрацию

@@ -42,8 +42,8 @@ export const AdminCreateTournamentPanel: React.FC = () => {
     const trimmedDate = dateStr.trim();
     const trimmedTime = timeStr.trim();
 
-    let day = 0;
-    let month = 0;
+    let day: number;
+    let month: number;
     let year = new Date().getFullYear();
 
     // Формат YYYY-MM-DD
