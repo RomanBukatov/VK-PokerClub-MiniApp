@@ -10,7 +10,7 @@ interface HeaderProps {
 }
 
 export const Header: React.FC<HeaderProps> = ({ title, subtitle }) => {
-  const { activeTab, isAdmin, setIsAdmin, setIsCityModalOpen, selectedCityName, vkUser } = useUserStore();
+  const { activeTab, isAdmin, setIsAdmin, setIsCityModalOpen, selectedCityName } = useUserStore();
 
   const getHeaderInfo = () => {
     if (title && subtitle) return { title, subtitle };
@@ -54,33 +54,31 @@ export const Header: React.FC<HeaderProps> = ({ title, subtitle }) => {
 
         {/* Правая часть: Админ переключатель и логотип */}
         <div className="flex items-center gap-2.5">
-          {vkUser?.isAdmin && (
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic('light');
-                setIsAdmin(!isAdmin);
-              }}
-              className={`px-2.5 py-1 rounded-full text-xs font-semibold border transition-all active:scale-95 flex items-center gap-1.5 shadow-sm ${
-                isAdmin
-                  ? 'bg-[#c39a44]/20 border-[#c39a44] text-[#e5c06e]'
-                  : 'bg-[#0a231b] border-[#1e533f] text-[#8fa89b] hover:text-white'
-              }`}
-              title="Переключить режим"
-            >
-              {isAdmin ? (
-                <>
-                  <Shield className="w-3 h-3 text-[#c39a44]" />
-                  <span>Администратор</span>
-                </>
-              ) : (
-                <>
-                  <User className="w-3 h-3 text-[#8fa89b]" />
-                  <span>Режим игрока</span>
-                </>
-              )}
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic('light');
+              setIsAdmin(!isAdmin);
+            }}
+            className={`px-2.5 py-1 rounded-full text-xs font-semibold border transition-all active:scale-95 flex items-center gap-1.5 shadow-sm ${
+              isAdmin
+                ? 'bg-[#c39a44]/20 border-[#c39a44] text-[#e5c06e]'
+                : 'bg-[#0a231b] border-[#1e533f] text-[#8fa89b] hover:text-white'
+            }`}
+            title="Переключить режим (Демо)"
+          >
+            {isAdmin ? (
+              <>
+                <Shield className="w-3 h-3 text-[#c39a44]" />
+                <span>Администратор</span>
+              </>
+            ) : (
+              <>
+                <User className="w-3 h-3 text-[#8fa89b]" />
+                <span>Режим игрока</span>
+              </>
+            )}
+          </button>
 
           <img src={CURRENT_BRANDING.assets.logoSvg} alt={CURRENT_BRANDING.clubName} className="h-7 object-contain" />
         </div>

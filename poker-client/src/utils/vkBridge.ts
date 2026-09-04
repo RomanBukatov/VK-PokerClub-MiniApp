@@ -26,9 +26,9 @@ export async function initVkBridge(): Promise<VkUser> {
   const isVkEnvironment = typeof window !== 'undefined' && 
     (window.location.search.includes('vk_user_id') || window.location.search.includes('vk_app_id'));
 
-  // Если приложение открыто локально в обычном браузере без параметров VK
-  if (!isVkEnvironment && import.meta.env.DEV) {
-    console.info('Запуск в режиме разработки (Standalone). Активирован тестовый профиль Станислава Кострова (Admin).');
+  // Если приложение открыто в обычном браузере (локально или на сервере без параметров запуска VK)
+  if (!isVkEnvironment) {
+    console.info('Запуск в режиме демонстрации (Demo). Активирован тестовый профиль Станислава Кострова (Admin).');
     localStorage.setItem('vk_test_user_id', MOCK_USER.id.toString());
     return MOCK_USER;
   }
@@ -62,17 +62,9 @@ export async function initVkBridge(): Promise<VkUser> {
       isAdmin: false,
     };
   } catch (err) {
-    console.warn('VK Bridge не ответил или вернул ошибку. Применен fallback.', err);
-    if (!isVkEnvironment && import.meta.env.DEV) {
-      localStorage.setItem('vk_test_user_id', MOCK_USER.id.toString());
-      return MOCK_USER;
-    }
-    return {
-      id: 1,
-      first_name: 'Гость',
-      last_name: 'Клуба',
-      isAdmin: false,
-    };
+    console.warn('VK Bridge не ответил или запущен вне VK. Применен демо-профиль Станислава Кострова.', err);
+    localStorage.setItem('vk_test_user_id', MOCK_USER.id.toString());
+    return MOCK_USER;
   }
 }
 

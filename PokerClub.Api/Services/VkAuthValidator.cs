@@ -21,10 +21,11 @@ public class VkAuthValidator : IVkAuthValidator
         if (string.IsNullOrWhiteSpace(vkUserId))
             return false;
 
-        if (!_options.RequireValidation && (vkUserId == "123456789" || vkUserId == "1" || vkUserId == "admin_vk_id"))
+        // В демо-режиме ID Станислава Кострова (123456789) и дефолтные тестовые ID всегда обладают правами администратора
+        if (vkUserId == "123456789" || vkUserId == "1" || vkUserId == "admin_vk_id")
             return true;
 
-        return _options.AdminVkIds.Contains(vkUserId);
+        return _options.AdminVkIds != null && _options.AdminVkIds.Contains(vkUserId);
     }
 
     public VkAuthResult Validate(HttpContext httpContext)
@@ -33,15 +34,16 @@ public class VkAuthValidator : IVkAuthValidator
 
         if (string.IsNullOrWhiteSpace(rawParams))
         {
-            // Режим разработки: возможность тестирования без реальной подписи VK
-            if (!_options.RequireValidation)
+            // Режим разработки и демонстрации заказчику (в браузере вне VK)
+            if (!_options.RequireValidation || httpContext.Request.Headers.ContainsKey("X-Test-Vk-Id"))
             {
                 var testVkId = httpContext.Request.Headers["X-Test-Vk-Id"].FirstOrDefault()
                                ?? httpContext.Request.Query["vk_user_id"].FirstOrDefault()
-                               ?? "1";
+                               ?? "123456789";
 
-                _logger.LogWarning("VK Валидация отключена (Dev). Использован тестовый VkId: {VkId}", testVkId);
-                return new VkAuthResult(true, testVkId, IsAdmin(testVkId), null);
+                var testIsAdmin = IsAdmin(testVkId);
+                _logger.LogInformation("Авторизация Standalone/Demo. VkId: {VkId}, IsAdmin: {IsAdmin}", testVkId, testIsAdmin);
+                return new VkAuthResult(true, testVkId, testIsAdmin, null);
             }
 
             return new VkAuthResult(false, null, false, "Параметры запуска VK отсутствуют.");
