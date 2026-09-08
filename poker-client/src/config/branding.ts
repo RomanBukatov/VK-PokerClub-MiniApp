@@ -8,6 +8,11 @@ export interface ClubBranding {
   clubSubtitle: string;
   defaultCityName: string;
   defaultAddress: string;
+  vkGroupId?: number;
+  socialLinks: {
+    vkGroup: string;
+    vkGroupId?: number;
+  };
   assets: {
     logoSvg: string;
     chipGoldImg: string;
@@ -29,6 +34,11 @@ export const CURRENT_BRANDING: ClubBranding = {
   clubSubtitle: 'Турнирный клуб спортивного покера',
   defaultCityName: 'Пермь',
   defaultAddress: 'Монастырская улица, 59, Пермь',
+  vkGroupId: Number(import.meta.env.VITE_VK_GROUP_ID) || 0,
+  socialLinks: {
+    vkGroup: 'https://vk.com/pokerclub',
+    vkGroupId: Number(import.meta.env.VITE_VK_GROUP_ID) || 0,
+  },
   assets: {
     logoSvg,
     chipGoldImg,
@@ -43,3 +53,27 @@ export const CURRENT_BRANDING: ClubBranding = {
     borderMuted: '#1e533f',
   },
 };
+
+export function getEffectiveVkGroupId(): number {
+  const envId = Number(import.meta.env.VITE_VK_GROUP_ID);
+  if (!isNaN(envId) && envId > 0) return envId;
+
+  if (CURRENT_BRANDING.vkGroupId && CURRENT_BRANDING.vkGroupId > 0) {
+    return CURRENT_BRANDING.vkGroupId;
+  }
+
+  if (CURRENT_BRANDING.socialLinks?.vkGroupId && CURRENT_BRANDING.socialLinks.vkGroupId > 0) {
+    return CURRENT_BRANDING.socialLinks.vkGroupId;
+  }
+
+  const vkGroup = CURRENT_BRANDING.socialLinks?.vkGroup;
+  if (vkGroup) {
+    const match = vkGroup.match(/(?:club|public)(\d+)/);
+    if (match && match[1]) {
+      return Number(match[1]);
+    }
+  }
+
+  return 0;
+}
+

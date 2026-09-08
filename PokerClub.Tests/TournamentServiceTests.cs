@@ -392,4 +392,105 @@ public class TournamentServiceTests
         Assert.NotNull(schedule[0].Registrations.First().User);
         Assert.Equal("777", schedule[0].Registrations.First().User?.VkId);
     }
+
+    [Fact]
+    public void VkAuthValidator_InDemoMode_WhenXIsAdminIsFalse_ReturnsIsAdminFalse()
+    {
+        var options = Options.Create(new VkOptions
+        {
+            RequireValidation = false,
+            AdminVkIds = new List<string> { "123456789" }
+        });
+
+        var validator = new VkAuthValidator(options, NullLogger<VkAuthValidator>.Instance);
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Headers["X-Test-Vk-Id"] = "123456789";
+        httpContext.Request.Headers["X-Is-Admin"] = "false";
+
+        var result = validator.Validate(httpContext);
+
+        Assert.True(result.IsValid);
+        Assert.Equal("123456789", result.VkUserId);
+        Assert.False(result.IsAdmin);
+    }
+
+    [Fact]
+    public void VkAuthValidator_InDemoMode_WhenXIsAdminIsTrue_ReturnsIsAdminTrue()
+    {
+        var options = Options.Create(new VkOptions
+        {
+            RequireValidation = false,
+            AdminVkIds = new List<string> { "123456789" }
+        });
+
+        var validator = new VkAuthValidator(options, NullLogger<VkAuthValidator>.Instance);
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Headers["X-Test-Vk-Id"] = "123456789";
+        httpContext.Request.Headers["X-Is-Admin"] = "true";
+
+        var result = validator.Validate(httpContext);
+
+        Assert.True(result.IsValid);
+        Assert.Equal("123456789", result.VkUserId);
+        Assert.True(result.IsAdmin);
+    }
+
+    [Fact]
+    public void HttpContextExtensions_GetVkUserId_WhenXTestVkIdHeaderProvided_ReturnsVkId()
+    {
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Headers["X-Test-Vk-Id"] = "987654321";
+
+        var vkId = PokerClub.Api.Extensions.HttpContextExtensions.GetVkUserId(httpContext);
+
+        Assert.Equal("987654321", vkId);
+    }
+
+    [Theory]
+    [InlineData("False")]
+    [InlineData("FALSE")]
+    [InlineData("0")]
+    [InlineData(" false ")]
+    public void VkAuthValidator_InDemoMode_WhenXIsAdminIsFalseCaseInsensitive_ReturnsIsAdminFalse(string headerValue)
+    {
+        var options = Options.Create(new VkOptions
+        {
+            RequireValidation = false,
+            AdminVkIds = new List<string> { "123456789" }
+        });
+
+        var validator = new VkAuthValidator(options, NullLogger<VkAuthValidator>.Instance);
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Headers["X-Test-Vk-Id"] = "123456789";
+        httpContext.Request.Headers["X-Is-Admin"] = headerValue;
+
+        var result = validator.Validate(httpContext);
+
+        Assert.True(result.IsValid);
+        Assert.Equal("123456789", result.VkUserId);
+        Assert.False(result.IsAdmin);
+    }
+
+    [Fact]
+    public void HttpContextExtensions_GetVkUserId_WhenXVkSignHeaderProvided_ReturnsParsedVkUserId()
+    {
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Headers["X-VK-Sign"] = "?vk_user_id=55555&vk_app_id=123&sign=dummy";
+
+        var vkId = PokerClub.Api.Extensions.HttpContextExtensions.GetVkUserId(httpContext);
+
+        Assert.Equal("55555", vkId);
+    }
+
+    [Fact]
+    public void HttpContextExtensions_IsVkAdmin_WhenXIsAdminCaseInsensitive_ReturnsTrue()
+    {
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Headers["X-Is-Admin"] = "True";
+
+        var isAdmin = PokerClub.Api.Extensions.HttpContextExtensions.IsVkAdmin(httpContext);
+
+        Assert.True(isAdmin);
+    }
 }
+

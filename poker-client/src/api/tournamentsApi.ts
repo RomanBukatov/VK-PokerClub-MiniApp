@@ -14,7 +14,9 @@ export const tournamentsApi = {
       params.append('includeFinished', 'true');
     }
 
-    const response = await apiClient.get<Tournament[]>(`/api/tournaments/schedule?${params.toString()}`);
+    const queryString = params.toString();
+    const url = queryString ? `/api/tournaments/schedule?${queryString}` : '/api/tournaments/schedule';
+    const response = await apiClient.get<Tournament[]>(url);
     return response.data;
   },
 

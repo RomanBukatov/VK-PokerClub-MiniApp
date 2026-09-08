@@ -75,3 +75,14 @@ export function triggerHaptic(style: 'light' | 'medium' | 'heavy' = 'medium') {
     // Ignore in browser
   }
 }
+
+export const requestGroupMessagesPermission = async (groupId?: number) => {
+  try {
+    if (groupId) {
+      await vkBridge.send('VKWebAppAllowMessagesFromGroup', { group_id: groupId });
+    }
+  } catch (e) {
+    console.warn('Пользователь отклонил запрос на сообщения', e);
+  }
+};
+

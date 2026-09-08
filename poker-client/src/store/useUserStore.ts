@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import type { VkUser, AppTab } from '../types';
+import { useTournamentsStore } from './useTournamentsStore';
+import { useRatingsStore } from './useRatingsStore';
 
 interface UserState {
   vkUser: VkUser | null;
@@ -20,7 +22,7 @@ interface UserState {
   setIsCityModalOpen: (isOpen: boolean) => void;
 }
 
-export const useUserStore = create<UserState>((set) => ({
+export const useUserStore = create<UserState>((set, get) => ({
   vkUser: null,
   isAuthenticated: false,
   isAdmin: false,
@@ -54,6 +56,16 @@ export const useUserStore = create<UserState>((set) => ({
       }
       return { isAdmin, activeTab: nextTab };
     });
+
+    // При переключении режима обновляем расписание в соответствии с ролью
+    const { selectedCityId, selectedClubId } = get();
+    if (isAdmin) {
+      useTournamentsStore.getState().fetchAdminSchedule(selectedCityId, selectedClubId);
+    } else {
+      useTournamentsStore.getState().fetchSchedule(selectedCityId, selectedClubId);
+      useTournamentsStore.getState().fetchMyTournaments();
+      useRatingsStore.getState().fetchLeaderboard();
+    }
   },
   setSelectedCity: (cityId, cityName) => set({ selectedCityId: cityId, selectedCity: cityId, selectedCityName: cityName, selectedClubId: null }),
   setSelectedClub: (clubId) => set({ selectedClubId: clubId }),

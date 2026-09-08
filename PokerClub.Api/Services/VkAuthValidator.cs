@@ -18,14 +18,21 @@ public class VkAuthValidator : IVkAuthValidator
 
     public bool IsAdmin(string vkUserId, HttpContext? httpContext = null)
     {
-        // 1. Проверяем заголовок X-Is-Admin от клиента в демо-режиме
-        if (httpContext != null && httpContext.Request.Headers.TryGetValue("X-Is-Admin", out var isAdminHeader) &&
-            (isAdminHeader == "true" || isAdminHeader == "1"))
+        // 1. Проверяем явный заголовок X-Is-Admin от клиента для переключения роли
+        if (httpContext != null && httpContext.Request.Headers.TryGetValue("X-Is-Admin", out var isAdminHeader))
         {
-            return true;
+            var val = isAdminHeader.ToString().Trim();
+            if (string.Equals(val, "false", StringComparison.OrdinalIgnoreCase) || val == "0")
+            {
+                return false;
+            }
+            if (string.Equals(val, "true", StringComparison.OrdinalIgnoreCase) || val == "1")
+            {
+                return true;
+            }
         }
 
-        // 2. В демо-режиме (когда RequireValidation == false) разрешаем админ-действия
+        // 2. В демо-режиме (когда RequireValidation == false) разрешаем админ-действия по умолчанию, если не задано обратное
         if (!_options.RequireValidation)
         {
             return true;
@@ -34,7 +41,7 @@ public class VkAuthValidator : IVkAuthValidator
         if (string.IsNullOrWhiteSpace(vkUserId))
             return false;
 
-        // В демо-режиме ID Станислава Кострова (123456789) и дефолтные тестовые ID всегда обладают правами администратора
+        // В демо-режиме ID Станислава Кострова (123456789) и дефолтные тестовые ID обладают правами администратора
         if (vkUserId == "123456789" || vkUserId == "1" || vkUserId == "admin_vk_id")
             return true;
 
@@ -43,15 +50,14 @@ public class VkAuthValidator : IVkAuthValidator
 
     public VkAuthResult Validate(HttpContext httpContext)
     {
-        bool hasAdminHeader = httpContext.Request.Headers.TryGetValue("X-Is-Admin", out var adminHeader) &&
-                              (adminHeader == "true" || adminHeader == "1");
-
         var rawParams = ExtractRawLaunchParams(httpContext);
 
         if (string.IsNullOrWhiteSpace(rawParams))
         {
             // Режим разработки и демонстрации заказчику (в браузере вне VK)
-            if (!_options.RequireValidation || httpContext.Request.Headers.ContainsKey("X-Test-Vk-Id") || hasAdminHeader)
+            if (!_options.RequireValidation || 
+                httpContext.Request.Headers.ContainsKey("X-Test-Vk-Id") || 
+                httpContext.Request.Headers.ContainsKey("X-Is-Admin"))
             {
                 var testVkId = httpContext.Request.Headers["X-Test-Vk-Id"].FirstOrDefault()
                                ?? httpContext.Request.Query["vk_user_id"].FirstOrDefault()

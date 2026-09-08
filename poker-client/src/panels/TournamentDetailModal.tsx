@@ -3,9 +3,9 @@ import { ChevronLeft, CheckCircle2, AlertCircle, MapPin, Clock, Info, Users, Tro
 import { useTournamentsStore } from '../store/useTournamentsStore';
 import { useUserStore } from '../store/useUserStore';
 import { formatCurrency, formatChips } from '../utils/formatters';
-import { triggerHaptic } from '../utils/vkBridge';
+import { triggerHaptic, requestGroupMessagesPermission } from '../utils/vkBridge';
 import { TournamentStatus } from '../types';
-import { CURRENT_BRANDING } from '../config/branding';
+import { CURRENT_BRANDING, getEffectiveVkGroupId } from '../config/branding';
 
 export const TournamentDetailModal: React.FC = () => {
   const { 
@@ -33,7 +33,13 @@ export const TournamentDetailModal: React.FC = () => {
 
   const handleRegister = async () => {
     triggerHaptic('heavy');
-    await registerToTournament(t.id);
+    const success = await registerToTournament(t.id);
+    if (success) {
+      const groupId = getEffectiveVkGroupId();
+      if (groupId) {
+        await requestGroupMessagesPermission(groupId);
+      }
+    }
   };
 
   const handleConfirmUnregister = async () => {
