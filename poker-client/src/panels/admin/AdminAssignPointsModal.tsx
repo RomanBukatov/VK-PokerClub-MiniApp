@@ -96,7 +96,21 @@ export const AdminAssignPointsModal: React.FC<AdminAssignPointsModalProps> = ({
     } catch (err: unknown) {
       console.error('Ошибка начисления очков:', err);
       if (axios.isAxiosError(err)) {
-        setErrorMsg(err.response?.data?.message || 'Ошибка сервера при начислении очков.');
+        const data = err.response?.data as { message?: string; title?: string; errors?: Record<string, string[] | string> } | undefined;
+        let serverMessage = data?.message || data?.title;
+        if (data?.errors && typeof data.errors === 'object') {
+          const firstKey = Object.keys(data.errors)[0];
+          const firstError = Array.isArray(data.errors[firstKey]) ? data.errors[firstKey][0] : data.errors[firstKey];
+          if (firstError) {
+            serverMessage = serverMessage ? `${serverMessage}: ${firstError}` : String(firstError);
+          }
+        }
+        if (!serverMessage && typeof err.response?.data === 'string' && !err.response.data.trim().startsWith('<')) {
+          serverMessage = err.response.data;
+        }
+        setErrorMsg(serverMessage || err.message || 'Ошибка сервера при начислении очков.');
+      } else if (err instanceof Error) {
+        setErrorMsg(err.message);
       } else {
         setErrorMsg('Непредвиденная ошибка при начислении очков.');
       }

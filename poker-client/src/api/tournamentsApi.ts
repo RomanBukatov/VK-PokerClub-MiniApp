@@ -2,11 +2,17 @@ import { apiClient } from './apiClient';
 import type { Tournament, TournamentDetail, CreateTournamentRequest } from '../types';
 
 export const tournamentsApi = {
-  async getSchedule(cityId?: number, clubId?: number, includeFinished?: boolean): Promise<Tournament[]> {
+  async getSchedule(cityId?: number | null, clubId?: number | null, includeFinished?: boolean): Promise<Tournament[]> {
     const params = new URLSearchParams();
-    if (cityId) params.append('cityId', cityId.toString());
-    if (clubId) params.append('clubId', clubId.toString());
-    if (includeFinished) params.append('includeFinished', 'true');
+    if (cityId !== null && cityId !== undefined && Number(cityId) > 0) {
+      params.append('cityId', cityId.toString());
+    }
+    if (clubId !== null && clubId !== undefined && Number(clubId) > 0) {
+      params.append('clubId', clubId.toString());
+    }
+    if (includeFinished) {
+      params.append('includeFinished', 'true');
+    }
 
     const response = await apiClient.get<Tournament[]>(`/api/tournaments/schedule?${params.toString()}`);
     return response.data;

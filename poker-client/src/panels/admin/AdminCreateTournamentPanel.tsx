@@ -39,30 +39,33 @@ export const AdminCreateTournamentPanel: React.FC = () => {
 
   // Надежный парсер даты и времени
   const parseTournamentDateTime = (dateStr: string, timeStr: string): Date | null => {
-    const trimmedDate = dateStr.trim();
-    const trimmedTime = timeStr.trim();
+    const cleanDate = dateStr.trim().replace(/\s*([.\-/])\s*/g, '$1');
+    const cleanTime = timeStr.trim();
 
     let day: number;
     let month: number;
     let year = new Date().getFullYear();
 
-    // Формат YYYY-MM-DD
-    if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(trimmedDate)) {
-      const parts = trimmedDate.split('-').map(Number);
+    // Формат YYYY-MM-DD или YYYY.MM.DD или YYYY/MM/DD
+    if (/^\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2}$/.test(cleanDate)) {
+      const parts = cleanDate.split(/[.\-/]/).map(Number);
       year = parts[0];
       month = parts[1];
       day = parts[2];
     }
-    // Формат DD.MM.YYYY
-    else if (/^\d{1,2}\.\d{1,2}\.\d{4}$/.test(trimmedDate)) {
-      const parts = trimmedDate.split('.').map(Number);
+    // Формат DD.MM.YYYY или DD/MM/YYYY или DD-MM-YYYY (с поддержкой 2-значного года DD.MM.YY)
+    else if (/^\d{1,2}[.\-/]\d{1,2}[.\-/]\d{2,4}$/.test(cleanDate)) {
+      const parts = cleanDate.split(/[.\-/]/).map(Number);
       day = parts[0];
       month = parts[1];
       year = parts[2];
+      if (year < 100) {
+        year += 2000;
+      }
     }
-    // Формат DD.MM
-    else if (/^\d{1,2}\.\d{1,2}$/.test(trimmedDate)) {
-      const parts = trimmedDate.split('.').map(Number);
+    // Формат DD.MM или DD/MM или DD-MM (год = текущий)
+    else if (/^\d{1,2}[.\-/]\d{1,2}$/.test(cleanDate)) {
+      const parts = cleanDate.split(/[.\-/]/).map(Number);
       day = parts[0];
       month = parts[1];
     } else {
@@ -75,17 +78,31 @@ export const AdminCreateTournamentPanel: React.FC = () => {
 
     let hour = 19;
     let minute = 0;
-    if (trimmedTime.includes(':')) {
-      const timeParts = trimmedTime.split(':').map(Number);
-      hour = timeParts[0];
-      minute = timeParts[1];
-      if (isNaN(hour) || isNaN(minute) || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+    if (cleanTime) {
+      const normalizedTime = cleanTime.replace(/\s+/g, '');
+      if (/^\d{1,2}[:.-]\d{1,2}$/.test(normalizedTime)) {
+        const timeParts = normalizedTime.split(/[:.-]/).map(Number);
+        hour = timeParts[0];
+        minute = timeParts[1];
+      } else if (/^\d{1,2}$/.test(normalizedTime)) {
+        hour = Number(normalizedTime);
+        minute = 0;
+      } else {
         return null;
       }
     }
 
+    if (isNaN(hour) || isNaN(minute) || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+      return null;
+    }
+
     const parsed = new Date(year, month - 1, day, hour, minute);
     if (isNaN(parsed.getTime())) return null;
+
+    // Защита от переполнения даты (например, 31 февраля или 31 апреля)
+    if (parsed.getDate() !== day || parsed.getMonth() !== month - 1 || parsed.getFullYear() !== year) {
+      return null;
+    }
 
     return parsed;
   };
@@ -145,7 +162,9 @@ export const AdminCreateTournamentPanel: React.FC = () => {
     try {
       await tournamentsApi.createTournament({
         title: title.trim(),
-        clubId: selectedClubId || 1,
+        clubId: selectedClubId || undefined,
+        cityId: selectedCityId || undefined,
+        address: address.trim() || undefined,
         startTime: parsedDate.toISOString(),
         buyIn: parseFloat(buyIn) || 0,
         maxSeats: parseInt(maxSeats, 10) || 30,
@@ -168,7 +187,19 @@ export const AdminCreateTournamentPanel: React.FC = () => {
       console.error('Ошибка создания турнира:', err);
       triggerHaptic('heavy');
       if (axios.isAxiosError(err)) {
-        setErrorMsg(err.response?.data?.message || 'Ошибка сервера при создании турнира.');
+        const data = err.response?.data as { message?: string; title?: string; errors?: Record<string, string[] | string> } | undefined;
+        let serverMessage = data?.message || data?.title;
+        if (data?.errors && typeof data.errors === 'object') {
+          const firstKey = Object.keys(data.errors)[0];
+          const firstError = Array.isArray(data.errors[firstKey]) ? data.errors[firstKey][0] : data.errors[firstKey];
+          if (firstError) {
+            serverMessage = serverMessage ? `${serverMessage}: ${firstError}` : String(firstError);
+          }
+        }
+        if (!serverMessage && typeof err.response?.data === 'string' && !err.response.data.trim().startsWith('<')) {
+          serverMessage = err.response.data;
+        }
+        setErrorMsg(serverMessage || err.message || 'Ошибка сервера при создании турнира.');
       } else if (err instanceof Error) {
         setErrorMsg(err.message);
       } else {

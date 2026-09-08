@@ -27,12 +27,14 @@ public interface ITournamentService
 
     // Создание нового турнира (админ)
     Task<(bool Success, Tournament? Tournament, string Message)> CreateTournamentAsync(
-        int clubId,
+        int? clubId,
         string title,
         string? format,
         decimal buyIn,
         int maxSeats,
         DateTime startTime,
-        string? description
+        string? description,
+        int? cityId = null,
+        string? address = null
     );
 }

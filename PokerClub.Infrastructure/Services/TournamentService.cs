@@ -22,27 +22,27 @@ public class TournamentService : ITournamentService
             .Include(t => t.Club)
                 .ThenInclude(c => c!.City)
             .Include(t => t.Registrations)
+                .ThenInclude(r => r.User)
             .AsQueryable();
 
-        if (includeFinished)
-        {
-            query = query.Where(t => t.Status == TournamentStatus.Announced || 
-                                     t.Status == TournamentStatus.RegistrationOpen || 
-                                     t.Status == TournamentStatus.Finished);
-        }
-        else
+        if (!includeFinished)
         {
             query = query.Where(t => t.Status == TournamentStatus.Announced || 
                                      t.Status == TournamentStatus.RegistrationOpen);
         }
 
-        if (clubId.HasValue)
+        if (clubId.HasValue && clubId.Value > 0)
         {
             query = query.Where(t => t.ClubId == clubId.Value);
         }
-        else if (cityId.HasValue)
+        else if (cityId.HasValue && cityId.Value > 0)
         {
-            query = query.Where(t => t.Club!.CityId == cityId.Value);
+            query = query.Where(t => t.Club != null && t.Club.CityId == cityId.Value);
+        }
+
+        if (includeFinished)
+        {
+            return await query.OrderByDescending(t => t.StartTime).ToListAsync();
         }
 
         return await query.OrderBy(t => t.StartTime).ToListAsync();
@@ -209,40 +209,131 @@ public class TournamentService : ITournamentService
     }
 
     public async Task<(bool Success, Tournament? Tournament, string Message)> CreateTournamentAsync(
-        int clubId,
+        int? clubId,
         string title,
         string? format,
         decimal buyIn,
         int maxSeats,
         DateTime startTime,
-        string? description)
+        string? description,
+        int? cityId = null,
+        string? address = null)
     {
         if (string.IsNullOrWhiteSpace(title))
             return (false, null, "Название турнира не может быть пустым.");
 
-        var club = await _context.Clubs
-            .Include(c => c.City)
-            .FirstOrDefaultAsync(c => c.Id == clubId);
+        Club? club = null;
 
+        // 1. Если передан clubId > 0, ищем клуб по Id
+        if (clubId.HasValue && clubId.Value > 0)
+        {
+            club = await _context.Clubs
+                .Include(c => c.City)
+                .FirstOrDefaultAsync(c => c.Id == clubId.Value);
+        }
+
+        // 2. Если клуб не найден по Id, но передан адрес — ищем существующий клуб с таким адресом
+        if (club == null && !string.IsNullOrWhiteSpace(address))
+        {
+            var trimmedAddress = address.Trim();
+            var clubByAddressQuery = _context.Clubs.Include(c => c.City).AsQueryable();
+            if (cityId.HasValue && cityId.Value > 0)
+            {
+                clubByAddressQuery = clubByAddressQuery.Where(c => c.CityId == cityId.Value);
+            }
+            club = await clubByAddressQuery.FirstOrDefaultAsync(c => c.Address == trimmedAddress);
+        }
+
+        // 3. Если клуб не найден по Id и адресу, но передан cityId, ищем клуб в этом городе
+        if (club == null && cityId.HasValue && cityId.Value > 0)
+        {
+            club = await _context.Clubs
+                .Include(c => c.City)
+                .FirstOrDefaultAsync(c => c.CityId == cityId.Value && c.IsActive)
+                ?? await _context.Clubs
+                .Include(c => c.City)
+                .FirstOrDefaultAsync(c => c.CityId == cityId.Value);
+
+            // Если в указанном городе нет клубов, создаем клуб для этого города
+            if (club == null)
+            {
+                var city = await _context.Cities.FirstOrDefaultAsync(c => c.Id == cityId.Value);
+                if (city != null)
+                {
+                    club = new Club
+                    {
+                        CityId = city.Id,
+                        Name = "Poker Club",
+                        Address = !string.IsNullOrWhiteSpace(address) ? address.Trim() : $"г. {city.Name}",
+                        IsActive = true,
+                        City = city
+                    };
+                    _context.Clubs.Add(club);
+                    await _context.SaveChangesAsync();
+                }
+            }
+        }
+
+        // 4. Если клуб все еще не найден, берем первый доступный клуб в базе
         if (club == null)
         {
-            // Если клуб с таким ID не найден, берем первый доступный клуб
-            club = await _context.Clubs.Include(c => c.City).FirstOrDefaultAsync();
-            if (club == null)
-                return (false, null, "Клуб не найден в базе данных.");
-            clubId = club.Id;
+            club = await _context.Clubs
+                .Include(c => c.City)
+                .FirstOrDefaultAsync(c => c.IsActive)
+                ?? await _context.Clubs
+                .Include(c => c.City)
+                .FirstOrDefaultAsync();
         }
+
+        // 5. Если в базе вообще нет клубов, создаем дефолтный город и клуб
+        if (club == null)
+        {
+            var city = (cityId.HasValue && cityId.Value > 0)
+                ? await _context.Cities.FirstOrDefaultAsync(c => c.Id == cityId.Value)
+                : await _context.Cities.FirstOrDefaultAsync();
+
+            if (city == null)
+            {
+                city = new City
+                {
+                    Name = "Пермь",
+                    Slug = "perm",
+                    IsActive = true
+                };
+                _context.Cities.Add(city);
+                await _context.SaveChangesAsync();
+            }
+
+            club = new Club
+            {
+                CityId = city.Id,
+                Name = "Monte Carlo",
+                Address = !string.IsNullOrWhiteSpace(address) ? address.Trim() : "Монастырская улица, 59, Пермь",
+                IsActive = true,
+                City = city
+            };
+            _context.Clubs.Add(club);
+            await _context.SaveChangesAsync();
+        }
+        else if (!string.IsNullOrWhiteSpace(address) && club.Address != address.Trim())
+        {
+            // Обновляем адрес клуба, если из формы передан новый адрес
+            club.Address = address.Trim();
+            await _context.SaveChangesAsync();
+        }
+
+        var utcStartTime = startTime.Kind == DateTimeKind.Unspecified 
+            ? DateTime.SpecifyKind(startTime, DateTimeKind.Utc) 
+            : startTime.ToUniversalTime();
 
         var tournament = new Tournament
         {
-            ClubId = clubId,
+            ClubId = club.Id,
             Title = title.Trim(),
             Format = string.IsNullOrWhiteSpace(format) ? "NL Holdem" : format.Trim(),
             BuyIn = Math.Max(0, buyIn),
             MaxSeats = maxSeats > 0 ? maxSeats : 30,
-            StartTime = startTime.Kind == DateTimeKind.Unspecified 
-                ? DateTime.SpecifyKind(startTime, DateTimeKind.Utc) 
-                : startTime.ToUniversalTime(),
+            StartTime = utcStartTime,
             Description = description?.Trim(),
             Status = TournamentStatus.RegistrationOpen,
             CreatedAt = DateTime.UtcNow,

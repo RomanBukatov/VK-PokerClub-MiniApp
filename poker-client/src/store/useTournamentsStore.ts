@@ -13,6 +13,7 @@ interface TournamentsState {
   isDetailModalOpen: boolean;
   statusFilter: 'all' | 'open' | 'announced';
   actionError: string | null;
+  scheduleError: string | null;
 
   fetchSchedule: (cityId?: number | null, clubId?: number | null) => Promise<void>;
   fetchAdminSchedule: (cityId?: number | null, clubId?: number | null) => Promise<void>;
@@ -21,13 +22,26 @@ interface TournamentsState {
   closeDetail: () => void;
   setStatusFilter: (filter: 'all' | 'open' | 'announced') => void;
   setActionError: (err: string | null) => void;
+  setScheduleError: (err: string | null) => void;
   registerToTournament: (tournamentId: number) => Promise<boolean>;
   unregisterFromTournament: (tournamentId: number) => Promise<boolean>;
 }
 
 const extractErrorMessage = (err: unknown, defaultMessage: string): string => {
   if (axios.isAxiosError(err)) {
-    return (err.response?.data as { message?: string } | undefined)?.message || err.message || defaultMessage;
+    const data = err.response?.data as { message?: string; title?: string; errors?: Record<string, string[] | string> } | undefined;
+    let msg = data?.message || data?.title;
+    if (data?.errors && typeof data.errors === 'object') {
+      const firstKey = Object.keys(data.errors)[0];
+      const firstErr = Array.isArray(data.errors[firstKey]) ? data.errors[firstKey][0] : data.errors[firstKey];
+      if (firstErr) {
+        msg = msg ? `${msg}: ${firstErr}` : String(firstErr);
+      }
+    }
+    if (!msg && typeof err.response?.data === 'string' && !err.response.data.trim().startsWith('<')) {
+      msg = err.response.data;
+    }
+    return msg || err.message || defaultMessage;
   }
   if (err instanceof Error) {
     return err.message;
@@ -44,26 +58,34 @@ export const useTournamentsStore = create<TournamentsState>((set, get) => ({
   isDetailModalOpen: false,
   statusFilter: 'all',
   actionError: null,
+  scheduleError: null,
 
   fetchSchedule: async (cityId, clubId) => {
-    set({ isLoading: true });
+    set({ isLoading: true, scheduleError: null });
     try {
-      const data = await tournamentsApi.getSchedule(cityId ?? undefined, clubId ?? undefined, false);
-      set({ tournaments: data });
+      const effectiveCityId = cityId && cityId > 0 ? cityId : undefined;
+      const effectiveClubId = effectiveCityId ? (clubId && clubId > 0 ? clubId : undefined) : undefined;
+      const data = await tournamentsApi.getSchedule(effectiveCityId, effectiveClubId, false);
+      set({ tournaments: data, scheduleError: null });
     } catch (err) {
       console.error('Ошибка загрузки расписания турниров:', err);
+      set({ scheduleError: extractErrorMessage(err, 'Не удалось загрузить расписание') });
     } finally {
       set({ isLoading: false });
     }
   },
 
   fetchAdminSchedule: async (cityId, clubId) => {
-    set({ isLoading: true });
+    set({ isLoading: true, scheduleError: null });
     try {
-      const data = await tournamentsApi.getSchedule(cityId ?? undefined, clubId ?? undefined, true);
-      set({ tournaments: data });
+      // Если выбран null (Все города) или 0 — передаем undefined, чтобы API вернул турниры всех городов
+      const effectiveCityId = cityId && cityId > 0 ? cityId : undefined;
+      const effectiveClubId = effectiveCityId ? (clubId && clubId > 0 ? clubId : undefined) : undefined;
+      const data = await tournamentsApi.getSchedule(effectiveCityId, effectiveClubId, true);
+      set({ tournaments: data, scheduleError: null });
     } catch (err) {
       console.error('Ошибка загрузки турниров для управления:', err);
+      set({ scheduleError: extractErrorMessage(err, 'Не удалось загрузить турниры для управления') });
     } finally {
       set({ isLoading: false });
     }
@@ -96,6 +118,7 @@ export const useTournamentsStore = create<TournamentsState>((set, get) => ({
   setStatusFilter: (filter) => set({ statusFilter: filter }),
 
   setActionError: (err) => set({ actionError: err }),
+  setScheduleError: (err) => set({ scheduleError: err }),
 
   registerToTournament: async (tournamentId: number) => {
     set({ isActionLoading: true, actionError: null });

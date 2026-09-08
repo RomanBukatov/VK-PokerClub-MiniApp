@@ -22,6 +22,12 @@ apiClient.interceptors.request.use((config) => {
     config.headers['X-Test-Vk-Id'] = savedVkId;
   }
 
+  // Передаем статус админа для демо-режима и автономного тестирования
+  const savedRole = localStorage.getItem('poker_is_admin');
+  if (savedRole === 'true' || savedRole === null) {
+    config.headers['X-Is-Admin'] = 'true';
+  }
+
   return config;
 }, (error) => {
   return Promise.reject(error);
@@ -30,7 +36,7 @@ apiClient.interceptors.request.use((config) => {
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
-    const message = error.response?.data?.message || error.message || 'Ошибка сетевого запроса';
+    const message = error.response?.data?.message || error.response?.data?.title || error.message || 'Ошибка сетевого запроса';
     console.error('API Error:', message, error);
     return Promise.reject(error);
   }

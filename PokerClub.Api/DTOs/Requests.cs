@@ -19,12 +19,14 @@ public record AssignPointsRequest(
 );
 
 public record CreateTournamentRequest(
-    int ClubId,
     string Title,
-    string? Format,
-    decimal BuyIn,
-    int MaxSeats,
-    DateTime StartTime,
+    int? ClubId = null,
+    int? CityId = null,
+    string? Address = null,
+    string? Format = null,
+    decimal BuyIn = 0,
+    int MaxSeats = 30,
+    DateTime StartTime = default,
     string? Description = null,
     int? StartingChips = null,
     int? BlindLevelMinutes = null

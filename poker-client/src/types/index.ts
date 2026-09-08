@@ -89,8 +89,10 @@ export type AppTab = TabType;
 
 export interface CreateTournamentRequest {
   title: string;
-  clubId: number;
-  format: string;
+  clubId?: number;
+  cityId?: number | null;
+  address?: string;
+  format?: string;
   buyIn: number;
   maxSeats: number;
   startTime: string;

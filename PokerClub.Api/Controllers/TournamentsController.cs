@@ -175,6 +175,9 @@ public class TournamentsController : ControllerBase
         if (request.BuyIn < 0)
             return BadRequest(new { Message = "Бай-ин не может быть отрицательным." });
 
+        if (request.StartTime == default || request.StartTime.Year < 2020 || request.StartTime.Year > 2100)
+            return BadRequest(new { Message = "Укажите корректную дату и время начала турнира." });
+
         var (success, tournament, message) = await _tournamentService.CreateTournamentAsync(
             request.ClubId,
             request.Title,
@@ -182,7 +185,9 @@ public class TournamentsController : ControllerBase
             request.BuyIn,
             request.MaxSeats,
             request.StartTime,
-            request.Description
+            request.Description,
+            request.CityId,
+            request.Address
         );
 
         if (!success || tournament == null)

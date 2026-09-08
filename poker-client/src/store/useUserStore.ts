@@ -6,6 +6,7 @@ interface UserState {
   isAuthenticated: boolean;
   isAdmin: boolean;
   selectedCityId: number | null;
+  selectedCity: number | null;
   selectedCityName: string;
   selectedClubId: number | null;
   activeTab: AppTab;
@@ -24,6 +25,7 @@ export const useUserStore = create<UserState>((set) => ({
   isAuthenticated: false,
   isAdmin: false,
   selectedCityId: null,
+  selectedCity: null,
   selectedCityName: 'Все города',
   selectedClubId: null,
   activeTab: 'schedule',
@@ -53,7 +55,7 @@ export const useUserStore = create<UserState>((set) => ({
       return { isAdmin, activeTab: nextTab };
     });
   },
-  setSelectedCity: (cityId, cityName) => set({ selectedCityId: cityId, selectedCityName: cityName, selectedClubId: null }),
+  setSelectedCity: (cityId, cityName) => set({ selectedCityId: cityId, selectedCity: cityId, selectedCityName: cityName, selectedClubId: null }),
   setSelectedClub: (clubId) => set({ selectedClubId: clubId }),
   setActiveTab: (tab) => set({ activeTab: tab }),
   setIsCityModalOpen: (isOpen) => set({ isCityModalOpen: isOpen }),

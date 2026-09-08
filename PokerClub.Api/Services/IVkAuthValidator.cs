@@ -5,5 +5,5 @@ public record VkAuthResult(bool IsValid, string? VkUserId, bool IsAdmin, string?
 public interface IVkAuthValidator
 {
     VkAuthResult Validate(HttpContext httpContext);
-    bool IsAdmin(string vkUserId);
+    bool IsAdmin(string vkUserId, HttpContext? httpContext = null);
 }

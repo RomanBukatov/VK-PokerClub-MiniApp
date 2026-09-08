@@ -7,14 +7,20 @@ import { triggerHaptic } from '../../utils/vkBridge';
 import { TournamentStatus, type Tournament } from '../../types';
 
 export const AdminTournamentsPanel: React.FC = () => {
-  const { tournaments, isLoading, fetchAdminSchedule } = useTournamentsStore();
-  const { selectedCityId, selectedClubId } = useUserStore();
+  const { tournaments, isLoading, scheduleError, fetchAdminSchedule } = useTournamentsStore();
+  const { selectedCityId, selectedCity, selectedClubId } = useUserStore();
 
   const [selectedTournamentForPoints, setSelectedTournamentForPoints] = useState<Tournament | null>(null);
 
+  // Когда выбрано «Все города» (selectedCity === null или selectedCityId === null),
+  // отображаются ВСЕ турниры без фильтрации по городу
+  const activeCityId = selectedCity !== undefined ? selectedCity : selectedCityId;
+
   useEffect(() => {
-    fetchAdminSchedule(selectedCityId, selectedClubId);
-  }, [selectedCityId, selectedClubId, fetchAdminSchedule]);
+    const targetCityId = activeCityId === null ? null : activeCityId;
+    const targetClubId = targetCityId === null ? null : selectedClubId;
+    fetchAdminSchedule(targetCityId, targetClubId);
+  }, [activeCityId, selectedClubId, fetchAdminSchedule]);
 
   const handleOpenAssign = (t: Tournament) => {
     triggerHaptic('medium');
@@ -35,11 +41,28 @@ export const AdminTournamentsPanel: React.FC = () => {
 
   return (
     <div className="px-5 pb-24 animate-fade-in space-y-4">
+      {scheduleError && (
+        <div className="p-4 rounded-2xl bg-red-950/80 border border-red-500/40 text-red-300 text-xs flex items-center justify-between gap-3 shadow-lg animate-fade-in">
+          <div className="flex-1 font-medium">{scheduleError}</div>
+          <button
+            type="button"
+            onClick={() => {
+              const targetCityId = activeCityId === null ? null : activeCityId;
+              const targetClubId = targetCityId === null ? null : selectedClubId;
+              fetchAdminSchedule(targetCityId, targetClubId);
+            }}
+            className="px-3 py-1.5 rounded-xl bg-red-800 hover:bg-red-700 text-white font-bold text-xs shrink-0 transition-all active:scale-95"
+          >
+            Повторить
+          </button>
+        </div>
+      )}
+
       {isLoading ? (
         <div className="py-16 text-center text-xs text-[#8fa89b] animate-pulse">
           Загрузка игр для управления...
         </div>
-      ) : tournaments.length === 0 ? (
+      ) : !scheduleError && tournaments.length === 0 ? (
         <div className="py-16 text-center text-xs text-[#8fa89b] bg-black/40 rounded-3xl p-6 border border-white/5">
           Нет доступных турниров для управления.
         </div>
@@ -94,7 +117,9 @@ export const AdminTournamentsPanel: React.FC = () => {
           onClose={() => setSelectedTournamentForPoints(null)}
           onSuccess={() => {
             setSelectedTournamentForPoints(null);
-            fetchAdminSchedule(selectedCityId, selectedClubId);
+            const targetCityId = activeCityId === null ? null : activeCityId;
+            const targetClubId = targetCityId === null ? null : selectedClubId;
+            fetchAdminSchedule(targetCityId, targetClubId);
           }}
         />
       )}
