@@ -108,3 +108,49 @@ export interface RegisterPlayerPayload {
   lastName?: string;
   avatarUrl?: string;
 }
+
+export interface UserProfile {
+  id: number;
+  vkId: string;
+  firstName?: string;
+  lastName?: string;
+  fullName?: string;
+  nickname?: string;
+  phoneNumber?: string;
+  clubCardId?: string;
+  avatarUrl?: string;
+  totalRating: number;
+  status: 'Newbie' | 'Fish' | 'Reg' | 'Pro' | string;
+  acceptedTermsAt?: string | null;
+  tournamentsPlayed: number;
+  winsCount: number;
+  top3Count: number;
+  top10Count: number;
+  knockoutsCount: number;
+  avgPlace: number;
+  createdAt: string;
+}
+
+export interface UpdateProfilePayload {
+  nickname?: string;
+  fullName?: string;
+  firstName?: string;
+  lastName?: string;
+  phoneNumber?: string;
+  clubCardId?: string;
+  avatarUrl?: string;
+  acceptedTerms?: boolean;
+  acceptedTermsAt?: string;
+}
+
+export interface Achievement {
+  id: string;
+  icon: string;
+  title: string;
+  description: string;
+  current: number;
+  target: number;
+  isUnlocked: boolean;
+  progressPercent: number;
+}
+

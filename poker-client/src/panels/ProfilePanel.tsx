@@ -1,26 +1,126 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
+import { Trophy, Award, Lock, CheckCircle2, Edit3, Calendar, Clock, MapPin, ChevronRight, Zap } from 'lucide-react';
 import { useUserStore } from '../store/useUserStore';
 import { useTournamentsStore } from '../store/useTournamentsStore';
 import { useRatingsStore } from '../store/useRatingsStore';
 import { formatChips, formatCurrency } from '../utils/formatters';
 import { triggerHaptic } from '../utils/vkBridge';
-import { TournamentStatus } from '../types';
+import { TournamentStatus, type Achievement } from '../types';
 
 export const ProfilePanel: React.FC = () => {
-  const { vkUser } = useUserStore();
+  const { vkUser, profile, fetchProfile, setIsProfileModalOpen } = useUserStore();
   const { myTournaments, fetchMyTournaments, openDetail } = useTournamentsStore();
   const { leaderboard, fetchLeaderboard } = useRatingsStore();
 
+  const [tournamentsTab, setTournamentsTab] = useState<'upcoming' | 'history'>('upcoming');
+
   useEffect(() => {
+    fetchProfile();
     fetchMyTournaments();
     fetchLeaderboard();
-  }, [fetchMyTournaments, fetchLeaderboard]);
+  }, [fetchProfile, fetchMyTournaments, fetchLeaderboard]);
 
   const userEntry = vkUser 
     ? leaderboard.find((u) => u.vkId === vkUser.id.toString())
     : null;
 
-  const upcomingTournament = myTournaments.find(
+  const currentRating = profile?.totalRating ?? userEntry?.totalRating ?? 0;
+  const tournamentsPlayed = profile?.tournamentsPlayed ?? myTournaments.length;
+  const winsCount = profile?.winsCount ?? 0;
+  const top3Count = profile?.top3Count ?? 0;
+  const knockoutsCount = profile?.knockoutsCount ?? 0;
+  const avgPlace = profile?.avgPlace && profile.avgPlace > 0 ? profile.avgPlace.toFixed(2) : '-';
+  const winRate = tournamentsPlayed > 0 
+    ? `${((winsCount / tournamentsPlayed) * 100).toFixed(1)}%` 
+    : '0.0%';
+
+  // Определение клубного статуса
+  const getClubStatus = (rating: number) => {
+    if (rating <= 200) return { name: 'Newbie', color: 'from-slate-500 to-slate-700', text: 'text-slate-200', border: 'border-slate-400/30' };
+    if (rating <= 500) return { name: 'Fish', color: 'from-cyan-600 to-teal-700', text: 'text-cyan-200', border: 'border-cyan-400/40' };
+    if (rating <= 1500) return { name: 'Reg', color: 'from-emerald-600 to-amber-600', text: 'text-emerald-200', border: 'border-emerald-400/40' };
+    return { name: 'Pro', color: 'from-[#d8af56] to-[#916b1e]', text: 'text-[#ffd700]', border: 'border-[#c39a44]/50' };
+  };
+
+  const clubStatus = getClubStatus(currentRating);
+
+  // Система достижений (6-8 ачивок)
+  const achievements: Achievement[] = [
+    {
+      id: 'first_win',
+      icon: '🏆',
+      title: 'Первая победа',
+      description: 'Выиграть 1 турнир клуба',
+      current: Math.min(winsCount, 1),
+      target: 1,
+      isUnlocked: winsCount >= 1,
+      progressPercent: Math.min(100, Math.round((winsCount / 1) * 100)),
+    },
+    {
+      id: 'veteran',
+      icon: '🎖️',
+      title: 'Ветеран',
+      description: 'Сыграть 10 турниров',
+      current: Math.min(tournamentsPlayed, 10),
+      target: 10,
+      isUnlocked: tournamentsPlayed >= 10,
+      progressPercent: Math.min(100, Math.round((tournamentsPlayed / 10) * 100)),
+    },
+    {
+      id: 'champion',
+      icon: '👑',
+      title: 'Чемпион',
+      description: 'Одержать 3 победы',
+      current: Math.min(winsCount, 3),
+      target: 3,
+      isUnlocked: winsCount >= 3,
+      progressPercent: Math.min(100, Math.round((winsCount / 3) * 100)),
+    },
+    {
+      id: 'on_fire',
+      icon: '⚡',
+      title: 'В ударе',
+      description: '3 финиша в Топ-3',
+      current: Math.min(top3Count, 3),
+      target: 3,
+      isUnlocked: top3Count >= 3,
+      progressPercent: Math.min(100, Math.round((top3Count / 3) * 100)),
+    },
+    {
+      id: 'grinder',
+      icon: '🎯',
+      title: 'Гриндер',
+      description: 'Сыграть 20 турниров',
+      current: Math.min(tournamentsPlayed, 20),
+      target: 20,
+      isUnlocked: tournamentsPlayed >= 20,
+      progressPercent: Math.min(100, Math.round((tournamentsPlayed / 20) * 100)),
+    },
+    {
+      id: 'shark',
+      icon: '🦈',
+      title: 'Акула стола',
+      description: 'Набрать более 300 очков',
+      current: Math.min(currentRating, 300),
+      target: 300,
+      isUnlocked: currentRating >= 300,
+      progressPercent: Math.min(100, Math.round((currentRating / 300) * 100)),
+    },
+    {
+      id: 'bounty_hunter',
+      icon: '🥊',
+      title: 'Охотник за головами',
+      description: 'Сделать 20 нокаутов',
+      current: Math.min(knockoutsCount, 20),
+      target: 20,
+      isUnlocked: knockoutsCount >= 20,
+      progressPercent: Math.min(100, Math.round((knockoutsCount / 20) * 100)),
+    },
+  ];
+
+  const unlockedCount = achievements.filter((a) => a.isUnlocked).length;
+
+  const upcomingTournaments = myTournaments.filter(
     (t) => t.isUserRegistered && t.status !== TournamentStatus.Finished && t.status !== TournamentStatus.Canceled
   );
 
@@ -28,119 +128,338 @@ export const ProfilePanel: React.FC = () => {
     (t) => t.status === TournamentStatus.Finished
   );
 
-  const getInitials = (first?: string, last?: string) => {
-    const f = first?.[0] || 'И';
-    const l = last?.[0] || 'П';
-    return `${f}${l}`.toUpperCase();
+  const getInitials = (name?: string) => {
+    if (!name) return 'MC';
+    const parts = name.trim().split(' ');
+    if (parts.length >= 2) {
+      return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+    }
+    return name.slice(0, 2).toUpperCase();
   };
 
-  const formatHistoryDate = (dateStr: string) => {
-    try {
-      const date = new Date(dateStr);
-      return date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
-    } catch {
-      return 'Недавно';
-    }
-  };
+  const displayName = profile?.fullName || `${vkUser?.first_name || ''} ${vkUser?.last_name || ''}`.trim() || 'Игрок Monte Carlo';
+  const displayNickname = profile?.nickname || (vkUser ? `Player_${vkUser.id}` : 'Player');
+  const displayPhone = profile?.phoneNumber || 'Телефон не указан';
+  const displayCardId = profile?.clubCardId ? `#${profile.clubCardId}` : null;
 
   return (
-    <div className="px-5 pb-24 animate-fade-in space-y-5">
-      {/* Пользователь: Аватар и имя */}
-      <div className="flex items-center gap-3.5 pt-1">
-        <div className="w-14 h-14 rounded-full bg-[#606a66] flex items-center justify-center font-extrabold text-base text-white overflow-hidden shadow-lg shrink-0">
-          {vkUser?.photo_200 ? (
-            <img src={vkUser.photo_200} alt="" className="w-full h-full object-cover" />
-          ) : (
-            getInitials(vkUser?.first_name, vkUser?.last_name)
-          )}
-        </div>
+    <div className="px-5 pb-28 animate-fade-in space-y-5 text-white">
+      {/* 1. ШАПКА ИГРОКА */}
+      <div className="pt-2 p-5 rounded-3xl bg-gradient-to-b from-[#0e2a20] to-[#081c15] border border-white/10 shadow-2xl relative overflow-hidden">
+        {/* Фоновые декоративные элементы */}
+        <div className="absolute top-0 right-0 w-36 h-36 bg-[#c39a44]/10 rounded-full blur-3xl pointer-events-none" />
 
-        <div>
-          <h2 className="text-lg font-extrabold text-white">
-            {vkUser?.first_name} {vkUser?.last_name}
-          </h2>
-          <p className="text-xs text-[#8fa89b] mt-0.5">
-            {myTournaments.length} {myTournaments.length === 1 ? 'турнир' : myTournaments.length < 5 ? 'турнира' : 'турниров'}
-          </p>
-        </div>
-      </div>
+        <div className="flex items-start justify-between relative z-10 mb-3.5">
+          <div className="flex items-center gap-3.5">
+            {/* Аватар с инициалами / фото */}
+            <div className="relative">
+              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#2a4d3d] to-[#122e23] border-2 border-[#c39a44]/50 flex items-center justify-center font-black text-xl text-[#d8af56] overflow-hidden shadow-lg shadow-black/60 shrink-0">
+                {profile?.avatarUrl || vkUser?.photo_200 ? (
+                  <img src={profile?.avatarUrl || vkUser?.photo_200} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  getInitials(displayName)
+                )}
+              </div>
+              {/* Статус бейдж поверх аватара */}
+              <div className={`absolute -bottom-1.5 -right-1.5 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-gradient-to-r ${clubStatus.color} text-white shadow-md border border-white/20`}>
+                {clubStatus.name}
+              </div>
+            </div>
 
-      {/* Карточка текущего сезона */}
-      <div className="p-5 rounded-3xl bg-black/50 border border-white/10 shadow-xl flex items-center justify-between">
-        <div>
-          <div className="text-[10px] uppercase font-bold text-[#8fa89b] tracking-wider mb-1">
-            ТЕКУЩИЙ СЕЗОН
+            {/* Никнейм, ФИО и телефон */}
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-xl font-black text-white tracking-tight">
+                  {displayNickname}
+                </h2>
+                {displayCardId && (
+                  <span className="px-2 py-0.5 rounded-lg bg-black/40 border border-white/10 text-[10px] font-bold text-[#c39a44]">
+                    {displayCardId}
+                  </span>
+                )}
+              </div>
+              <p className="text-xs font-semibold text-[#d1e0d7] mt-0.5">
+                {displayName}
+              </p>
+              <p className="text-[11px] text-[#8fa89b]">
+                {displayPhone}
+              </p>
+            </div>
           </div>
-          <div className="text-xl font-extrabold text-white">
-            {userEntry ? `# ${userEntry.rank}` : 'Не в рейтинге'}
-          </div>
-        </div>
 
-        <div className="text-2xl font-black text-white">
-          {userEntry ? `${userEntry.totalRating.toLocaleString('ru-RU')} очков` : '0 очков'}
-        </div>
-      </div>
-
-      {/* Ближайший турнир */}
-      {upcomingTournament && (
-        <div>
-          <h3 className="text-lg font-extrabold text-white mb-3">
-            Ближайший турнир
-          </h3>
-
-          <div
+          {/* Кнопка редактирования профиля */}
+          <button
+            type="button"
             onClick={() => {
               triggerHaptic('light');
-              openDetail(upcomingTournament.id);
+              setIsProfileModalOpen(true);
             }}
-            className="p-5 rounded-3xl bg-black/50 border border-white/10 shadow-xl space-y-3 cursor-pointer active:scale-[0.99] transition-all"
+            className="p-2.5 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 text-[#c39a44] transition-all active:scale-95 shadow-md"
+            title="Редактировать анкету"
           >
-            <div>
-              <div className="text-[10px] uppercase font-bold text-[#8fa89b]">ТУРНИР</div>
-              <div className="text-base font-bold text-white mt-0.5">{upcomingTournament.title}</div>
-            </div>
+            <Edit3 className="w-4 h-4" />
+          </button>
+        </div>
 
-            <div className="flex flex-wrap gap-2">
-              <span className="px-3 py-0.5 rounded-full text-xs font-semibold text-white bg-black/70 border border-[#1a3b2b]">
-                {upcomingTournament.format || 'NL Holdem'}
-              </span>
-              <span className="px-3 py-0.5 rounded-full text-xs font-semibold text-white bg-black/70 border border-[#1a3b2b]">
-                стартовый стек {formatChips(upcomingTournament.startingChips || 10000)}
-              </span>
-              <span className="px-3 py-0.5 rounded-full text-xs font-semibold text-white bg-black/70 border border-[#1a3b2b]">
-                {formatCurrency(upcomingTournament.buyIn)}
-              </span>
+        {/* Рейтинг и клубный статус полоса */}
+        <div className="pt-3 border-t border-white/10 flex items-center justify-between">
+          <div>
+            <div className="text-[10px] uppercase font-bold text-[#8fa89b] tracking-wider">
+              КЛУБНЫЙ РЕЙТИНГ (RPS)
             </div>
-
-            <div>
-              <div className="text-[10px] uppercase font-bold text-[#8fa89b]">АДРЕС</div>
-              <div className="text-xs font-semibold text-white mt-0.5">
-                {upcomingTournament.clubAddress || 'Монастырская улица, 59, Пермь'}
-              </div>
+            <div className="text-2xl font-black text-[#c39a44] flex items-center gap-1.5 mt-0.5">
+              <span>{currentRating.toLocaleString('ru-RU')}</span>
+              <span className="text-xs font-bold text-[#8fa89b] uppercase">очков</span>
             </div>
+          </div>
 
-            <div>
-              <div className="text-[10px] uppercase font-bold text-[#8fa89b]">ВРЕМЯ</div>
-              <div className="text-sm font-bold text-white mt-0.5">
-                19:00
-              </div>
+          <div className="text-right">
+            <div className="text-[10px] uppercase font-bold text-[#8fa89b] tracking-wider">
+              СЕЗОННЫЙ РАНГ
+            </div>
+            <div className="text-lg font-extrabold text-white mt-0.5">
+              {userEntry ? `#${userEntry.rank} в клубе` : 'Участник'}
             </div>
           </div>
         </div>
-      )}
+      </div>
 
-      {/* История турниров */}
+      {/* 2. МЕТРИКИ ИГРОКА (2x2 GRID) */}
       <div>
-        <h3 className="text-lg font-extrabold text-white mb-3">
-          История
+        <h3 className="text-sm font-extrabold uppercase tracking-wider text-[#8fa89b] mb-3 flex items-center gap-2">
+          <Award className="w-4 h-4 text-[#c39a44]" />
+          Метрики игрока
         </h3>
 
-        {finishedTournaments.length === 0 ? (
-          <div className="p-5 rounded-3xl bg-black/40 border border-white/5 text-center text-xs text-[#8fa89b]">
-            Сыграйте первый турнир, чтобы набрать очки и войти в историю клуба!
+        <div className="grid grid-cols-2 gap-3">
+          {/* AVG Позиция */}
+          <div className="p-4 rounded-2xl bg-black/40 border border-white/10 shadow-lg">
+            <div className="text-[10px] uppercase font-bold text-[#8fa89b] tracking-wider">
+              AVG Позиция
+            </div>
+            <div className="text-2xl font-black text-white mt-1">
+              {avgPlace}
+            </div>
+            <div className="text-[10px] text-[#606a66] mt-0.5">
+              Среднее место за столом
+            </div>
+          </div>
+
+          {/* ТОП-3 */}
+          <div className="p-4 rounded-2xl bg-black/40 border border-white/10 shadow-lg">
+            <div className="text-[10px] uppercase font-bold text-[#8fa89b] tracking-wider">
+              ТОП-3 Финиши
+            </div>
+            <div className="text-2xl font-black text-[#d8af56] mt-1">
+              {top3Count}
+            </div>
+            <div className="text-[10px] text-[#606a66] mt-0.5">
+              Призовые места
+            </div>
+          </div>
+
+          {/* Серия призов / Win Rate */}
+          <div className="p-4 rounded-2xl bg-black/40 border border-white/10 shadow-lg">
+            <div className="text-[10px] uppercase font-bold text-[#8fa89b] tracking-wider">
+              Win Rate %
+            </div>
+            <div className="text-2xl font-black text-emerald-400 mt-1">
+              {winRate}
+            </div>
+            <div className="text-[10px] text-[#606a66] mt-0.5">
+              Процент побед
+            </div>
+          </div>
+
+          {/* Победы */}
+          <div className="p-4 rounded-2xl bg-black/40 border border-white/10 shadow-lg">
+            <div className="text-[10px] uppercase font-bold text-[#8fa89b] tracking-wider">
+              Победы (1-е место)
+            </div>
+            <div className="text-2xl font-black text-white mt-1">
+              {winsCount}
+            </div>
+            <div className="text-[10px] text-[#606a66] mt-0.5">
+              {tournamentsPlayed} {tournamentsPlayed === 1 ? 'турнир сыгран' : tournamentsPlayed < 5 ? 'турнира сыграно' : 'турниров сыграно'}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 3. БЛОК «ДОСТИЖЕНИЯ» (ACHIEVEMENTS) */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-extrabold uppercase tracking-wider text-[#8fa89b] flex items-center gap-2">
+            <Trophy className="w-4 h-4 text-[#c39a44]" />
+            Достижения
+          </h3>
+          <span className="text-xs font-bold text-[#c39a44] px-2.5 py-0.5 rounded-full bg-[#c39a44]/15 border border-[#c39a44]/30">
+            {unlockedCount} из {achievements.length}
+          </span>
+        </div>
+
+        <div className="space-y-2.5">
+          {achievements.map((ach) => (
+            <div
+              key={ach.id}
+              className={`p-3.5 rounded-2xl border transition-all flex items-center gap-3.5 shadow-md ${
+                ach.isUnlocked
+                  ? 'bg-gradient-to-r from-black/60 to-[#102d21]/60 border-[#c39a44]/40 shadow-[#c39a44]/10'
+                  : 'bg-black/30 border-white/5 opacity-70'
+              }`}
+            >
+              {/* Значок ачивки */}
+              <div
+                className={`w-11 h-11 rounded-2xl flex items-center justify-center text-xl shrink-0 shadow-inner ${
+                  ach.isUnlocked
+                    ? 'bg-gradient-to-br from-[#d8af56]/30 to-[#b38833]/20 border border-[#c39a44]/50'
+                    : 'bg-white/5 border border-white/10'
+                }`}
+              >
+                {ach.icon}
+              </div>
+
+              {/* Название, описание и прогресс-бар */}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between">
+                  <h4 className={`text-xs font-black truncate ${ach.isUnlocked ? 'text-white' : 'text-[#8fa89b]'}`}>
+                    {ach.title}
+                  </h4>
+                  <div className="flex items-center gap-1 shrink-0 ml-2">
+                    {ach.isUnlocked ? (
+                      <span className="text-[10px] font-extrabold text-[#c39a44] flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3 text-[#c39a44]" />
+                        Открыто
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-bold text-white/40 flex items-center gap-1">
+                        <Lock className="w-3 h-3" />
+                        {ach.current}/{ach.target}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <p className="text-[11px] text-[#606a66] truncate mt-0.5">
+                  {ach.description}
+                </p>
+
+                {/* Прогресс-бар */}
+                <div className="w-full bg-white/5 rounded-full h-1.5 mt-2 overflow-hidden">
+                  <div
+                    className={`h-full transition-all duration-500 rounded-full ${
+                      ach.isUnlocked
+                        ? 'bg-gradient-to-r from-[#d8af56] to-[#b38833]'
+                        : 'bg-white/20'
+                    }`}
+                    style={{ width: `${ach.progressPercent}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* 4. БЛОК «МОИ ТУРНИРЫ» */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-extrabold uppercase tracking-wider text-[#8fa89b] flex items-center gap-2">
+            <Calendar className="w-4 h-4 text-[#c39a44]" />
+            Мои турниры
+          </h3>
+
+          <div className="flex items-center gap-1 bg-black/40 p-1 rounded-xl border border-white/10">
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('light');
+                setTournamentsTab('upcoming');
+              }}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                tournamentsTab === 'upcoming'
+                  ? 'bg-[#c39a44] text-black shadow-md'
+                  : 'text-[#8fa89b] hover:text-white'
+              }`}
+            >
+              Активные ({upcomingTournaments.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('light');
+                setTournamentsTab('history');
+              }}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                tournamentsTab === 'history'
+                  ? 'bg-[#c39a44] text-black shadow-md'
+                  : 'text-[#8fa89b] hover:text-white'
+              }`}
+            >
+              История ({finishedTournaments.length})
+            </button>
+          </div>
+        </div>
+
+        {tournamentsTab === 'upcoming' ? (
+          upcomingTournaments.length === 0 ? (
+            <div className="p-6 rounded-3xl bg-black/40 border border-white/5 text-center text-xs text-[#8fa89b]">
+              У вас пока нет активных записей на турниры. Перейдите во вкладку «Расписание», чтобы занять место за столом!
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {upcomingTournaments.map((t) => (
+                <div
+                  key={t.id}
+                  onClick={() => {
+                    triggerHaptic('light');
+                    openDetail(t.id);
+                  }}
+                  className="p-4 rounded-3xl bg-black/50 border border-white/10 hover:border-[#c39a44]/40 shadow-xl space-y-2.5 cursor-pointer active:scale-[0.99] transition-all"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-[#c39a44] uppercase tracking-wider flex items-center gap-1">
+                      <Zap className="w-3 h-3" />
+                      Вы записаны
+                    </span>
+                    <span className="text-xs font-semibold text-[#8fa89b] flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5" />
+                      <span>
+                        {new Date(t.startTime).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })} · {new Date(t.startTime).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </span>
+                  </div>
+
+                  <h4 className="text-base font-extrabold text-white">
+                    {t.title}
+                  </h4>
+
+                  <div className="flex flex-wrap gap-2 text-xs">
+                    <span className="px-2.5 py-0.5 rounded-lg bg-black/60 border border-white/10 font-semibold text-[#d1e0d7]">
+                      {t.format || 'NL Holdem'}
+                    </span>
+                    <span className="px-2.5 py-0.5 rounded-lg bg-black/60 border border-white/10 font-semibold text-[#d1e0d7]">
+                      {formatChips(t.startingChips || 10000)} фишек
+                    </span>
+                    <span className="px-2.5 py-0.5 rounded-lg bg-black/60 border border-white/10 font-semibold text-[#c39a44]">
+                      {formatCurrency(t.buyIn)}
+                    </span>
+                  </div>
+
+                  <div className="text-[11px] text-[#8fa89b] flex items-center gap-1.5 pt-1 border-t border-white/5">
+                    <MapPin className="w-3 h-3 text-[#c39a44] shrink-0" />
+                    <span className="truncate">{t.clubAddress || 'Монастырская улица, 59, Пермь'}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )
+        ) : finishedTournaments.length === 0 ? (
+          <div className="p-6 rounded-3xl bg-black/40 border border-white/5 text-center text-xs text-[#8fa89b]">
+            История завершенных турниров пуста. Сыграйте первый турнир, чтобы войти в историю Monte Carlo!
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-2.5">
             {finishedTournaments.map((t) => (
               <div
                 key={t.id}
@@ -148,16 +467,21 @@ export const ProfilePanel: React.FC = () => {
                   triggerHaptic('light');
                   openDetail(t.id);
                 }}
-                className="p-4 px-5 rounded-3xl bg-black/40 border border-white/10 flex items-center justify-between shadow-md cursor-pointer hover:border-white/20 transition-all"
+                className="p-3.5 px-4 rounded-2xl bg-black/40 border border-white/10 flex items-center justify-between shadow-md cursor-pointer hover:border-white/20 transition-all"
               >
                 <div>
                   <div className="text-[10px] text-[#8fa89b] mb-0.5">
-                    {formatHistoryDate(t.startTime)}
+                    {new Date(t.startTime).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}
                   </div>
-                  <div className="text-sm font-bold text-white">{t.title}</div>
+                  <div className="text-xs font-bold text-white truncate max-w-[200px]">
+                    {t.title}
+                  </div>
                 </div>
-                <div className="text-sm font-extrabold text-[#c39a44]">
-                  Завершен
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-extrabold text-[#c39a44]">
+                    Завершен
+                  </span>
+                  <ChevronRight className="w-4 h-4 text-white/40" />
                 </div>
               </div>
             ))}

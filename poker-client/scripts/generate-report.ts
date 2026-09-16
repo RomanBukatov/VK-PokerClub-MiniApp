@@ -56,7 +56,7 @@ function parseCSV(text: string): string[][] {
 }
 
 async function run() {
-  const report: Record<string, any> = {};
+  const report: Record<string, unknown> = {};
 
   for (const sheet of SHEETS) {
     const url = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheet)}`;

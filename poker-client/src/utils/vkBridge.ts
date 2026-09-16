@@ -22,7 +22,62 @@ async function sendWithTimeout<T>(
   ]);
 }
 
+interface TelegramUser {
+  id: number;
+  first_name: string;
+  last_name?: string;
+  username?: string;
+  photo_url?: string;
+}
+
+interface TelegramWebApp {
+  ready?: () => void;
+  expand?: () => void;
+  initData?: string;
+  initDataUnsafe?: {
+    user?: TelegramUser;
+  };
+  HapticFeedback?: {
+    impactOccurred: (style: 'light' | 'medium' | 'heavy' | 'rigid' | 'soft') => void;
+  };
+}
+
+declare global {
+  interface Window {
+    Telegram?: {
+      WebApp?: TelegramWebApp;
+    };
+  }
+}
+
 export async function initVkBridge(): Promise<VkUser> {
+  // 1. Проверяем запуск в Telegram Mini App
+  const tgWebApp = typeof window !== 'undefined' ? window.Telegram?.WebApp : undefined;
+  if (tgWebApp && (tgWebApp.initData || tgWebApp.initDataUnsafe?.user)) {
+    try {
+      tgWebApp.ready?.();
+      tgWebApp.expand?.();
+    } catch {
+      // Игнорируем в веб-версии
+    }
+
+    const tgUser = tgWebApp.initDataUnsafe?.user;
+    if (tgUser?.id) {
+      console.info('Запуск в Telegram Mini App. Пользователь:', tgUser.id, tgUser.first_name);
+      localStorage.setItem('vk_test_user_id', tgUser.id.toString());
+      localStorage.setItem('tg_user_id', tgUser.id.toString());
+
+      return {
+        id: tgUser.id,
+        first_name: tgUser.first_name || 'Игрок',
+        last_name: tgUser.last_name || '',
+        photo_200: tgUser.photo_url,
+        photo_100: tgUser.photo_url,
+        isAdmin: false,
+      };
+    }
+  }
+
   const isVkEnvironment = typeof window !== 'undefined' && 
     (window.location.search.includes('vk_user_id') || window.location.search.includes('vk_app_id'));
 
@@ -70,6 +125,11 @@ export async function initVkBridge(): Promise<VkUser> {
 
 export function triggerHaptic(style: 'light' | 'medium' | 'heavy' = 'medium') {
   try {
+    const tgWebApp = typeof window !== 'undefined' ? window.Telegram?.WebApp : undefined;
+    if (tgWebApp?.HapticFeedback) {
+      tgWebApp.HapticFeedback.impactOccurred(style);
+      return;
+    }
     vkBridge.send('VKWebAppTapticImpactOccurred', { style });
   } catch {
     // Ignore in browser

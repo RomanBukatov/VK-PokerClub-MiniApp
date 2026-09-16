@@ -172,7 +172,7 @@ async function main() {
     allSheets.forEach((s, idx) => console.log(`  ${idx + 1}. "${s.name}" (gid: ${s.gid})`));
   }
 
-  const results: Record<string, any> = {};
+  const results: Record<string, unknown> = {};
 
   for (const sheet of TARGET_SHEETS) {
     const res = await inspectSheet(sheet);

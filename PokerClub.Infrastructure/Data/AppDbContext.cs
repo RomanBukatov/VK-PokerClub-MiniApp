@@ -62,6 +62,15 @@ public class AppDbContext : DbContext
             entity.Property(e => e.FirstName).HasMaxLength(100);
             entity.Property(e => e.LastName).HasMaxLength(100);
             entity.Property(e => e.AvatarUrl).HasMaxLength(500);
+            entity.Property(e => e.Nickname).HasMaxLength(100);
+            entity.Property(e => e.PhoneNumber).HasMaxLength(50);
+            entity.Property(e => e.ClubCardId).HasMaxLength(50);
+            entity.Property(e => e.AvgPlace).HasDefaultValue(0.0);
+            entity.Property(e => e.TournamentsPlayed).HasDefaultValue(0);
+            entity.Property(e => e.WinsCount).HasDefaultValue(0);
+            entity.Property(e => e.Top3Count).HasDefaultValue(0);
+            entity.Property(e => e.Top10Count).HasDefaultValue(0);
+            entity.Property(e => e.KnockoutsCount).HasDefaultValue(0);
         });
 
         // --- Таблица Registrations ---

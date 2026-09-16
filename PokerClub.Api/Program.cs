@@ -22,6 +22,7 @@ builder.Services.AddScoped<IRatingService, RatingService>();
 builder.Services.AddScoped<ICityService, CityService>();
 builder.Services.AddScoped<IClubService, ClubService>();
 builder.Services.AddScoped<IVkAuthValidator, VkAuthValidator>();
+builder.Services.AddHttpClient<IGoogleSheetsSyncService, GoogleSheetsSyncService>();
 
 // Настройка CORS политики для локальной разработки и доменов ВКонтакте
 builder.Services.AddCors(options =>

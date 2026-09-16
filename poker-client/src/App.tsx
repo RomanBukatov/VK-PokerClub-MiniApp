@@ -9,6 +9,8 @@ import { SchedulePanel } from './panels/SchedulePanel';
 import { LeaderboardPanel } from './panels/LeaderboardPanel';
 import { ProfilePanel } from './panels/ProfilePanel';
 import { TournamentDetailModal } from './panels/TournamentDetailModal';
+import { LegalModal } from './components/LegalModal';
+import { WelcomeProfileModal } from './components/WelcomeProfileModal';
 import { AdminTournamentsPanel } from './panels/admin/AdminTournamentsPanel';
 import { AdminCreateTournamentPanel } from './panels/admin/AdminCreateTournamentPanel';
 import { CURRENT_BRANDING } from './config/branding';
@@ -65,6 +67,8 @@ export function App() {
           {/* Модальные окна */}
           <TournamentDetailModal />
           <CitySelectModal />
+          <LegalModal />
+          <WelcomeProfileModal />
         </>
       )}
     </div>

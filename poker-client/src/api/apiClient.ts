@@ -18,6 +18,20 @@ apiClient.interceptors.request.use((config) => {
     config.headers['X-VK-Sign'] = searchParams;
   }
 
+  // 2. Проверяем Telegram Mini App
+  const tgWebApp = typeof window !== 'undefined' ? window.Telegram?.WebApp : undefined;
+  if (tgWebApp?.initData) {
+    config.headers['Authorization'] = `tma ${tgWebApp.initData}`;
+    if (tgWebApp.initDataUnsafe?.user?.id) {
+      config.headers['X-Telegram-Id'] = tgWebApp.initDataUnsafe.user.id.toString();
+      config.headers['X-Telegram-User'] = JSON.stringify(tgWebApp.initDataUnsafe.user);
+    }
+  }
+  const savedTgId = typeof window !== 'undefined' ? localStorage.getItem('tg_user_id') : null;
+  if (savedTgId && !config.headers['X-Telegram-Id']) {
+    config.headers['X-Telegram-Id'] = savedTgId;
+  }
+
   // Всегда передаем тестовый VK ID при автономном/демо запуске,
   // чтобы даже при отсутствии реальной подписи VK или при смене роли эндпоинты с [VkAuthorize] работали корректно.
   const savedVkId = (typeof window !== 'undefined' ? localStorage.getItem('vk_test_user_id') : null) || '123456789';

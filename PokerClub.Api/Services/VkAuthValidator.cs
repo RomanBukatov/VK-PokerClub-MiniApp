@@ -50,6 +50,57 @@ public class VkAuthValidator : IVkAuthValidator
 
     public VkAuthResult Validate(HttpContext httpContext)
     {
+        // 1. Проверяем авторизацию через Telegram Mini App
+        if (httpContext.Request.Headers.TryGetValue("X-Telegram-Id", out var tgIdHeader) && !string.IsNullOrWhiteSpace(tgIdHeader))
+        {
+            var tgId = tgIdHeader.ToString().Trim();
+            var tgIsAdmin = IsAdmin(tgId, httpContext);
+            _logger.LogInformation("Авторизация Telegram Mini App. TgId: {TgId}, IsAdmin: {IsAdmin}", tgId, tgIsAdmin);
+            return new VkAuthResult(true, tgId, tgIsAdmin, null);
+        }
+
+        if (httpContext.Request.Headers.TryGetValue("X-Telegram-User", out var tgUserHeader) && !string.IsNullOrWhiteSpace(tgUserHeader))
+        {
+            var userStr = tgUserHeader.ToString().Trim();
+            string tgId = userStr;
+            if (userStr.StartsWith("{") && userStr.Contains("\"id\":"))
+            {
+                try
+                {
+                    using var doc = System.Text.Json.JsonDocument.Parse(userStr);
+                    if (doc.RootElement.TryGetProperty("id", out var idProp))
+                    {
+                        tgId = idProp.ToString();
+                    }
+                }
+                catch { }
+            }
+            var tgIsAdmin = IsAdmin(tgId, httpContext);
+            _logger.LogInformation("Авторизация Telegram Mini App. TgUser: {TgId}, IsAdmin: {IsAdmin}", tgId, tgIsAdmin);
+            return new VkAuthResult(true, tgId, tgIsAdmin, null);
+        }
+
+        if (httpContext.Request.Headers.TryGetValue("Authorization", out var authHeader) &&
+            authHeader.ToString().StartsWith("tma ", StringComparison.OrdinalIgnoreCase))
+        {
+            var rawTma = authHeader.ToString()[4..].Trim();
+            var tmaParams = ParseQueryString(rawTma);
+            if (tmaParams.TryGetValue("user", out var userJson))
+            {
+                try
+                {
+                    using var doc = System.Text.Json.JsonDocument.Parse(userJson);
+                    if (doc.RootElement.TryGetProperty("id", out var idProp))
+                    {
+                        var tgId = idProp.ToString();
+                        var tgIsAdmin = IsAdmin(tgId, httpContext);
+                        return new VkAuthResult(true, tgId, tgIsAdmin, null);
+                    }
+                }
+                catch { }
+            }
+        }
+
         var rawParams = ExtractRawLaunchParams(httpContext);
 
         if (string.IsNullOrWhiteSpace(rawParams))

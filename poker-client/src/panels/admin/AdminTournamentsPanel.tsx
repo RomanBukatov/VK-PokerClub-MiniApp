@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react';
 import { useTournamentsStore } from '../../store/useTournamentsStore';
 import { useUserStore } from '../../store/useUserStore';
+import { useRatingsStore } from '../../store/useRatingsStore';
+import { ratingsApi } from '../../api/ratingsApi';
 import { AdminAssignPointsModal } from './AdminAssignPointsModal';
 import { triggerHaptic } from '../../utils/vkBridge';
 import { TournamentStatus, type Tournament } from '../../types';
@@ -11,6 +13,8 @@ export const AdminTournamentsPanel: React.FC = () => {
   const { selectedCityId, selectedCity, selectedClubId } = useUserStore();
 
   const [selectedTournamentForPoints, setSelectedTournamentForPoints] = useState<Tournament | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncNotification, setSyncNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   // Когда выбрано «Все города» (selectedCity === null или selectedCityId === null),
   // отображаются ВСЕ турниры без фильтрации по городу
@@ -21,6 +25,38 @@ export const AdminTournamentsPanel: React.FC = () => {
     const targetClubId = targetCityId === null ? null : selectedClubId;
     fetchAdminSchedule(targetCityId, targetClubId);
   }, [activeCityId, selectedClubId, fetchAdminSchedule]);
+
+  const handleSyncSheets = async () => {
+    triggerHaptic('medium');
+    setIsSyncing(true);
+    setSyncNotification(null);
+
+    try {
+      const res = await ratingsApi.syncSheets();
+      triggerHaptic('light');
+      setSyncNotification({
+        type: 'success',
+        message: `Синхронизация Google Sheets завершена: обработано ${res.totalProcessed}, обновлено ${res.updatedCount}, создано ${res.createdCount}.`,
+      });
+
+      // Обновляем списки и лидерборд
+      const targetCityId = activeCityId === null ? null : activeCityId;
+      const targetClubId = targetCityId === null ? null : selectedClubId;
+      fetchAdminSchedule(targetCityId, targetClubId);
+      useRatingsStore.getState().fetchLeaderboard();
+    } catch (err: unknown) {
+      triggerHaptic('heavy');
+      const errorMsg = err && typeof err === 'object' && 'response' in err
+        ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
+        : 'Ошибка синхронизации с Google Sheets.';
+      setSyncNotification({
+        type: 'error',
+        message: errorMsg || 'Ошибка синхронизации с Google Sheets.',
+      });
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   const handleOpenAssign = (t: Tournament) => {
     triggerHaptic('medium');
@@ -41,6 +77,37 @@ export const AdminTournamentsPanel: React.FC = () => {
 
   return (
     <div className="px-5 pb-24 animate-fade-in space-y-4">
+      {/* Кнопка синхронизации Google Sheets */}
+      <div className="pt-1">
+        <button
+          type="button"
+          disabled={isSyncing}
+          onClick={handleSyncSheets}
+          className="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-[#173e2f] to-[#0c241b] hover:from-[#1e4d3b] hover:to-[#113125] border border-[#c39a44]/30 text-white font-extrabold text-xs flex items-center justify-center gap-2.5 shadow-lg active:scale-[0.99] transition-all disabled:opacity-60"
+        >
+          <RefreshCw className={`w-4 h-4 text-[#c39a44] ${isSyncing ? 'animate-spin' : ''}`} />
+          <span>{isSyncing ? 'Синхронизация с таблицей "МК РЕЙТИНГ"...' : 'Синхронизировать Google Sheets'}</span>
+        </button>
+      </div>
+
+      {/* Уведомление о результатах синхронизации */}
+      {syncNotification && (
+        <div
+          className={`p-4 rounded-2xl border text-xs flex items-start gap-2.5 animate-fade-in shadow-lg ${
+            syncNotification.type === 'success'
+              ? 'bg-emerald-950/80 border-emerald-500/40 text-emerald-200'
+              : 'bg-red-950/80 border-red-500/40 text-red-200'
+          }`}
+        >
+          {syncNotification.type === 'success' ? (
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+          ) : (
+            <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+          )}
+          <span className="flex-1 leading-relaxed">{syncNotification.message}</span>
+        </div>
+      )}
+
       {scheduleError && (
         <div className="p-4 rounded-2xl bg-red-950/80 border border-red-500/40 text-red-300 text-xs flex items-center justify-between gap-3 shadow-lg animate-fade-in">
           <div className="flex-1 font-medium">{scheduleError}</div>

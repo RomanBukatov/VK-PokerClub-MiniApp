@@ -65,17 +65,30 @@ public static class DbInitializer
         };
 
         var users = new List<User>();
+        int userIndex = 0;
         foreach (var u in usersData)
         {
+            var isStanislav = u.VkId == "123456789";
             var user = new User
             {
                 VkId = u.VkId,
                 FirstName = u.FirstName,
                 LastName = u.LastName,
                 TotalRating = u.TotalRating,
+                Nickname = isStanislav ? "MonteCarloBoss" : $"Player_{u.VkId}",
+                PhoneNumber = isStanislav ? "+7 (999) 123-45-67" : null,
+                ClubCardId = isStanislav ? "777" : (100 + userIndex).ToString(),
+                AcceptedTermsAt = DateTime.UtcNow.AddDays(-30),
+                TournamentsPlayed = isStanislav ? 18 : Math.Max(1, 25 - userIndex),
+                WinsCount = isStanislav ? 4 : (userIndex < 3 ? 2 : (userIndex < 8 ? 1 : 0)),
+                Top3Count = isStanislav ? 7 : (userIndex < 5 ? 4 : (userIndex < 12 ? 2 : 1)),
+                Top10Count = isStanislav ? 14 : (userIndex < 10 ? 8 : 3),
+                KnockoutsCount = isStanislav ? 32 : Math.Max(0, 40 - userIndex * 2),
+                AvgPlace = isStanislav ? 4.20 : Math.Round(3.50 + userIndex * 0.35, 2),
                 CreatedAt = DateTime.UtcNow.AddDays(-30)
             };
             users.Add(user);
+            userIndex++;
         }
         await context.Users.AddRangeAsync(users);
         await context.SaveChangesAsync();

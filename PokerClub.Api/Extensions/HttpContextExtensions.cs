@@ -12,6 +12,30 @@ public static class HttpContextExtensions
             return vkId;
         }
 
+        if (context.Request.Headers.TryGetValue("X-Telegram-Id", out var tgId) && !string.IsNullOrWhiteSpace(tgId))
+        {
+            return tgId.ToString().Trim();
+        }
+
+        if (context.Request.Headers.TryGetValue("X-Telegram-User", out var tgUser) && !string.IsNullOrWhiteSpace(tgUser))
+        {
+            var userStr = tgUser.ToString().Trim();
+            // Если передан JSON {"id":123,...}
+            if (userStr.StartsWith("{") && userStr.Contains("\"id\":"))
+            {
+                try
+                {
+                    using var doc = System.Text.Json.JsonDocument.Parse(userStr);
+                    if (doc.RootElement.TryGetProperty("id", out var idProp))
+                    {
+                        return idProp.ToString();
+                    }
+                }
+                catch { }
+            }
+            return userStr;
+        }
+
         if (context.Request.Headers.TryGetValue("X-Test-Vk-Id", out var testId) && !string.IsNullOrWhiteSpace(testId))
         {
             return testId.ToString();

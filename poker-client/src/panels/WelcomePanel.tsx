@@ -14,6 +14,10 @@ export const WelcomePanel: React.FC = () => {
     }
   };
 
+  const isTg = typeof window !== 'undefined' && Boolean(window.Telegram?.WebApp?.initData || window.Telegram?.WebApp?.initDataUnsafe?.user);
+  const isVk = typeof window !== 'undefined' && (window.location.search.includes('vk_user_id') || window.location.search.includes('vk_app_id'));
+  const buttonText = isTg ? 'Войти через Telegram' : isVk ? 'Продолжить через VK' : 'Войти в клуб';
+
   return (
     <div className="min-h-screen bg-[#01201a] relative flex flex-col justify-between p-6 overflow-hidden select-none">
       {/* 3D золотая фишка в левой верхней части */}
@@ -51,7 +55,7 @@ export const WelcomePanel: React.FC = () => {
           onClick={handleLogin}
           className="w-full py-4 px-6 rounded-full bg-[#c39a44] text-white font-bold text-base shadow-xl shadow-black/60 hover:brightness-105 active:scale-[0.98] transition-all"
         >
-          Продолжить через VK
+          {buttonText}
         </button>
       </div>
     </div>

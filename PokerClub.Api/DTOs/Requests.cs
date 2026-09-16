@@ -31,3 +31,20 @@ public record CreateTournamentRequest(
     int? StartingChips = null,
     int? BlindLevelMinutes = null
 );
+
+public record UpdateProfileRequest(
+    string? Nickname = null,
+    string? FullName = null,
+    string? FirstName = null,
+    string? LastName = null,
+    string? PhoneNumber = null,
+    string? ClubCardId = null,
+    string? AvatarUrl = null,
+    bool? AcceptedTerms = null,
+    DateTime? AcceptedTermsAt = null
+);
+
+public record AcceptTermsRequest(
+    DateTime? AcceptedAt = null
+);
+
