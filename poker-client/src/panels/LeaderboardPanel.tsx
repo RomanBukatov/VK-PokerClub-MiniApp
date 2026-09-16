@@ -8,8 +8,8 @@ export const LeaderboardPanel: React.FC = () => {
   const { vkUser } = useUserStore();
 
   useEffect(() => {
-    fetchLeaderboard();
-  }, [fetchLeaderboard]);
+    fetchLeaderboard(seasonTab === 'all-time' ? 'all' : 'season');
+  }, [seasonTab, fetchLeaderboard]);
 
   const currentUserEntry = vkUser 
     ? leaderboard.find((u) => u.vkId === vkUser.id.toString())
@@ -89,7 +89,7 @@ export const LeaderboardPanel: React.FC = () => {
       <div className="p-5 rounded-3xl bg-black/50 border border-white/10 shadow-xl flex items-center justify-between">
         <div>
           <div className="text-[10px] uppercase font-bold text-[#8fa89b] tracking-wider mb-1">
-            ТЕКУЩИЙ СЕЗОН
+            {seasonTab === 'current' ? 'ТЕКУЩИЙ СЕЗОН' : 'ЗА ВСЕ ВРЕМЯ'}
           </div>
           <div className="text-xl font-extrabold text-white">
             {currentUserEntry ? `# ${currentUserEntry.rank}` : 'Не в рейтинге'}
@@ -97,7 +97,9 @@ export const LeaderboardPanel: React.FC = () => {
         </div>
 
         <div className="text-2xl font-black text-white">
-          {currentUserEntry ? `${currentUserEntry.totalRating.toLocaleString('ru-RU')} очков` : '0 очков'}
+          {currentUserEntry 
+            ? `${(currentUserEntry.points ?? (seasonTab === 'current' ? (currentUserEntry.seasonRating ?? currentUserEntry.totalRating) : currentUserEntry.totalRating)).toLocaleString('ru-RU')} очков` 
+            : '0 очков'}
         </div>
       </div>
 
@@ -175,7 +177,7 @@ export const LeaderboardPanel: React.FC = () => {
                 </div>
 
                 <div className="text-sm font-bold text-white">
-                  {player.totalRating.toLocaleString('ru-RU')}
+                  {(player.points ?? (seasonTab === 'current' ? (player.seasonRating ?? player.totalRating) : player.totalRating)).toLocaleString('ru-RU')}
                 </div>
               </div>
             );

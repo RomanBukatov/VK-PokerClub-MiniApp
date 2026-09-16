@@ -19,5 +19,6 @@ public record UserProfileDto(
     int Top10Count,
     int KnockoutsCount,
     double AvgPlace,
-    DateTime CreatedAt
+    DateTime CreatedAt,
+    int SeasonRating = 0
 );

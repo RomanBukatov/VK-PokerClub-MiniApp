@@ -17,22 +17,32 @@ public class RatingsController : ControllerBase
     }
 
     [HttpGet("leaderboard")]
-    public async Task<ActionResult<List<LeaderboardUserDto>>> GetLeaderboard([FromQuery] int limit = 50)
+    public async Task<ActionResult<List<LeaderboardEntryDto>>> GetLeaderboard(
+        [FromQuery] int limit = 50,
+        [FromQuery] string type = "season")
     {
         if (limit <= 0) limit = 50;
         if (limit > 100) limit = 100;
 
-        var users = await _ratingService.GetLeaderboardAsync(limit);
+        var isSeason = !string.Equals(type, "all", StringComparison.OrdinalIgnoreCase) && 
+                       !string.Equals(type, "all-time", StringComparison.OrdinalIgnoreCase);
+
+        var users = await _ratingService.GetLeaderboardAsync(limit, isSeason ? "season" : "all");
         
-        var result = users.Select((u, index) => new LeaderboardUserDto(
-            index + 1,
-            u.Id,
-            u.VkId,
-            u.FirstName,
-            u.LastName,
-            u.AvatarUrl,
-            u.TotalRating
-        )).ToList();
+        var result = users.Select((u, index) => {
+            var activePoints = isSeason ? u.SeasonRating : u.TotalRating;
+            return new LeaderboardEntryDto(
+                index + 1,
+                u.Id,
+                u.VkId,
+                u.FirstName,
+                u.LastName,
+                u.AvatarUrl,
+                activePoints,
+                u.SeasonRating,
+                activePoints
+            );
+        }).ToList();
 
         return Ok(result);
     }

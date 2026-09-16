@@ -169,6 +169,7 @@ public class UsersController : ControllerBase
             var match = GoogleSheetsSyncService.FindMatchingUser(sheetUsers, fullName, user.ClubCardId);
             if (match != null)
             {
+                user.SeasonRating = match.SeasonRating;
                 user.TotalRating = match.TotalRating;
                 user.TournamentsPlayed = match.TournamentsPlayed;
                 user.WinsCount = match.WinsCount;
@@ -254,7 +255,8 @@ public class UsersController : ControllerBase
             user.Top10Count,
             user.KnockoutsCount,
             user.AvgPlace,
-            user.CreatedAt
+            user.CreatedAt,
+            user.SeasonRating
         );
     }
 

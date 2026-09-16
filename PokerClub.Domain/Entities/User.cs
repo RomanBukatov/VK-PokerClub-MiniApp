@@ -7,6 +7,7 @@ public class User
     public string? FirstName { get; set; }
     public string? LastName { get; set; }
     public string? AvatarUrl { get; set; }
+    public int SeasonRating { get; set; } = 0;
     public int TotalRating { get; set; } = 0;
     public string? Nickname { get; set; }
     public string? PhoneNumber { get; set; }

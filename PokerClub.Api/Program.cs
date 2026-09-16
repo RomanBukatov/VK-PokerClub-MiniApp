@@ -79,6 +79,7 @@ using (var scope = app.Services.CreateScope())
     {
         var context = services.GetRequiredService<AppDbContext>();
         await context.Database.MigrateAsync();
+        await DbInitializer.CleanFakeUsersAsync(context);
         await DbInitializer.SeedAsync(context);
     }
     catch (Exception ex)

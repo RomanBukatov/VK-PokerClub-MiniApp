@@ -72,6 +72,8 @@ export interface LeaderboardEntry {
   lastName?: string;
   avatarUrl?: string;
   totalRating: number;
+  seasonRating?: number;
+  points?: number;
 }
 
 export interface VkUser {
@@ -120,6 +122,7 @@ export interface UserProfile {
   clubCardId?: string;
   avatarUrl?: string;
   totalRating: number;
+  seasonRating?: number;
   status: 'Newbie' | 'Fish' | 'Reg' | 'Pro' | string;
   acceptedTermsAt?: string | null;
   tournamentsPlayed: number;

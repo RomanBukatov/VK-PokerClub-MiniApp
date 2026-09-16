@@ -10,8 +10,10 @@ namespace PokerClub.Infrastructure.Services;
 
 public class GoogleSheetsSyncService : IGoogleSheetsSyncService
 {
-    public const string DefaultCsvUrl = "https://docs.google.com/spreadsheets/d/1GRINVjwfqXsG0vccHfFFOaxzTbo5pcxWBGn1YOgzOn0/gviz/tq?tqx=out:csv&sheet=%D0%9E%D0%B1%D1%89%D0%B8%D0%B9%20%D1%80%D0%B5%D0%B9%D1%82%D0%B8%D0%BD%D0%B3";
+    public const string SeasonRatingCsvUrl = "https://docs.google.com/spreadsheets/d/1GRINVjwfqXsG0vccHfFFOaxzTbo5pcxWBGn1YOgzOn0/gviz/tq?tqx=out:csv&sheet=%D0%A0%D0%B5%D0%B9%D1%82%D0%B8%D0%BD%D0%B3%20%D1%81%D0%B5%D0%B7%D0%BE%D0%BD%D0%B0";
+    public const string TotalRatingCsvUrl = "https://docs.google.com/spreadsheets/d/1GRINVjwfqXsG0vccHfFFOaxzTbo5pcxWBGn1YOgzOn0/gviz/tq?tqx=out:csv&sheet=%D0%9E%D0%B1%D1%89%D0%B8%D0%B9%20%D1%80%D0%B5%D0%B9%D1%82%D0%B8%D0%BD%D0%B3";
     public const string RegistrationsCsvUrl = "https://docs.google.com/spreadsheets/d/1GRINVjwfqXsG0vccHfFFOaxzTbo5pcxWBGn1YOgzOn0/gviz/tq?tqx=out:csv&sheet=%D0%A0%D0%95%D0%93%D0%98%D0%A1%D0%A2%D0%A0%D0%90%D0%A6%D0%98%D0%98";
+    public const string DefaultCsvUrl = TotalRatingCsvUrl;
 
     private readonly AppDbContext _context;
     private readonly HttpClient _httpClient;
@@ -32,15 +34,49 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
         try
         {
             _logger.LogInformation("Запуск загрузки данных рейтинга из Google Sheets...");
-            var ratingResponse = await _httpClient.GetAsync(DefaultCsvUrl, cancellationToken);
-            if (!ratingResponse.IsSuccessStatusCode)
+
+            string? seasonCsvContent = null;
+            try
             {
-                var errMsg = $"Google Sheets вернул статус {ratingResponse.StatusCode}: {ratingResponse.ReasonPhrase}";
+                var seasonResponse = await _httpClient.GetAsync(SeasonRatingCsvUrl, cancellationToken);
+                if (seasonResponse.IsSuccessStatusCode)
+                {
+                    seasonCsvContent = await seasonResponse.Content.ReadAsStringAsync(cancellationToken);
+                }
+                else
+                {
+                    _logger.LogWarning("Лист «Рейтинг сезона» вернул статус {StatusCode}", seasonResponse.StatusCode);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Не удалось загрузить лист «Рейтинг сезона»");
+            }
+
+            string? totalCsvContent = null;
+            try
+            {
+                var totalResponse = await _httpClient.GetAsync(TotalRatingCsvUrl, cancellationToken);
+                if (totalResponse.IsSuccessStatusCode)
+                {
+                    totalCsvContent = await totalResponse.Content.ReadAsStringAsync(cancellationToken);
+                }
+                else
+                {
+                    _logger.LogWarning("Лист «Общий рейтинг» вернул статус {StatusCode}", totalResponse.StatusCode);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Не удалось загрузить лист «Общий рейтинг»");
+            }
+
+            if (string.IsNullOrWhiteSpace(seasonCsvContent) && string.IsNullOrWhiteSpace(totalCsvContent))
+            {
+                var errMsg = "Не удалось загрузить ни лист «Рейтинг сезона», ни «Общий рейтинг».";
                 _logger.LogError("{ErrorMessage}", errMsg);
                 return new GoogleSheetsSyncResult(false, 0, 0, 0, errMsg);
             }
-
-            var ratingCsvContent = await ratingResponse.Content.ReadAsStringAsync(cancellationToken);
 
             string? registrationsCsvContent = null;
             try
@@ -53,10 +89,10 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Не удалось загрузить лист РЕГИСТРАЦИИ, продолжаем синхронизацию только по рейтингу.");
+                _logger.LogWarning(ex, "Не удалось загрузить лист «РЕГИСТРАЦИИ», продолжаем синхронизацию только по рейтингу.");
             }
 
-            return await SyncFromCsvAsync(ratingCsvContent, registrationsCsvContent, cancellationToken);
+            return await SyncFromCsvAsync(seasonCsvContent, totalCsvContent, registrationsCsvContent, cancellationToken);
         }
         catch (Exception ex)
         {
@@ -70,36 +106,51 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
         return SyncFromCsvAsync(csvContent, null, cancellationToken);
     }
 
-    public async Task<GoogleSheetsSyncResult> SyncFromCsvAsync(
+    public Task<GoogleSheetsSyncResult> SyncFromCsvAsync(
         string ratingCsvContent, 
         string? registrationsCsvContent, 
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(ratingCsvContent))
         {
-            return new GoogleSheetsSyncResult(false, 0, 0, 0, "CSV контент пуст.");
+            return Task.FromResult(new GoogleSheetsSyncResult(false, 0, 0, 0, "CSV контент пуст."));
         }
 
-        var parsedRows = ParseCsv(ratingCsvContent);
-        if (parsedRows.Count == 0)
+        bool isSeasonOnly = ratingCsvContent.Contains("сезон", StringComparison.OrdinalIgnoreCase) && 
+                            !ratingCsvContent.Contains("общий", StringComparison.OrdinalIgnoreCase);
+
+        if (isSeasonOnly)
         {
-            return new GoogleSheetsSyncResult(false, 0, 0, 0, "Не удалось распознать строки в CSV.");
+            return SyncFromCsvAsync(ratingCsvContent, null, registrationsCsvContent, cancellationToken);
         }
+        else
+        {
+            return SyncFromCsvAsync(null, ratingCsvContent, registrationsCsvContent, cancellationToken);
+        }
+    }
 
-        // Парсим сопоставление имени к реальному номеру карты (ClubCardId) и телефону из листа РЕГИСТРАЦИИ
-        var regMap = ParseRegistrationsMapping(registrationsCsvContent ?? "");
+    public record SheetPlayerStats(
+        int Place,
+        string PlayerName,
+        int TournamentsPlayed,
+        int WinsCount,
+        int Top3Count,
+        int Top10Count,
+        int KnockoutsCount,
+        int Points,
+        double AvgPlace
+    );
 
-        var existingUsers = await _context.Users.ToListAsync(cancellationToken);
+    public static List<SheetPlayerStats> ParseRatingSheet(string csvContent)
+    {
+        var result = new List<SheetPlayerStats>();
+        if (string.IsNullOrWhiteSpace(csvContent)) return result;
 
-        int totalProcessed = 0;
-        int updatedCount = 0;
-        int createdCount = 0;
-
+        var parsedRows = ParseCsv(csvContent);
         foreach (var row in parsedRows)
         {
             if (row.Count < 2) continue;
 
-            // Пропускаем строку заголовков
             var col0 = row[0].Trim();
             var col1 = row[1].Trim();
             if (col0.Contains("место", StringComparison.OrdinalIgnoreCase) ||
@@ -124,10 +175,52 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
             int points = row.Count > 7 ? ParseIntClean(row[7]) : 0;
             double avgPlace = row.Count > 8 ? ParseDoubleClean(row[8]) : 0.0;
 
-            totalProcessed++;
+            result.Add(new SheetPlayerStats(
+                place,
+                playerName,
+                tournaments,
+                wins,
+                top3,
+                top10,
+                knockouts,
+                points,
+                avgPlace
+            ));
+        }
 
-            // Ищем привязанный клубный ID и телефон из листа РЕГИСТРАЦИИ
-            var normKey = NormalizeNameKey(playerName);
+        return result;
+    }
+
+    public async Task<GoogleSheetsSyncResult> SyncFromCsvAsync(
+        string? seasonRatingCsvContent,
+        string? totalRatingCsvContent,
+        string? registrationsCsvContent,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(seasonRatingCsvContent) && string.IsNullOrWhiteSpace(totalRatingCsvContent))
+        {
+            return new GoogleSheetsSyncResult(false, 0, 0, 0, "CSV контент пуст.");
+        }
+
+        var seasonRows = ParseRatingSheet(seasonRatingCsvContent ?? "");
+        var totalRows = ParseRatingSheet(totalRatingCsvContent ?? "");
+
+        if (seasonRows.Count == 0 && totalRows.Count == 0)
+        {
+            return new GoogleSheetsSyncResult(false, 0, 0, 0, "Не удалось распознать строки в CSV.");
+        }
+
+        var regMap = ParseRegistrationsMapping(registrationsCsvContent ?? "");
+        var existingUsers = await _context.Users.ToListAsync(cancellationToken);
+
+        var processedUsers = new HashSet<User>();
+        var updatedUsers = new HashSet<User>();
+        var createdUsers = new HashSet<User>();
+
+        // 1. Обработка Общего рейтинга (пишет в TotalRating)
+        foreach (var row in totalRows)
+        {
+            var normKey = NormalizeNameKey(row.PlayerName);
             string? knownCardId = null;
             string? knownPhone = null;
 
@@ -137,18 +230,16 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
                 knownPhone = regInfo.PhoneNumber;
             }
 
-            // Поиск совпадения в БД по реальному ClubCardId или ФИО
-            var matchedUser = FindMatchingUser(existingUsers, playerName, knownCardId);
-
+            var matchedUser = FindMatchingUser(existingUsers, row.PlayerName, knownCardId);
             if (matchedUser != null)
             {
-                matchedUser.TotalRating = points;
-                matchedUser.TournamentsPlayed = tournaments;
-                matchedUser.WinsCount = wins;
-                matchedUser.Top3Count = top3;
-                matchedUser.Top10Count = top10;
-                matchedUser.KnockoutsCount = knockouts;
-                matchedUser.AvgPlace = avgPlace;
+                matchedUser.TotalRating = row.Points;
+                matchedUser.TournamentsPlayed = row.TournamentsPlayed;
+                matchedUser.WinsCount = row.WinsCount;
+                matchedUser.Top3Count = row.Top3Count;
+                matchedUser.Top10Count = row.Top10Count;
+                matchedUser.KnockoutsCount = row.KnockoutsCount;
+                matchedUser.AvgPlace = row.AvgPlace;
 
                 if (!string.IsNullOrWhiteSpace(knownCardId))
                 {
@@ -160,16 +251,17 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
                     matchedUser.PhoneNumber = knownPhone;
                 }
 
-                updatedCount++;
+                processedUsers.Add(matchedUser);
+                updatedUsers.Add(matchedUser);
             }
             else
             {
-                var nameParts = playerName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-                string lastName = nameParts.Length > 0 ? nameParts[0] : playerName;
+                var nameParts = row.PlayerName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                string lastName = nameParts.Length > 0 ? nameParts[0] : row.PlayerName;
                 string firstName = nameParts.Length > 1 ? string.Join(" ", nameParts.Skip(1)) : "Игрок";
 
                 var uid = Guid.NewGuid().ToString("N")[..8];
-                var newVkId = $"sheet_{place}_{uid}";
+                var newVkId = $"sheet_{row.Place}_{uid}";
                 if (newVkId.Length > 50) newVkId = newVkId[..50];
 
                 var newUser = new User
@@ -177,13 +269,14 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
                     VkId = newVkId,
                     FirstName = firstName,
                     LastName = lastName,
-                    TotalRating = points,
-                    TournamentsPlayed = tournaments,
-                    WinsCount = wins,
-                    Top3Count = top3,
-                    Top10Count = top10,
-                    KnockoutsCount = knockouts,
-                    AvgPlace = avgPlace,
+                    TotalRating = row.Points,
+                    SeasonRating = 0,
+                    TournamentsPlayed = row.TournamentsPlayed,
+                    WinsCount = row.WinsCount,
+                    Top3Count = row.Top3Count,
+                    Top10Count = row.Top10Count,
+                    KnockoutsCount = row.KnockoutsCount,
+                    AvgPlace = row.AvgPlace,
                     ClubCardId = knownCardId,
                     PhoneNumber = knownPhone,
                     CreatedAt = DateTime.UtcNow
@@ -191,11 +284,96 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
 
                 _context.Users.Add(newUser);
                 existingUsers.Add(newUser);
-                createdCount++;
+                processedUsers.Add(newUser);
+                createdUsers.Add(newUser);
+            }
+        }
+
+        // 2. Обработка Рейтинга сезона (пишет в SeasonRating)
+        foreach (var row in seasonRows)
+        {
+            var normKey = NormalizeNameKey(row.PlayerName);
+            string? knownCardId = null;
+            string? knownPhone = null;
+
+            if (regMap.TryGetValue(normKey, out var regInfo))
+            {
+                knownCardId = regInfo.ClubCardId;
+                knownPhone = regInfo.PhoneNumber;
+            }
+
+            var matchedUser = FindMatchingUser(existingUsers, row.PlayerName, knownCardId);
+            if (matchedUser != null)
+            {
+                matchedUser.SeasonRating = row.Points;
+
+                // Если общий рейтинг не загружался или у пользователя еще не заполнены турниры
+                if (totalRows.Count == 0 || matchedUser.TournamentsPlayed == 0)
+                {
+                    matchedUser.TournamentsPlayed = row.TournamentsPlayed;
+                    matchedUser.WinsCount = row.WinsCount;
+                    matchedUser.Top3Count = row.Top3Count;
+                    matchedUser.Top10Count = row.Top10Count;
+                    matchedUser.KnockoutsCount = row.KnockoutsCount;
+                    matchedUser.AvgPlace = row.AvgPlace;
+                }
+
+                if (!string.IsNullOrWhiteSpace(knownCardId) && string.IsNullOrWhiteSpace(matchedUser.ClubCardId))
+                {
+                    matchedUser.ClubCardId = knownCardId;
+                }
+
+                if (string.IsNullOrWhiteSpace(matchedUser.PhoneNumber) && !string.IsNullOrWhiteSpace(knownPhone))
+                {
+                    matchedUser.PhoneNumber = knownPhone;
+                }
+
+                processedUsers.Add(matchedUser);
+                if (!createdUsers.Contains(matchedUser))
+                {
+                    updatedUsers.Add(matchedUser);
+                }
+            }
+            else
+            {
+                var nameParts = row.PlayerName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                string lastName = nameParts.Length > 0 ? nameParts[0] : row.PlayerName;
+                string firstName = nameParts.Length > 1 ? string.Join(" ", nameParts.Skip(1)) : "Игрок";
+
+                var uid = Guid.NewGuid().ToString("N")[..8];
+                var newVkId = $"sheet_{row.Place}_{uid}";
+                if (newVkId.Length > 50) newVkId = newVkId[..50];
+
+                var newUser = new User
+                {
+                    VkId = newVkId,
+                    FirstName = firstName,
+                    LastName = lastName,
+                    SeasonRating = row.Points,
+                    TotalRating = 0,
+                    TournamentsPlayed = row.TournamentsPlayed,
+                    WinsCount = row.WinsCount,
+                    Top3Count = row.Top3Count,
+                    Top10Count = row.Top10Count,
+                    KnockoutsCount = row.KnockoutsCount,
+                    AvgPlace = row.AvgPlace,
+                    ClubCardId = knownCardId,
+                    PhoneNumber = knownPhone,
+                    CreatedAt = DateTime.UtcNow
+                };
+
+                _context.Users.Add(newUser);
+                existingUsers.Add(newUser);
+                processedUsers.Add(newUser);
+                createdUsers.Add(newUser);
             }
         }
 
         await _context.SaveChangesAsync(cancellationToken);
+
+        int totalProcessed = processedUsers.Count;
+        int createdCount = createdUsers.Count;
+        int updatedCount = updatedUsers.Count;
 
         var message = $"Синхронизация Google Sheets завершена: обработано {totalProcessed}, обновлено {updatedCount}, создано {createdCount}.";
         _logger.LogInformation("{SyncMessage}", message);

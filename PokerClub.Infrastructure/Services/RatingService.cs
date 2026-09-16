@@ -15,15 +15,31 @@ public class RatingService : IRatingService
         _context = context;
     }
 
-    public async Task<List<User>> GetLeaderboardAsync(int limit = 50)
+    public async Task<List<User>> GetLeaderboardAsync(int limit = 50, string type = "season")
     {
-        return await _context.Users
-            .AsNoTracking()
-            .Where(u => u.TotalRating > 0)
-            .OrderByDescending(u => u.TotalRating)
-            .ThenBy(u => u.Id)
-            .Take(limit)
-            .ToListAsync();
+        var isSeason = !string.Equals(type, "all", StringComparison.OrdinalIgnoreCase) && 
+                       !string.Equals(type, "all-time", StringComparison.OrdinalIgnoreCase);
+
+        var query = _context.Users.AsNoTracking();
+
+        if (isSeason)
+        {
+            return await query
+                .Where(u => u.SeasonRating > 0)
+                .OrderByDescending(u => u.SeasonRating)
+                .ThenBy(u => u.Id)
+                .Take(limit)
+                .ToListAsync();
+        }
+        else
+        {
+            return await query
+                .Where(u => u.TotalRating > 0)
+                .OrderByDescending(u => u.TotalRating)
+                .ThenBy(u => u.Id)
+                .Take(limit)
+                .ToListAsync();
+        }
     }
 
     public async Task<(bool Success, string Message)> AssignPointsAndFinishTournamentAsync(

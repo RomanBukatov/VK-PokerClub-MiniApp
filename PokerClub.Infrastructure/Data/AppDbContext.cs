@@ -71,6 +71,8 @@ public class AppDbContext : DbContext
             entity.Property(e => e.Top3Count).HasDefaultValue(0);
             entity.Property(e => e.Top10Count).HasDefaultValue(0);
             entity.Property(e => e.KnockoutsCount).HasDefaultValue(0);
+            entity.Property(e => e.SeasonRating).HasDefaultValue(0);
+            entity.Property(e => e.TotalRating).HasDefaultValue(0);
         });
 
         // --- Таблица Registrations ---

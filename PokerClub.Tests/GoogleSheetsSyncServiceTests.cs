@@ -231,4 +231,48 @@ public class GoogleSheetsSyncServiceTests
         Assert.False(result.Success);
         Assert.Equal(0, result.TotalProcessed);
     }
+
+    [Fact]
+    public async Task SyncFromCsv_WithBothSeasonAndTotalSheets_PopulatesBothRatingsAndStats()
+    {
+        using var context = CreateInMemoryDbContext();
+        using var httpClient = new HttpClient();
+        var service = new GoogleSheetsSyncService(context, httpClient, NullLogger<GoogleSheetsSyncService>.Instance);
+
+        var sampleSeasonCsv = 
+            "\"РЕЙТИНГ СЕЗОНА Место\",\"Игрок\",\"Турниров\",\"Побед\",\"ТОП-3\",\"ТОП-10\",\"Нокаутов\",\"Сумма очков\",\"Среднее место\"\r\n" +
+            "\"1\",\"Лукашенко Василий\",\"22\",\"2\",\"5\",\"10\",\"40\",\"486\",\"7,36\"\r\n" +
+            "\"2\",\"Гуляев Игорь\",\"26\",\"1\",\"6\",\"10\",\"28\",\"485\",\"4,92\"\r\n";
+
+        var sampleTotalCsv = 
+            "\"ОБЩИЙ РЕЙТИНГ КЛУБА Место\",\"Игрок\",\"Турниров\",\"Побед\",\"ТОП-3\",\"ТОП-10\",\"Нокаутов\",\"Сумма очков\",\"Среднее место\"\r\n" +
+            "\"1\",\"Лукашенко Василий\",\"22\",\"2\",\"5\",\"10\",\"40\",\"449\",\"7,36\"\r\n" +
+            "\"2\",\"Гуляев Игорь\",\"26\",\"1\",\"6\",\"10\",\"28\",\"440\",\"4,92\"\r\n";
+
+        var result = await service.SyncFromCsvAsync(sampleSeasonCsv, sampleTotalCsv, SampleRegistrationsCsv);
+
+        Assert.True(result.Success);
+        Assert.Equal(2, result.TotalProcessed);
+        Assert.Equal(2, result.CreatedCount);
+
+        var lukashenko = await context.Users.FirstOrDefaultAsync(u => u.LastName == "Лукашенко" && u.FirstName == "Василий");
+        Assert.NotNull(lukashenko);
+        Assert.Equal(486, lukashenko.SeasonRating);
+        Assert.Equal(449, lukashenko.TotalRating);
+        Assert.Equal(22, lukashenko.TournamentsPlayed);
+        Assert.Equal(2, lukashenko.WinsCount);
+        Assert.Equal(5, lukashenko.Top3Count);
+        Assert.Equal(10, lukashenko.Top10Count);
+        Assert.Equal(40, lukashenko.KnockoutsCount);
+        Assert.Equal(7.36, lukashenko.AvgPlace);
+        Assert.Equal("1060", lukashenko.ClubCardId);
+        Assert.Equal("89027909924", lukashenko.PhoneNumber);
+
+        var gulyaev = await context.Users.FirstOrDefaultAsync(u => u.LastName == "Гуляев" && u.FirstName == "Игорь");
+        Assert.NotNull(gulyaev);
+        Assert.Equal(485, gulyaev.SeasonRating);
+        Assert.Equal(440, gulyaev.TotalRating);
+        Assert.Equal("1345", gulyaev.ClubCardId);
+        Assert.Equal("89223636110", gulyaev.PhoneNumber);
+    }
 }

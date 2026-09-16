@@ -2,8 +2,26 @@ import { apiClient } from './apiClient';
 import type { LeaderboardEntry } from '../types';
 
 export const ratingsApi = {
-  async getLeaderboard(limit = 50): Promise<LeaderboardEntry[]> {
-    const response = await apiClient.get<LeaderboardEntry[]>(`/api/ratings/leaderboard?limit=${limit}`);
+  async getLeaderboard(
+    typeOrLimit: 'season' | 'all' | number = 'season',
+    limitOrType: number | 'season' | 'all' = 50
+  ): Promise<LeaderboardEntry[]> {
+    let type: 'season' | 'all' = 'season';
+    let limit = 50;
+
+    if (typeof typeOrLimit === 'number') {
+      limit = typeOrLimit;
+      if (typeof limitOrType === 'string') {
+        type = limitOrType;
+      }
+    } else {
+      type = typeOrLimit;
+      if (typeof limitOrType === 'number') {
+        limit = limitOrType;
+      }
+    }
+
+    const response = await apiClient.get<LeaderboardEntry[]>(`/api/ratings/leaderboard?type=${type}&limit=${limit}`);
     return response.data;
   },
 

@@ -7,5 +7,19 @@ public record LeaderboardUserDto(
     string? FirstName,
     string? LastName,
     string? AvatarUrl,
-    int TotalRating
+    int TotalRating,
+    int SeasonRating = 0,
+    int Points = 0
+);
+
+public record LeaderboardEntryDto(
+    int Rank,
+    int Id,
+    string VkId,
+    string? FirstName,
+    string? LastName,
+    string? AvatarUrl,
+    int TotalRating,
+    int SeasonRating = 0,
+    int Points = 0
 );
