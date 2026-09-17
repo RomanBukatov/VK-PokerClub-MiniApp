@@ -63,6 +63,16 @@ public static class DbInitializer
             admin.SeasonRating = 0;
             await context.SaveChangesAsync();
         }
+
+        // Гарантируем DEFAULT 0 для колонки TotalRating в PostgreSQL
+        try
+        {
+            await context.Database.ExecuteSqlRawAsync("ALTER TABLE \"Users\" ALTER COLUMN \"TotalRating\" SET DEFAULT 0;");
+        }
+        catch
+        {
+            // Игнорируем, если база не PostgreSQL (например, InMemory в тестах) или дефолт уже применен
+        }
     }
 
     public static async Task SeedAsync(AppDbContext context)

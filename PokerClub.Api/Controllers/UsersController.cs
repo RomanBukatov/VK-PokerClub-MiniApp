@@ -60,6 +60,13 @@ public class UsersController : ControllerBase
                 LastName = lastName,
                 AvatarUrl = avatarUrl,
                 TotalRating = 0,
+                SeasonRating = 0,
+                TournamentsPlayed = 0,
+                WinsCount = 0,
+                Top3Count = 0,
+                Top10Count = 0,
+                KnockoutsCount = 0,
+                AvgPlace = 0.0,
                 CreatedAt = DateTime.UtcNow
             };
             _context.Users.Add(user);
@@ -103,6 +110,14 @@ public class UsersController : ControllerBase
                 VkId = currentVkId,
                 FirstName = "Игрок",
                 LastName = "",
+                TotalRating = 0,
+                SeasonRating = 0,
+                TournamentsPlayed = 0,
+                WinsCount = 0,
+                Top3Count = 0,
+                Top10Count = 0,
+                KnockoutsCount = 0,
+                AvgPlace = 0.0,
                 CreatedAt = DateTime.UtcNow
             };
             _context.Users.Add(user);
@@ -213,6 +228,14 @@ public class UsersController : ControllerBase
                 VkId = currentVkId,
                 FirstName = "Игрок",
                 LastName = "",
+                TotalRating = 0,
+                SeasonRating = 0,
+                TournamentsPlayed = 0,
+                WinsCount = 0,
+                Top3Count = 0,
+                Top10Count = 0,
+                KnockoutsCount = 0,
+                AvgPlace = 0.0,
                 CreatedAt = DateTime.UtcNow
             };
             _context.Users.Add(user);

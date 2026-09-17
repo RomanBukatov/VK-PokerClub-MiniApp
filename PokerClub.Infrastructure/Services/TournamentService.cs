@@ -105,7 +105,16 @@ public class TournamentService : ITournamentService
                     VkId = vkId,
                     FirstName = !string.IsNullOrWhiteSpace(firstName) ? firstName.Trim() : "Игрок",
                     LastName = !string.IsNullOrWhiteSpace(lastName) ? lastName.Trim() : "VK",
-                    AvatarUrl = avatarUrl?.Trim()
+                    AvatarUrl = avatarUrl?.Trim(),
+                    TotalRating = 0,
+                    SeasonRating = 0,
+                    TournamentsPlayed = 0,
+                    WinsCount = 0,
+                    Top3Count = 0,
+                    Top10Count = 0,
+                    KnockoutsCount = 0,
+                    AvgPlace = 0.0,
+                    CreatedAt = DateTime.UtcNow
                 };
                 _context.Users.Add(user);
                 await _context.SaveChangesAsync();
