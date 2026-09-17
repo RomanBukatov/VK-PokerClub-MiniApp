@@ -34,7 +34,7 @@ export const Header: React.FC<HeaderProps> = ({ title, subtitle }) => {
   const headerInfo = getHeaderInfo();
 
   return (
-    <header className="px-5 pt-4 pb-3 flex flex-col gap-2.5 safe-top">
+    <header className="px-5 pt-[max(env(safe-area-inset-top),0.75rem)] pb-3 flex flex-col gap-2.5">
       {/* Верхняя строка: Логотип и переключатель режима / города */}
       <div className="flex items-center justify-between">
         {/* Кнопка выбора города */}

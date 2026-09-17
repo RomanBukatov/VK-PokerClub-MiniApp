@@ -33,6 +33,8 @@ interface TelegramUser {
 interface TelegramWebApp {
   ready?: () => void;
   expand?: () => void;
+  setHeaderColor?: (color: string) => void;
+  setBackgroundColor?: (color: string) => void;
   initData?: string;
   initDataUnsafe?: {
     user?: TelegramUser;
@@ -57,6 +59,8 @@ export async function initVkBridge(): Promise<VkUser> {
     try {
       tgWebApp.ready?.();
       tgWebApp.expand?.();
+      tgWebApp.setHeaderColor?.('#01201a');
+      tgWebApp.setBackgroundColor?.('#01201a');
     } catch {
       // Игнорируем в веб-версии
     }
@@ -97,7 +101,18 @@ export async function initVkBridge(): Promise<VkUser> {
       'Таймаут инициализации VKWebAppInit'
     );
 
-    // 2. Запрашиваем информацию о пользователе с таймаутом 1.5 сек
+    // 2. Настраиваем системный статус-бар и навигационную полосу
+    try {
+      await vkBridge.send('VKWebAppSetViewSettings', {
+        status_bar_style: 'light',      // Белые иконки часов и батарейки
+        action_bar_color: '#01201a',    // Изумрудный цвет нативного хедера ВК
+        navigation_bar_color: '#01201a' // Изумрудный цвет нижней навигационной полосы Android
+      });
+    } catch (e) {
+      console.warn('VKWebAppSetViewSettings не поддерживается в данном окружении', e);
+    }
+
+    // 3. Запрашиваем информацию о пользователе с таймаутом 1.5 сек
     const userInfo = await sendWithTimeout(
       vkBridge.send('VKWebAppGetUserInfo'),
       1500,
