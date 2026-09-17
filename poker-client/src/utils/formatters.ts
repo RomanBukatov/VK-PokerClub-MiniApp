@@ -70,3 +70,32 @@ export function getSeatsBadge(registered: number, maxSeats: number): {
     remaining,
   };
 }
+
+/**
+ * Форматирование телефона по маске +7 (XXX) XXX-XX-XX без преждевременных разделителей
+ */
+export function formatPhoneNumber(rawDigits: string): string {
+  let digits = rawDigits.replace(/\D/g, '');
+  if (digits.startsWith('7') || digits.startsWith('8')) {
+    digits = digits.slice(1);
+  }
+  digits = digits.slice(0, 10);
+
+  if (digits.length === 0) return '';
+
+  let res = '+7 (' + digits.slice(0, Math.min(3, digits.length));
+  if (digits.length >= 3) {
+    res += ')';
+  }
+  if (digits.length > 3) {
+    res += ' ' + digits.slice(3, Math.min(6, digits.length));
+  }
+  if (digits.length > 6) {
+    res += '-' + digits.slice(6, Math.min(8, digits.length));
+  }
+  if (digits.length > 8) {
+    res += '-' + digits.slice(8, 10);
+  }
+  return res;
+}
+

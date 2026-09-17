@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { User, Phone, CreditCard, Sparkles, X, AlertCircle } from 'lucide-react';
 import { useUserStore } from '../store/useUserStore';
 import { triggerHaptic } from '../utils/vkBridge';
+import { formatPhoneNumber } from '../utils/formatters';
 
 export const WelcomeProfileModal: React.FC = () => {
   const { isProfileModalOpen } = useUserStore();
@@ -38,29 +39,58 @@ const ProfileModalContent: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Обработка Backspace перед нецифровыми символами-разделителями
+  const handlePhoneKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Backspace') {
+      const input = e.currentTarget;
+      const { selectionStart, selectionEnd, value } = input;
+      // Если курсор стоит после разделителя ('-', ')', ' ', '(') и нет диапазона выделения
+      if (selectionStart !== null && selectionStart === selectionEnd && selectionStart > 0) {
+        const charBefore = value[selectionStart - 1];
+        if (/\D/.test(charBefore)) {
+          e.preventDefault();
+          let digits = value.replace(/\D/g, '');
+          if (digits.startsWith('7') || digits.startsWith('8')) {
+            digits = digits.slice(1);
+          }
+          if (digits.length > 0) {
+            setPhoneNumber(formatPhoneNumber(digits.slice(0, -1)));
+          } else {
+            setPhoneNumber('');
+          }
+        }
+      }
+    }
+  };
+
   // Форматирование телефона по маске +7 (XXX) XXX-XX-XX
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    let digits = e.target.value.replace(/\D/g, '');
-    if (digits.startsWith('8') || digits.startsWith('7')) {
-      digits = digits.slice(1);
-    }
-    digits = digits.slice(0, 10);
+    const val = e.target.value;
 
-    let formatted = '+7';
-    if (digits.length > 0) {
-      formatted += ' (' + digits.slice(0, 3);
-    }
-    if (digits.length >= 3) {
-      formatted += ') ' + digits.slice(3, 6);
-    }
-    if (digits.length >= 6) {
-      formatted += '-' + digits.slice(6, 8);
-    }
-    if (digits.length >= 8) {
-      formatted += '-' + digits.slice(8, 10);
+    // Разрешаем полностью стереть телефон до пустого поля
+    if (!val || val === '+' || val === '+7' || val === '+7 ' || val === '+7 (') {
+      setPhoneNumber('');
+      return;
     }
 
-    setPhoneNumber(digits.length === 0 ? '' : formatted);
+    let prevDigits = phoneNumber.replace(/\D/g, '');
+    if (prevDigits.startsWith('7') || prevDigits.startsWith('8')) {
+      prevDigits = prevDigits.slice(1);
+    }
+
+    let nextDigits = val.replace(/\D/g, '');
+    if (nextDigits.startsWith('7') || nextDigits.startsWith('8')) {
+      nextDigits = nextDigits.slice(1);
+    }
+
+    // Если длина строки уменьшилась (нажатие Backspace/Delete),
+    // но количество цифр осталось прежним (пользователь стер только дефис/скобку/пробел),
+    // принудительно удаляем последнюю цифру из пула
+    if (val.length < phoneNumber.length && nextDigits.length === prevDigits.length && nextDigits.length > 0) {
+      nextDigits = nextDigits.slice(0, -1);
+    }
+
+    setPhoneNumber(formatPhoneNumber(nextDigits));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -206,6 +236,7 @@ const ProfileModalContent: React.FC = () => {
                 placeholder="+7 (___) ___-__-__"
                 value={phoneNumber}
                 onChange={handlePhoneChange}
+                onKeyDown={handlePhoneKeyDown}
                 className="w-full bg-black/40 border border-white/10 focus:border-[#c39a44] rounded-2xl py-3 pl-11 pr-4 text-sm font-semibold text-white placeholder-white/20 focus:outline-none transition-all"
               />
             </div>
