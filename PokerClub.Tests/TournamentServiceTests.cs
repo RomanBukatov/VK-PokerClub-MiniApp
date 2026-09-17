@@ -193,7 +193,7 @@ public class TournamentServiceTests
     }
 
     [Fact]
-    public void VkAuthValidator_InDemoMode_AllowsAdminActions()
+    public void VkAuthValidator_InDemoMode_OnlyGrantsAdminToTrustedIds()
     {
         var options = Options.Create(new VkOptions
         {
@@ -202,16 +202,24 @@ public class TournamentServiceTests
         });
 
         var validator = new VkAuthValidator(options, NullLogger<VkAuthValidator>.Instance);
-        var httpContext = new DefaultHttpContext();
-        httpContext.Request.Headers["X-Test-Vk-Id"] = "999999999"; // Не стандартный ID
 
-        var result = validator.Validate(httpContext);
-        Assert.True(result.IsValid);
-        Assert.True(result.IsAdmin); // В демо-режиме (RequireValidation = false) доступ разрешен
+        // Недоверенный ID не получает права админа даже в демо-режиме
+        var httpContextNonAdmin = new DefaultHttpContext();
+        httpContextNonAdmin.Request.Headers["X-Test-Vk-Id"] = "999999999";
+        var resultNonAdmin = validator.Validate(httpContextNonAdmin);
+        Assert.True(resultNonAdmin.IsValid);
+        Assert.False(resultNonAdmin.IsAdmin);
+
+        // Доверенный ID получает права админа
+        var httpContextAdmin = new DefaultHttpContext();
+        httpContextAdmin.Request.Headers["X-Test-Vk-Id"] = "123456789";
+        var resultAdmin = validator.Validate(httpContextAdmin);
+        Assert.True(resultAdmin.IsValid);
+        Assert.True(resultAdmin.IsAdmin);
     }
 
     [Fact]
-    public void VkAuthValidator_WithXIsAdminHeader_GrantsAdmin()
+    public void VkAuthValidator_WithXIsAdminHeader_UntrustedUser_DoesNotGrantAdmin()
     {
         var options = Options.Create(new VkOptions
         {
@@ -227,7 +235,66 @@ public class TournamentServiceTests
 
         var result = validator.Validate(httpContext);
         Assert.True(result.IsValid);
+        Assert.False(result.IsAdmin); // Недоверенный пользователь не может получить админку через заголовок
+    }
+
+    [Fact]
+    public void VkAuthValidator_WithXIsAdminHeader_TrustedUser_GrantsAdmin()
+    {
+        var options = Options.Create(new VkOptions
+        {
+            RequireValidation = true,
+            ClientSecret = "secret",
+            AdminVkIds = new List<string> { "123456789" }
+        });
+
+        var validator = new VkAuthValidator(options, NullLogger<VkAuthValidator>.Instance);
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Headers["X-Test-Vk-Id"] = "123456789";
+        httpContext.Request.Headers["X-Is-Admin"] = "true";
+
+        var result = validator.Validate(httpContext);
+        Assert.True(result.IsValid);
         Assert.True(result.IsAdmin);
+    }
+
+    [Fact]
+    public void VkAuthValidator_InDemoMode_UntrustedUserWithXIsAdminTrue_DoesNotGrantAdmin()
+    {
+        var options = Options.Create(new VkOptions
+        {
+            RequireValidation = false,
+            AdminVkIds = new List<string> { "123456789" }
+        });
+
+        var validator = new VkAuthValidator(options, NullLogger<VkAuthValidator>.Instance);
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Headers["X-Test-Vk-Id"] = "999999999";
+        httpContext.Request.Headers["X-Is-Admin"] = "true";
+
+        var result = validator.Validate(httpContext);
+        Assert.True(result.IsValid);
+        Assert.False(result.IsAdmin);
+    }
+
+    [Fact]
+    public void VkAuthValidator_InProductionMode_TrustedUserWithXIsAdminFalse_DoesNotGrantAdmin()
+    {
+        var options = Options.Create(new VkOptions
+        {
+            RequireValidation = true,
+            ClientSecret = "secret",
+            AdminVkIds = new List<string> { "123456789" }
+        });
+
+        var validator = new VkAuthValidator(options, NullLogger<VkAuthValidator>.Instance);
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Headers["X-Test-Vk-Id"] = "123456789";
+        httpContext.Request.Headers["X-Is-Admin"] = "false";
+
+        var result = validator.Validate(httpContext);
+        Assert.True(result.IsValid);
+        Assert.False(result.IsAdmin);
     }
 
     [Fact]

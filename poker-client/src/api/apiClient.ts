@@ -37,10 +37,9 @@ apiClient.interceptors.request.use((config) => {
   const savedVkId = (typeof window !== 'undefined' ? localStorage.getItem('vk_test_user_id') : null) || '123456789';
   config.headers['X-Test-Vk-Id'] = savedVkId;
 
-  // Передаем статус админа для демо-режима и автономного тестирования.
-  // Не удаляем заголовок, а передаем точное строковое значение ('true' или 'false').
+  // Передаем статус админа: права отправляются ТОЛЬКО при явном savedRole === 'true' (P0-1, P0-2, P2-7)
   const savedRole = typeof window !== 'undefined' ? localStorage.getItem('poker_is_admin') : null;
-  config.headers['X-Is-Admin'] = savedRole === 'false' ? 'false' : 'true';
+  config.headers['X-Is-Admin'] = savedRole === 'true' ? 'true' : 'false';
 
   return config;
 }, (error) => {

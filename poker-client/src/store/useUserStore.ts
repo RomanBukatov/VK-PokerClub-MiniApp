@@ -50,7 +50,7 @@ export const useUserStore = create<UserState>((set, get) => ({
 
   setUser: (user) => {
     const savedRole = typeof window !== 'undefined' ? localStorage.getItem('poker_is_admin') : null;
-    const isAdmin = savedRole !== null ? savedRole === 'true' : (user?.isAdmin ?? true);
+    const isAdmin = savedRole === 'true';
     set({
       vkUser: user,
       isAuthenticated: !!user,

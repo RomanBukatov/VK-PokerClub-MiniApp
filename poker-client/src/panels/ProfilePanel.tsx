@@ -34,15 +34,23 @@ export const ProfilePanel: React.FC = () => {
     ? `${((winsCount / tournamentsPlayed) * 100).toFixed(1)}%` 
     : '0.0%';
 
-  // Определение клубного статуса
-  const getClubStatus = (rating: number) => {
-    if (rating <= 200) return { name: 'Newbie', color: 'from-slate-500 to-slate-700', text: 'text-slate-200', border: 'border-slate-400/30' };
-    if (rating <= 500) return { name: 'Fish', color: 'from-cyan-600 to-teal-700', text: 'text-cyan-200', border: 'border-cyan-400/40' };
-    if (rating <= 1500) return { name: 'Reg', color: 'from-emerald-600 to-amber-600', text: 'text-emerald-200', border: 'border-emerald-400/40' };
-    return { name: 'Pro', color: 'from-[#d8af56] to-[#916b1e]', text: 'text-[#ffd700]', border: 'border-[#c39a44]/50' };
+  // Определение клубного статуса (откалибровано под статистику клуба: <=100 Newbie, <=250 Fish, <=400 Reg, 401+ Pro)
+  const getClubStatus = (rating: number, serverStatus?: string) => {
+    const status = serverStatus || (rating <= 100 ? 'Newbie' : rating <= 250 ? 'Fish' : rating <= 400 ? 'Reg' : 'Pro');
+    switch (status) {
+      case 'Newbie':
+        return { name: 'Newbie', color: 'from-slate-500 to-slate-700', text: 'text-slate-200', border: 'border-slate-400/30' };
+      case 'Fish':
+        return { name: 'Fish', color: 'from-cyan-600 to-teal-700', text: 'text-cyan-200', border: 'border-cyan-400/40' };
+      case 'Reg':
+        return { name: 'Reg', color: 'from-emerald-600 to-amber-600', text: 'text-emerald-200', border: 'border-emerald-400/40' };
+      case 'Pro':
+      default:
+        return { name: 'Pro', color: 'from-[#d8af56] to-[#916b1e]', text: 'text-[#ffd700]', border: 'border-[#c39a44]/50' };
+    }
   };
 
-  const clubStatus = getClubStatus(currentRating);
+  const clubStatus = getClubStatus(currentRating, profile?.status);
 
   // Система достижений (6-8 ачивок)
   const achievements: Achievement[] = [

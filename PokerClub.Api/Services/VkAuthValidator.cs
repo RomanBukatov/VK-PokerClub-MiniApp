@@ -18,7 +18,22 @@ public class VkAuthValidator : IVkAuthValidator
 
     public bool IsAdmin(string vkUserId, HttpContext? httpContext = null)
     {
-        // 1. Проверяем явный заголовок X-Is-Admin от клиента для переключения роли
+        if (string.IsNullOrWhiteSpace(vkUserId))
+            return false;
+
+        // Права админа выдаются ТОЛЬКО если:
+        // 1. Передан явный тестовый ID (123456789, 1, admin_vk_id), ИЛИ
+        // 2. vkUserId присутствует в конфигурации AdminVkIds.
+        bool isTrustedAdmin = vkUserId == "123456789" 
+            || vkUserId == "1" 
+            || vkUserId == "admin_vk_id" 
+            || (_options.AdminVkIds != null && _options.AdminVkIds.Contains(vkUserId));
+
+        if (!isTrustedAdmin)
+            return false;
+
+        // Заголовок X-Is-Admin от клиента разрешает админку только в связке с валидным доверенным ID.
+        // Если доверенный администратор переключился в режим обычного игрока:
         if (httpContext != null && httpContext.Request.Headers.TryGetValue("X-Is-Admin", out var isAdminHeader))
         {
             var val = isAdminHeader.ToString().Trim();
@@ -26,26 +41,9 @@ public class VkAuthValidator : IVkAuthValidator
             {
                 return false;
             }
-            if (string.Equals(val, "true", StringComparison.OrdinalIgnoreCase) || val == "1")
-            {
-                return true;
-            }
         }
 
-        // 2. В демо-режиме (когда RequireValidation == false) разрешаем админ-действия по умолчанию, если не задано обратное
-        if (!_options.RequireValidation)
-        {
-            return true;
-        }
-
-        if (string.IsNullOrWhiteSpace(vkUserId))
-            return false;
-
-        // В демо-режиме ID Станислава Кострова (123456789) и дефолтные тестовые ID обладают правами администратора
-        if (vkUserId == "123456789" || vkUserId == "1" || vkUserId == "admin_vk_id")
-            return true;
-
-        return _options.AdminVkIds != null && _options.AdminVkIds.Contains(vkUserId);
+        return true;
     }
 
     public VkAuthResult Validate(HttpContext httpContext)

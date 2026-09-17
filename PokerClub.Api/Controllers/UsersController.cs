@@ -262,9 +262,9 @@ public class UsersController : ControllerBase
 
     public static string CalculateClubStatus(int rating) => rating switch
     {
-        <= 200 => "Newbie",
-        <= 500 => "Fish",
-        <= 1500 => "Reg",
+        <= 100 => "Newbie",
+        <= 250 => "Fish",
+        <= 400 => "Reg",
         _ => "Pro"
     };
 }

@@ -6,19 +6,13 @@ namespace PokerClub.Infrastructure.Data;
 
 public static class DbInitializer
 {
-    private static readonly HashSet<string> KnownBotNames = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "Алексей Крылов", "Сергей Волков", "Дмитрий Морозов", "Иван Попов",
-        "Анна Соколова", "Максим Лебедев", "Елена Кузнецова", "Андрей Смирнов",
-        "Максим Новиков", "Артем Соколов", "Михаил Васильев", "Павел Кузнецов",
-        "Роман Лебедев", "Денис Козлов", "Егор Павлов", "Антон Семенов",
-        "Илья Голубев", "Кирилл Богданов", "Никита Воробьев", "Владислав Федоров",
-        "Ярослав Михайлов", "Глеб Беляев", "Константин Тарасов", "Вадим Медведев",
-        "Олег Казаков", "Виктор Савельев", "Тимофей Виноградов"
-    };
-
     public static bool IsFakeBot(User user)
     {
+        if (string.IsNullOrWhiteSpace(user.VkId))
+        {
+            return false;
+        }
+
         // Не удаляем тестового администратора и реальных игроков из Google Sheets
         if (user.VkId == "123456789" || user.VkId.StartsWith("sheet_", StringComparison.OrdinalIgnoreCase))
         {
@@ -33,13 +27,6 @@ public static class DbInitializer
 
         // Боты из сида DbInitializer с VkId "1001".."1024"
         if (int.TryParse(user.VkId, out var id) && id >= 1001 && id <= 1024)
-        {
-            return true;
-        }
-
-        // Боты по известным именам из DbInitializer
-        var fullName = $"{user.FirstName} {user.LastName}".Trim();
-        if (KnownBotNames.Contains(fullName))
         {
             return true;
         }

@@ -16,6 +16,7 @@ public class LeaderboardAndCleanupTests
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.InMemoryEventId.TransactionIgnoredWarning))
             .Options;
 
         return new AppDbContext(options);
@@ -269,5 +270,102 @@ public class LeaderboardAndCleanupTests
         {
             Assert.Equal(999, list[0].Points);
         }
+    }
+
+    [Theory]
+    [InlineData("1001", "Алексей", "Крылов", true)]
+    [InlineData("1024", "Сергей", "Волков", true)]
+    [InlineData("user1", "Любое", "Имя", true)]
+    [InlineData("user99", "Тест", "Тестов", true)]
+    [InlineData("USER_abc", "Тест", "Тестов", true)]
+    [InlineData("123456789", "Станислав", "Костров", false)]
+    [InlineData("sheet_123", "Василий", "Лукашенко", false)]
+    [InlineData("987654321", "Алексей", "Крылов", false)] // Реальный игрок с именем из старого списка ботов
+    [InlineData("tg_555", "Сергей", "Волков", false)]     // Реальный игрок Telegram с именем из старого списка ботов
+    [InlineData("1000", "Игрок", "Тест", false)]
+    [InlineData("1025", "Игрок", "Тест", false)]
+    [InlineData(null, "Безымянный", "Игрок", false)]
+    [InlineData("", "", "", false)]
+    [InlineData("   ", "Пробелы", "Пробелов", false)]
+    public void IsFakeBot_OnlyDetectsExplicitBotPatterns_ProtectsRealPlayers(string? vkId, string first, string last, bool expectedIsBot)
+    {
+        var user = new User
+        {
+            VkId = vkId!,
+            FirstName = first,
+            LastName = last
+        };
+
+        var isBot = DbInitializer.IsFakeBot(user);
+        Assert.Equal(expectedIsBot, isBot);
+    }
+
+    [Fact]
+    public async Task AssignPointsAndFinishTournamentAsync_UpdatesBothTotalAndSeasonRating()
+    {
+        using var context = CreateInMemoryDbContext();
+
+        var city = new City { Name = "Пермь", Slug = "perm", IsActive = true };
+        var club = new Club { Name = "Monte Carlo", City = city, IsActive = true };
+        context.Cities.Add(city);
+        context.Clubs.Add(club);
+
+        var tour = new Tournament
+        {
+            Club = club,
+            Title = "Friday Rebuy",
+            Format = "NL Holdem",
+            BuyIn = 1500,
+            MaxSeats = 20,
+            StartTime = DateTime.UtcNow.AddHours(-3),
+            Status = TournamentStatus.RegistrationOpen
+        };
+        context.Tournaments.Add(tour);
+
+        var player1 = new User { VkId = "player_1", FirstName = "Денис", LastName = "Заббаров", TotalRating = 0, SeasonRating = 0 };
+        var player2 = new User { VkId = "player_2", FirstName = "Игорь", LastName = "Гуляев", TotalRating = 50, SeasonRating = 50 };
+        context.Users.AddRange(player1, player2);
+        await context.SaveChangesAsync();
+
+        var reg1 = new Registration { TournamentId = tour.Id, UserId = player1.Id, Status = RegStatus.Active };
+        var reg2 = new Registration { TournamentId = tour.Id, UserId = player2.Id, Status = RegStatus.Active };
+        context.Registrations.AddRange(reg1, reg2);
+        await context.SaveChangesAsync();
+
+        var ratingService = new RatingService(context);
+        var pointsMap = new Dictionary<int, int>
+        {
+            { player1.Id, 120 },
+            { player2.Id, 80 }
+        };
+
+        var (success, message) = await ratingService.AssignPointsAndFinishTournamentAsync(tour.Id, pointsMap);
+
+        Assert.True(success);
+
+        var updatedTour = await context.Tournaments.FindAsync(tour.Id);
+        Assert.Equal(TournamentStatus.Finished, updatedTour?.Status);
+
+        var updatedP1 = await context.Users.FindAsync(player1.Id);
+        Assert.NotNull(updatedP1);
+        Assert.Equal(120, updatedP1.TotalRating);
+        Assert.Equal(120, updatedP1.SeasonRating); // SeasonRating equals TotalRating
+
+        var updatedP2 = await context.Users.FindAsync(player2.Id);
+        Assert.NotNull(updatedP2);
+        Assert.Equal(80, updatedP2.TotalRating);
+        Assert.Equal(80, updatedP2.SeasonRating); // SeasonRating equals TotalRating
+    }
+
+    [Fact]
+    public async Task AssignPointsAndFinishTournamentAsync_InvalidTournament_ReturnsFalse()
+    {
+        using var context = CreateInMemoryDbContext();
+        var ratingService = new RatingService(context);
+
+        var (success, message) = await ratingService.AssignPointsAndFinishTournamentAsync(99999, new Dictionary<int, int>());
+
+        Assert.False(success);
+        Assert.Equal("Турнир не найден.", message);
     }
 }

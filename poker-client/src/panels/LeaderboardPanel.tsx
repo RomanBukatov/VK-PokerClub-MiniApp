@@ -98,7 +98,7 @@ export const LeaderboardPanel: React.FC = () => {
 
         <div className="text-2xl font-black text-white">
           {currentUserEntry 
-            ? `${(currentUserEntry.points ?? (seasonTab === 'current' ? (currentUserEntry.seasonRating ?? currentUserEntry.totalRating) : currentUserEntry.totalRating)).toLocaleString('ru-RU')} очков` 
+            ? `${(currentUserEntry.points ?? 0).toLocaleString('ru-RU')} очков` 
             : '0 очков'}
         </div>
       </div>

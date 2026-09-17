@@ -88,6 +88,7 @@ public class RatingService : IRatingService
                 foreach (var user in users)
                 {
                     user.TotalRating = totalsByUser.TryGetValue(user.Id, out int total) ? total : 0;
+                    user.SeasonRating = user.TotalRating; // Для ручных клубных турниров сезонные очки равны сумме
                 }
 
                 await _context.SaveChangesAsync();

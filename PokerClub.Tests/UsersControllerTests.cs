@@ -136,7 +136,7 @@ public class UsersControllerTests
         Assert.Equal(486, profile.TotalRating);
         Assert.Equal(22, profile.TournamentsPlayed);
         Assert.Equal(2, profile.WinsCount);
-        Assert.Equal("Fish", profile.Status); // 486 is Fish (201-500)
+        Assert.Equal("Pro", profile.Status); // 486 is Pro (401+)
         Assert.Equal("1", profile.ClubCardId);
 
         // Placeholder sheetUser was removed
@@ -224,5 +224,22 @@ public class UsersControllerTests
         Assert.Equal("Павел", profile.FirstName);
         Assert.Equal("Дуров", profile.LastName);
         Assert.Equal("https://t.me/photo.jpg", profile.AvatarUrl);
+    }
+
+    [Theory]
+    [InlineData(0, "Newbie")]
+    [InlineData(50, "Newbie")]
+    [InlineData(100, "Newbie")]
+    [InlineData(101, "Fish")]
+    [InlineData(250, "Fish")]
+    [InlineData(251, "Reg")]
+    [InlineData(400, "Reg")]
+    [InlineData(401, "Pro")]
+    [InlineData(486, "Pro")]
+    [InlineData(1000, "Pro")]
+    public void CalculateClubStatus_CalibratedThresholds_ReturnsCorrectStatus(int rating, string expectedStatus)
+    {
+        var status = UsersController.CalculateClubStatus(rating);
+        Assert.Equal(expectedStatus, status);
     }
 }
