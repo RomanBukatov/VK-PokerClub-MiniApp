@@ -236,4 +236,43 @@ describe('useUserStore logout and reset', () => {
     expect(state.isAuthenticated).toBe(true);
     expect(state.isLoading).toBe(false);
   });
+
+  it('should strictly reject setIsAdmin(true) when vkUser.isAdmin is false or absent', () => {
+    // 1. Unauthenticated or guest user without admin flag
+    useUserStore.getState().setUser({
+      id: 0,
+      first_name: 'Гость',
+      last_name: 'Клуба',
+      isAdmin: false,
+    });
+
+    expect(useUserStore.getState().isAdmin).toBe(false);
+    expect(window.localStorage.getItem('poker_is_admin')).toBe('false');
+
+    // Attempting to elevate role
+    useUserStore.getState().setIsAdmin(true);
+
+    expect(useUserStore.getState().isAdmin).toBe(false);
+    expect(useUserStore.getState().activeTab).toBe('schedule');
+    expect(window.localStorage.getItem('poker_is_admin')).toBe('false');
+  });
+
+  it('should allow setIsAdmin(true) ONLY when vkUser.isAdmin === true', () => {
+    useUserStore.getState().setUser({
+      id: 123456789,
+      first_name: 'Станислав',
+      last_name: 'Костров',
+      isAdmin: true,
+    });
+
+    expect(useUserStore.getState().isAdmin).toBe(true);
+
+    useUserStore.getState().setIsAdmin(false);
+    expect(useUserStore.getState().isAdmin).toBe(false);
+    expect(window.localStorage.getItem('poker_is_admin')).toBe('false');
+
+    useUserStore.getState().setIsAdmin(true);
+    expect(useUserStore.getState().isAdmin).toBe(true);
+    expect(window.localStorage.getItem('poker_is_admin')).toBe('true');
+  });
 });

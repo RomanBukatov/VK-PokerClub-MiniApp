@@ -21,13 +21,8 @@ public class VkAuthValidator : IVkAuthValidator
         if (string.IsNullOrWhiteSpace(vkUserId))
             return false;
 
-        // Права админа выдаются ТОЛЬКО если:
-        // 1. Передан явный тестовый ID (123456789, 1, admin_vk_id), ИЛИ
-        // 2. vkUserId присутствует в конфигурации AdminVkIds.
-        bool isTrustedAdmin = vkUserId == "123456789" 
-            || vkUserId == "1" 
-            || vkUserId == "admin_vk_id" 
-            || (_options.AdminVkIds != null && _options.AdminVkIds.Contains(vkUserId));
+        // Права администратора выдаются строго при совпадении vk_user_id со списком AdminVkIds.
+        bool isTrustedAdmin = _options.AdminVkIds != null && _options.AdminVkIds.Contains(vkUserId);
 
         if (!isTrustedAdmin)
             return false;
@@ -110,7 +105,7 @@ public class VkAuthValidator : IVkAuthValidator
             {
                 var testVkId = httpContext.Request.Headers["X-Test-Vk-Id"].FirstOrDefault()
                                ?? httpContext.Request.Query["vk_user_id"].FirstOrDefault()
-                               ?? "123456789";
+                               ?? "0";
 
                 var testIsAdmin = IsAdmin(testVkId, httpContext);
                 _logger.LogInformation("Авторизация Standalone/Demo. VkId: {VkId}, IsAdmin: {IsAdmin}", testVkId, testIsAdmin);
@@ -127,7 +122,7 @@ public class VkAuthValidator : IVkAuthValidator
         {
             if (!_options.RequireValidation)
             {
-                var fallbackVkId = queryDictionary.GetValueOrDefault("vk_user_id", "123456789");
+                var fallbackVkId = queryDictionary.GetValueOrDefault("vk_user_id", "0");
                 return new VkAuthResult(true, fallbackVkId, IsAdmin(fallbackVkId, httpContext), null);
             }
 
@@ -144,7 +139,7 @@ public class VkAuthValidator : IVkAuthValidator
         {
             if (!_options.RequireValidation)
             {
-                var fallbackVkId = queryDictionary.GetValueOrDefault("vk_user_id", "123456789");
+                var fallbackVkId = queryDictionary.GetValueOrDefault("vk_user_id", "0");
                 return new VkAuthResult(true, fallbackVkId, IsAdmin(fallbackVkId, httpContext), null);
             }
             return new VkAuthResult(false, null, false, "Параметры vk_* не найдены.");
@@ -159,7 +154,7 @@ public class VkAuthValidator : IVkAuthValidator
             _logger.LogError("VK ClientSecret не настроен в конфигурации!");
             if (!_options.RequireValidation)
             {
-                var fallbackVkId = queryDictionary.GetValueOrDefault("vk_user_id", "123456789");
+                var fallbackVkId = queryDictionary.GetValueOrDefault("vk_user_id", "0");
                 return new VkAuthResult(true, fallbackVkId, IsAdmin(fallbackVkId, httpContext), null);
             }
             return new VkAuthResult(false, null, false, "Ошибка конфигурации сервера.");
@@ -188,7 +183,7 @@ public class VkAuthValidator : IVkAuthValidator
             _logger.LogWarning("Недействительная подпись VK Sign. Получено: {ReceivedSign}", sign);
             if (!_options.RequireValidation)
             {
-                var fallbackVkId = queryDictionary.GetValueOrDefault("vk_user_id", "123456789");
+                var fallbackVkId = queryDictionary.GetValueOrDefault("vk_user_id", "0");
                 return new VkAuthResult(true, fallbackVkId, IsAdmin(fallbackVkId, httpContext), null);
             }
             return new VkAuthResult(false, null, false, "Недействительная подпись VK параметров.");
@@ -199,7 +194,7 @@ public class VkAuthValidator : IVkAuthValidator
         {
             if (!_options.RequireValidation)
             {
-                var fallbackVkId = "123456789";
+                var fallbackVkId = "0";
                 return new VkAuthResult(true, fallbackVkId, IsAdmin(fallbackVkId, httpContext), null);
             }
             return new VkAuthResult(false, null, false, "vk_user_id отсутствует в параметрах запуска.");

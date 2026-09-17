@@ -9,7 +9,33 @@ using Scalar.AspNetCore;
 var builder = WebApplication.CreateBuilder(args);
 
 // Подключаем конфигурацию VK
-builder.Services.Configure<VkOptions>(builder.Configuration.GetSection(VkOptions.SectionName));
+builder.Services.Configure<VkOptions>(options =>
+{
+    builder.Configuration.GetSection(VkOptions.SectionName).Bind(options);
+
+    // Поддержка чтения переменной окружения VK_ADMIN_IDS (через запятую, точку с запятой или пробел)
+    var envAdminIds = builder.Configuration["VK_ADMIN_IDS"] 
+        ?? builder.Configuration["VkOptions:AdminVkIds"]
+        ?? Environment.GetEnvironmentVariable("VK_ADMIN_IDS");
+
+    if (!string.IsNullOrWhiteSpace(envAdminIds))
+    {
+        var ids = envAdminIds.Split(new[] { ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        options.AdminVkIds = ids.Distinct().ToList();
+    }
+
+    var envAppId = builder.Configuration["VK_APP_ID"] ?? Environment.GetEnvironmentVariable("VK_APP_ID");
+    if (!string.IsNullOrWhiteSpace(envAppId) && long.TryParse(envAppId, out var appId))
+    {
+        options.AppId = appId;
+    }
+
+    var envSecret = builder.Configuration["VK_PROTECTED_KEY"] ?? Environment.GetEnvironmentVariable("VK_PROTECTED_KEY");
+    if (!string.IsNullOrWhiteSpace(envSecret))
+    {
+        options.ClientSecret = envSecret;
+    }
+});
 
 // Подключаем PostgreSQL
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
@@ -80,6 +106,7 @@ using (var scope = app.Services.CreateScope())
         var context = services.GetRequiredService<AppDbContext>();
         await context.Database.MigrateAsync();
         await DbInitializer.CleanFakeUsersAsync(context);
+        await DbInitializer.CleanFakeTournamentsAsync(context);
         await DbInitializer.SeedAsync(context);
     }
     catch (Exception ex)

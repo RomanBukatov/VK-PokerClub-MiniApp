@@ -73,7 +73,7 @@ apiClient.interceptors.request.use((config) => {
 
   // Всегда передаем тестовый VK ID при автономном/демо запуске,
   // чтобы даже при отсутствии реальной подписи VK или при смене роли эндпоинты с [VkAuthorize] работали корректно.
-  const savedVkId = (typeof window !== 'undefined' ? localStorage.getItem('vk_test_user_id') : null) || '123456789';
+  const savedVkId = (typeof window !== 'undefined' ? localStorage.getItem('vk_test_user_id') : null) || '0';
   config.headers['X-Test-Vk-Id'] = savedVkId;
 
   // Передаем статус админа: права отправляются ТОЛЬКО при явном savedRole === 'true' (P0-1, P0-2, P2-7)

@@ -1,5 +1,23 @@
 import React, { useEffect, useState } from 'react';
-import { Trophy, Award, Lock, CheckCircle2, Edit3, Calendar, Clock, MapPin, ChevronRight, Zap, LogOut } from 'lucide-react';
+import { 
+  Trophy, 
+  Award, 
+  Medal, 
+  Crown, 
+  Flame, 
+  Target, 
+  Fish, 
+  Crosshair, 
+  Lock, 
+  CheckCircle2, 
+  Edit3, 
+  Calendar, 
+  Clock, 
+  MapPin, 
+  ChevronRight, 
+  Zap, 
+  LogOut 
+} from 'lucide-react';
 import { useUserStore } from '../store/useUserStore';
 import { useTournamentsStore } from '../store/useTournamentsStore';
 import { useRatingsStore } from '../store/useRatingsStore';
@@ -128,6 +146,28 @@ export const ProfilePanel: React.FC = () => {
 
   const unlockedCount = achievements.filter((a) => a.isUnlocked).length;
 
+  const renderAchievementIcon = (id: string, isUnlocked: boolean) => {
+    const iconClass = isUnlocked ? 'w-5 h-5 text-[#ffd700]' : 'w-5 h-5 text-[#c39a44]';
+    switch (id) {
+      case 'first_win':
+        return <Trophy className={iconClass} />;
+      case 'veteran':
+        return <Medal className={iconClass} />;
+      case 'champion':
+        return <Crown className={iconClass} />;
+      case 'on_fire':
+        return <Flame className={iconClass} />;
+      case 'grinder':
+        return <Target className={iconClass} />;
+      case 'shark':
+        return <Fish className={iconClass} />;
+      case 'bounty_hunter':
+        return <Crosshair className={iconClass} />;
+      default:
+        return <Award className={iconClass} />;
+    }
+  };
+
   const upcomingTournaments = myTournaments.filter(
     (t) => t.isUserRegistered && t.status !== TournamentStatus.Finished && t.status !== TournamentStatus.Canceled
   );
@@ -146,12 +186,12 @@ export const ProfilePanel: React.FC = () => {
   };
 
   const displayName = profile?.fullName || `${vkUser?.first_name || ''} ${vkUser?.last_name || ''}`.trim() || 'Игрок Monte Carlo';
-  const displayNickname = profile?.nickname || (vkUser ? `Player_${vkUser.id}` : 'Player');
+  const displayNickname = profile?.nickname || (vkUser ? (vkUser.id ? `Player_${vkUser.id}` : 'Гость') : 'Player');
   const displayPhone = profile?.phoneNumber || 'Телефон не указан';
   const displayCardId = profile?.clubCardId ? `#${profile.clubCardId}` : null;
 
   return (
-    <div className="px-5 pb-28 animate-fade-in space-y-5 text-white">
+    <div className="px-5 pb-32 animate-fade-in space-y-5 text-white">
       {/* 1. ШАПКА ИГРОКА */}
       <div className="pt-2 p-5 rounded-3xl bg-gradient-to-b from-[#0e2a20] to-[#081c15] border border-white/10 shadow-2xl relative overflow-hidden">
         {/* Фоновые декоративные элементы */}
@@ -312,55 +352,55 @@ export const ProfilePanel: React.FC = () => {
               key={ach.id}
               className={`p-3.5 rounded-2xl border transition-all flex items-center gap-3.5 shadow-md ${
                 ach.isUnlocked
-                  ? 'bg-gradient-to-r from-black/60 to-[#102d21]/60 border-[#c39a44]/40 shadow-[#c39a44]/10'
-                  : 'bg-black/30 border-white/5 opacity-70'
+                  ? 'bg-gradient-to-r from-[#0a231b] to-[#113527] border-[#c39a44]/50 shadow-[#c39a44]/10'
+                  : 'bg-[#0a231b]/90 border-white/10'
               }`}
             >
               {/* Значок ачивки */}
               <div
-                className={`w-11 h-11 rounded-2xl flex items-center justify-center text-xl shrink-0 shadow-inner ${
+                className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 shadow-inner ${
                   ach.isUnlocked
-                    ? 'bg-gradient-to-br from-[#d8af56]/30 to-[#b38833]/20 border border-[#c39a44]/50'
-                    : 'bg-white/5 border border-white/10'
+                    ? 'bg-gradient-to-br from-[#d8af56]/30 to-[#b38833]/20 border border-[#c39a44]/60 shadow-[0_0_12px_rgba(195,154,68,0.25)]'
+                    : 'bg-black/50 border border-white/10'
                 }`}
               >
-                {ach.icon}
+                {renderAchievementIcon(ach.id, ach.isUnlocked)}
               </div>
 
               {/* Название, описание и прогресс-бар */}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between">
-                  <h4 className={`text-xs font-black truncate ${ach.isUnlocked ? 'text-white' : 'text-[#8fa89b]'}`}>
+                  <h4 className="text-xs font-black text-white truncate">
                     {ach.title}
                   </h4>
                   <div className="flex items-center gap-1 shrink-0 ml-2">
                     {ach.isUnlocked ? (
-                      <span className="text-[10px] font-extrabold text-[#c39a44] flex items-center gap-1">
-                        <CheckCircle2 className="w-3 h-3 text-[#c39a44]" />
+                      <span className="text-[10px] font-extrabold text-[#ffd700] flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3 text-[#ffd700]" />
                         Открыто
                       </span>
                     ) : (
-                      <span className="text-[10px] font-bold text-white/40 flex items-center gap-1">
-                        <Lock className="w-3 h-3" />
+                      <span className="text-[10px] font-bold text-[#8fa89b] flex items-center gap-1">
+                        <Lock className="w-3 h-3 text-[#8fa89b]" />
                         {ach.current}/{ach.target}
                       </span>
                     )}
                   </div>
                 </div>
 
-                <p className="text-[11px] text-[#606a66] truncate mt-0.5">
+                <p className="text-[11px] text-[#a4c9b7] truncate mt-0.5 font-normal">
                   {ach.description}
                 </p>
 
                 {/* Прогресс-бар */}
-                <div className="w-full bg-white/5 rounded-full h-1.5 mt-2 overflow-hidden">
+                <div className="w-full bg-white/10 rounded-full h-1.5 mt-2 overflow-hidden">
                   <div
                     className={`h-full transition-all duration-500 rounded-full ${
                       ach.isUnlocked
-                        ? 'bg-gradient-to-r from-[#d8af56] to-[#b38833]'
-                        : 'bg-white/20'
+                        ? 'bg-gradient-to-r from-[#ffd700] to-[#c39a44]'
+                        : 'bg-[#c39a44]/70'
                     }`}
-                    style={{ width: `${ach.progressPercent}%` }}
+                    style={{ width: `${Math.max(ach.progressPercent, ach.current > 0 ? 5 : 0)}%` }}
                   />
                 </div>
               </div>

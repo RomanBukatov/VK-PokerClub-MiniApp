@@ -559,5 +559,53 @@ public class TournamentServiceTests
 
         Assert.True(isAdmin);
     }
+
+    [Fact]
+    public void VkAuthValidator_StrictAdminVkIds_OnlyGrantsAdminToConfiguredIds()
+    {
+        // Настроены только конкретные администраторы, например ID 77777 и 88888
+        var options = Options.Create(new VkOptions
+        {
+            RequireValidation = false,
+            AdminVkIds = new List<string> { "77777", "88888" }
+        });
+
+        var validator = new VkAuthValidator(options, NullLogger<VkAuthValidator>.Instance);
+
+        // ID 123456789 больше НЕ является админом по умолчанию (если его нет в AdminVkIds)
+        Assert.False(validator.IsAdmin("123456789"));
+        Assert.False(validator.IsAdmin("1"));
+        Assert.False(validator.IsAdmin("admin_vk_id"));
+        Assert.False(validator.IsAdmin("random_guest"));
+
+        // Только ID из списка получают права администратора
+        Assert.True(validator.IsAdmin("77777"));
+        Assert.True(validator.IsAdmin("88888"));
+    }
+
+    [Theory]
+    [InlineData("111,222,333", new[] { "111", "222", "333" })]
+    [InlineData("111; 222; 333", new[] { "111", "222", "333" })]
+    [InlineData("111 222 333", new[] { "111", "222", "333" })]
+    public void VkAdminIds_EnvironmentVariableFormat_ParsesCorrectly(string envValue, string[] expectedIds)
+    {
+        var ids = envValue.Split(new[] { ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Distinct()
+            .ToList();
+
+        var options = Options.Create(new VkOptions
+        {
+            AdminVkIds = ids
+        });
+
+        var validator = new VkAuthValidator(options, NullLogger<VkAuthValidator>.Instance);
+
+        foreach (var expectedId in expectedIds)
+        {
+            Assert.True(validator.IsAdmin(expectedId));
+        }
+
+        Assert.False(validator.IsAdmin("unknown_id"));
+    }
 }
 

@@ -2,11 +2,11 @@ import vkBridge from '@vkontakte/vk-bridge';
 import type { VkUser } from '../types';
 
 const MOCK_USER: VkUser = {
-  id: 123456789,
-  first_name: 'Станислав',
-  last_name: 'Костров',
+  id: 0,
+  first_name: 'Гость',
+  last_name: 'Клуба',
   photo_200: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=200&auto=format&fit=crop&q=80',
-  isAdmin: true,
+  isAdmin: false,
 };
 
 async function sendWithTimeout<T>(
@@ -83,8 +83,9 @@ export async function initVkBridge(): Promise<VkUser> {
 
   // Если приложение открыто в обычном браузере (локально или на сервере без параметров запуска VK)
   if (!isVkEnvironment) {
-    console.info('Запуск в режиме демонстрации (Demo). Активирован тестовый профиль Станислава Кострова (Admin).');
+    console.info('Запуск в обычном браузере (Гость Клуба).');
     localStorage.setItem('vk_test_user_id', MOCK_USER.id.toString());
+    localStorage.setItem('poker_is_admin', 'false');
     return MOCK_USER;
   }
 
@@ -117,8 +118,9 @@ export async function initVkBridge(): Promise<VkUser> {
       isAdmin: false,
     };
   } catch (err) {
-    console.warn('VK Bridge не ответил или запущен вне VK. Применен демо-профиль Станислава Кострова.', err);
+    console.warn('VK Bridge не ответил или запущен вне VK. Применен гостевой профиль (Гость Клуба).', err);
     localStorage.setItem('vk_test_user_id', MOCK_USER.id.toString());
+    localStorage.setItem('poker_is_admin', 'false');
     return MOCK_USER;
   }
 }

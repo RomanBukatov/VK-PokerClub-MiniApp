@@ -57,7 +57,10 @@ export const useUserStore = create<UserState>((set, get) => ({
 
   setUser: (user) => {
     const savedRole = typeof window !== 'undefined' ? localStorage.getItem('poker_is_admin') : null;
-    const isAdmin = savedRole === 'true';
+    const isAdmin = user?.isAdmin === true ? (savedRole !== null ? savedRole === 'true' : true) : false;
+    if (typeof window !== 'undefined' && !user?.isAdmin) {
+      localStorage.setItem('poker_is_admin', 'false');
+    }
     set({
       vkUser: user,
       isAuthenticated: !!user,
@@ -71,22 +74,24 @@ export const useUserStore = create<UserState>((set, get) => ({
   },
 
   setIsAdmin: (isAdmin) => {
+    const user = get().vkUser;
+    const effectiveIsAdmin = user?.isAdmin === true ? isAdmin : false;
     if (typeof window !== 'undefined') {
-      localStorage.setItem('poker_is_admin', isAdmin ? 'true' : 'false');
+      localStorage.setItem('poker_is_admin', effectiveIsAdmin ? 'true' : 'false');
     }
     set((state) => {
       let nextTab = state.activeTab;
-      if (isAdmin && state.activeTab === 'schedule') {
+      if (effectiveIsAdmin && state.activeTab === 'schedule') {
         nextTab = 'admin-tournaments';
-      } else if (!isAdmin && (state.activeTab === 'admin-tournaments' || state.activeTab === 'admin-create')) {
+      } else if (!effectiveIsAdmin && (state.activeTab === 'admin-tournaments' || state.activeTab === 'admin-create')) {
         nextTab = 'schedule';
       }
-      return { isAdmin, activeTab: nextTab };
+      return { isAdmin: effectiveIsAdmin, activeTab: nextTab };
     });
 
     // При переключении режима обновляем расписание в соответствии с ролью
     const { selectedCityId, selectedClubId } = get();
-    if (isAdmin) {
+    if (effectiveIsAdmin) {
       useTournamentsStore.getState().fetchAdminSchedule(selectedCityId, selectedClubId);
     } else {
       useTournamentsStore.getState().fetchSchedule(selectedCityId, selectedClubId);
@@ -111,7 +116,7 @@ export const useUserStore = create<UserState>((set, get) => ({
       if (!get().vkUser && profile.vkId) {
         set({
           vkUser: {
-            id: Number(profile.vkId) || 123456789,
+            id: Number(profile.vkId) || 0,
             first_name: profile.firstName || profile.nickname || 'Игрок',
             last_name: profile.lastName || '',
             photo_200: profile.avatarUrl,
@@ -173,7 +178,7 @@ export const useUserStore = create<UserState>((set, get) => ({
     const updated = await usersApi.updateProfile(data);
     const currentVkUser = get().vkUser;
     const vkUser: VkUser = currentVkUser || {
-      id: Number(updated.vkId) || 123456789,
+      id: Number(updated.vkId) || 0,
       first_name: updated.firstName || updated.nickname || 'Игрок',
       last_name: updated.lastName || '',
       photo_200: updated.avatarUrl,

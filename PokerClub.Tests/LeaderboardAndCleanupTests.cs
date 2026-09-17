@@ -368,4 +368,74 @@ public class LeaderboardAndCleanupTests
         Assert.False(success);
         Assert.Equal("Турнир не найден.", message);
     }
+
+    [Fact]
+    public async Task CleanFakeTournamentsAsync_RemovesSeedTournamentsAndRegistrations_PreservesRealTournaments()
+    {
+        using var context = CreateInMemoryDbContext();
+
+        var city = new City { Name = "Пермь", Slug = "perm", IsActive = true };
+        context.Cities.Add(city);
+        await context.SaveChangesAsync();
+
+        var club = new Club { Name = "Monte Carlo", CityId = city.Id, IsActive = true };
+        context.Clubs.Add(club);
+        await context.SaveChangesAsync();
+
+        var user = new User { VkId = "100", FirstName = "Игрок", TotalRating = 10 };
+        context.Users.Add(user);
+        await context.SaveChangesAsync();
+
+        // 4 тестовых сид-турнира с датами 4-8 сентября 2026
+        var fakeTour1 = new Tournament { ClubId = club.Id, Title = "Freeroll Tournament", BuyIn = 0, MaxSeats = 30, StartTime = new DateTime(2026, 9, 4, 19, 0, 0, DateTimeKind.Utc) };
+        var fakeTour2 = new Tournament { ClubId = club.Id, Title = "Texas Holdem DeepStack", BuyIn = 1500, MaxSeats = 40, StartTime = new DateTime(2026, 9, 5, 20, 0, 0, DateTimeKind.Utc) };
+        var fakeTour3 = new Tournament { ClubId = club.Id, Title = "Sunday Grand Event", BuyIn = 3000, MaxSeats = 30, StartTime = new DateTime(2026, 9, 7, 18, 0, 0, DateTimeKind.Utc) };
+        var fakeTour4 = new Tournament { ClubId = club.Id, Title = "Weekly Club Cup", BuyIn = 1000, MaxSeats = 20, StartTime = new DateTime(2026, 9, 8, 19, 0, 0, DateTimeKind.Utc) };
+
+        // Реальный турнир, созданный администратором
+        var realTour = new Tournament { ClubId = club.Id, Title = "BLACKOUT BOMB POT", BuyIn = 2500, MaxSeats = 50, StartTime = new DateTime(2026, 9, 20, 19, 0, 0, DateTimeKind.Utc) };
+
+        // Реальный турнир с названием "Freeroll Tournament", созданный администратором на актуальную дату (вне 4-8 сентября)
+        var realFreeroll = new Tournament { ClubId = club.Id, Title = "Freeroll Tournament", BuyIn = 0, MaxSeats = 40, StartTime = new DateTime(2026, 9, 25, 19, 0, 0, DateTimeKind.Utc) };
+
+        context.Tournaments.AddRange(fakeTour1, fakeTour2, fakeTour3, fakeTour4, realTour, realFreeroll);
+        await context.SaveChangesAsync();
+
+        // Регистрация на фейковый турнир и на реальные турниры
+        var regFake = new Registration { TournamentId = fakeTour1.Id, UserId = user.Id, Status = RegStatus.Active };
+        var regReal1 = new Registration { TournamentId = realTour.Id, UserId = user.Id, Status = RegStatus.Active };
+        var regReal2 = new Registration { TournamentId = realFreeroll.Id, UserId = user.Id, Status = RegStatus.Active };
+        context.Registrations.AddRange(regFake, regReal1, regReal2);
+        await context.SaveChangesAsync();
+
+        // Выполняем очистку
+        await DbInitializer.CleanFakeTournamentsAsync(context);
+
+        var remainingTournaments = await context.Tournaments.OrderBy(t => t.Id).ToListAsync();
+        Assert.Equal(2, remainingTournaments.Count);
+        Assert.Contains(remainingTournaments, t => t.Title == "BLACKOUT BOMB POT");
+        Assert.Contains(remainingTournaments, t => t.Title == "Freeroll Tournament" && t.StartTime == realFreeroll.StartTime);
+
+        var remainingRegs = await context.Registrations.ToListAsync();
+        Assert.Equal(2, remainingRegs.Count);
+        Assert.Contains(remainingRegs, r => r.TournamentId == realTour.Id);
+        Assert.Contains(remainingRegs, r => r.TournamentId == realFreeroll.Id);
+    }
+
+    [Fact]
+    public async Task SeedAsync_DoesNotCreateFakeTournaments()
+    {
+        using var context = CreateInMemoryDbContext();
+
+        await DbInitializer.SeedAsync(context);
+
+        // Город, клуб и админ созданы
+        Assert.True(await context.Cities.AnyAsync());
+        Assert.True(await context.Clubs.AnyAsync());
+        Assert.True(await context.Users.AnyAsync(u => u.VkId == "123456789"));
+
+        // Сид-турниров быть НЕ должно!
+        var tournaments = await context.Tournaments.ToListAsync();
+        Assert.Empty(tournaments);
+    }
 }
