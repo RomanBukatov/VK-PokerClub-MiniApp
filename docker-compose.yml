@@ -5,7 +5,7 @@ services:
     restart: always
     environment:
       POSTGRES_USER: ${DB_USER:-poker_admin}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-super_secret_poker_pass_2026}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-super_secret_poker_password_2026}
       POSTGRES_DB: ${DB_NAME:-poker_club_db}
     ports:
       - "${DB_PORT:-5439}:5432"
@@ -31,7 +31,9 @@ services:
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
       - ASPNETCORE_URLS=http://+:5052
-      - ConnectionStrings__DefaultConnection=Host=poker-db;Port=5432;Database=${DB_NAME:-poker_club_db};Username=${DB_USER:-poker_admin};Password=${DB_PASSWORD:-super_secret_poker_pass_2026}
+      - VkOptions__AppId=${VK_APP_ID}
+      - VkOptions__ClientSecret=${VK_PROTECTED_KEY}
+      - ConnectionStrings__DefaultConnection=Host=poker-db;Port=5432;Database=${DB_NAME:-poker_club_db};Username=${DB_USER:-poker_admin};Password=${DB_PASSWORD:-super_secret_poker_password_2026}
     ports:
       - "5052:5052"
     networks:

@@ -173,4 +173,67 @@ describe('useUserStore logout and reset', () => {
       usersApi.acceptTerms = originalAccept;
     }
   });
+
+  it('should handle 401 error in fetchProfile gracefully, reset isLoading to false, and allow guest access', async () => {
+    useUserStore.getState().logout();
+    expect(useUserStore.getState().isLoading).toBe(false);
+
+    const originalGetMe = usersApi.getMe;
+    usersApi.getMe = async () => {
+      const err = new Error('Request failed with status code 401');
+      (err as unknown as { response: { status: number } }).response = { status: 401 };
+      throw err;
+    };
+
+    try {
+      const res = await useUserStore.getState().fetchProfile();
+      expect(res).toBeNull();
+
+      const state = useUserStore.getState();
+      expect(state.isLoading).toBe(false);
+      expect(state.isLoadingProfile).toBe(false);
+      expect(state.isAuthenticated).toBe(true);
+      expect(state.activeTab).toBe('schedule');
+    } finally {
+      usersApi.getMe = originalGetMe;
+    }
+  });
+
+  it('should execute getMe and reset isLoading in finally', async () => {
+    const originalGetMe = usersApi.getMe;
+    usersApi.getMe = async () => ({
+      id: 10,
+      vkId: '555',
+      totalRating: 200,
+      status: 'Fish',
+      tournamentsPlayed: 1,
+      winsCount: 0,
+      top3Count: 0,
+      top10Count: 1,
+      knockoutsCount: 2,
+      avgPlace: 4.0,
+      createdAt: '2026-09-17',
+    });
+
+    try {
+      const profile = await useUserStore.getState().getMe();
+      expect(profile?.id).toBe(10);
+      expect(useUserStore.getState().isLoading).toBe(false);
+    } finally {
+      usersApi.getMe = originalGetMe;
+    }
+  });
+
+  it('should handle initUser with provided user and reset isLoading in finally', async () => {
+    await useUserStore.getState().initUser({
+      id: 999,
+      first_name: 'Иван',
+      last_name: 'Тестов',
+    });
+
+    const state = useUserStore.getState();
+    expect(state.vkUser?.id).toBe(999);
+    expect(state.isAuthenticated).toBe(true);
+    expect(state.isLoading).toBe(false);
+  });
 });

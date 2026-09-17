@@ -50,12 +50,22 @@ export const WelcomePanel: React.FC = () => {
       </div>
 
       {/* Нижняя золотая кнопка */}
-      <div className="pb-8 z-10">
+      <div className="pb-8 z-10 flex flex-col items-center">
         <button
           onClick={handleLogin}
           className="w-full py-4 px-6 rounded-full bg-[#c39a44] text-white font-bold text-base shadow-xl shadow-black/60 hover:brightness-105 active:scale-[0.98] transition-all"
         >
           {buttonText}
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            triggerHaptic('light');
+            useUserStore.setState({ isAuthenticated: true, activeTab: 'schedule' });
+          }}
+          className="mt-3 py-2 px-4 text-xs font-semibold text-[#8fa89b] hover:text-white transition-colors"
+        >
+          Посмотреть расписание без входа →
         </button>
       </div>
     </div>

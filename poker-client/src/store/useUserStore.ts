@@ -10,6 +10,7 @@ interface UserState {
   profile: UserProfile | null;
   isAuthenticated: boolean;
   isAdmin: boolean;
+  isLoading: boolean;
   isLoadingProfile: boolean;
   selectedCityId: number | null;
   selectedCity: number | null;
@@ -29,6 +30,8 @@ interface UserState {
   setIsLegalModalOpen: (isOpen: boolean) => void;
   setIsProfileModalOpen: (isOpen: boolean) => void;
 
+  initUser: (user?: VkUser | null) => Promise<void>;
+  getMe: () => Promise<UserProfile | null>;
   fetchProfile: () => Promise<UserProfile | null>;
   updateProfile: (data: UpdateProfilePayload) => Promise<UserProfile>;
   acceptTerms: () => Promise<void>;
@@ -41,6 +44,7 @@ export const useUserStore = create<UserState>((set, get) => ({
   profile: null,
   isAuthenticated: false,
   isAdmin: false,
+  isLoading: false,
   isLoadingProfile: false,
   selectedCityId: null,
   selectedCity: null,
@@ -99,10 +103,10 @@ export const useUserStore = create<UserState>((set, get) => ({
   setIsProfileModalOpen: (isOpen) => set({ isProfileModalOpen: isOpen }),
 
   fetchProfile: async () => {
-    set({ isLoadingProfile: true });
+    set({ isLoading: true, isLoadingProfile: true });
     try {
       const profile = await usersApi.getMe();
-      set({ profile, isLoadingProfile: false });
+      set({ profile });
 
       if (!get().vkUser && profile.vkId) {
         set({
@@ -133,9 +137,36 @@ export const useUserStore = create<UserState>((set, get) => ({
       return profile;
     } catch (error) {
       console.warn('Не удалось загрузить профиль пользователя:', error);
-      set({ isLoadingProfile: false });
+      // Если запрос профиля падает с 401 (например, некорректная подпись),
+      // не блокируем рендер приложения — позволяем пользователю видеть расписание турниров как гостю.
+      set({ isAuthenticated: true, activeTab: 'schedule' });
       return null;
+    } finally {
+      set({ isLoading: false, isLoadingProfile: false }); // Гарантированное снятие крутилки при 401 коде!
     }
+  },
+
+  initUser: async (user?: VkUser | null) => {
+    set({ isLoading: true });
+    try {
+      if (user) {
+        get().setUser(user);
+      } else {
+        const vkUser = await initVkBridge();
+        if (vkUser) {
+          get().setUser(vkUser);
+        }
+      }
+    } catch (error) {
+      console.warn('Не удалось инициализировать пользователя:', error);
+      set({ isAuthenticated: true, activeTab: 'schedule' });
+    } finally {
+      set({ isLoading: false });
+    }
+  },
+
+  getMe: async () => {
+    return await get().fetchProfile();
   },
 
   updateProfile: async (data) => {
@@ -241,6 +272,7 @@ export const useUserStore = create<UserState>((set, get) => ({
       profile: null,
       isAuthenticated: false,
       isAdmin: false,
+      isLoading: false,
       isLoadingProfile: false,
       selectedCityId: null,
       selectedCity: null,

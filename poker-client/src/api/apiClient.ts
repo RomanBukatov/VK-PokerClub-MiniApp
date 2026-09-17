@@ -10,11 +10,50 @@ export const apiClient = axios.create({
   timeout: 10000,
 });
 
+// Получение и кэширование параметров запуска VK (для надежной работы внутри iframe VK)
+export const getVkLaunchParams = (): string => {
+  if (typeof window === 'undefined') return '';
+
+  // 1. Проверяем текущий window.location.search
+  const search = window.location.search || '';
+  if (search && search.length > 1 && (search.includes('vk_user_id') || search.includes('sign='))) {
+    try {
+      sessionStorage.setItem('vk_launch_search', search);
+    } catch {
+      // ignore
+    }
+    return search;
+  }
+
+  // 2. Проверяем сохраненные параметры запуска сессии
+  try {
+    const cached = sessionStorage.getItem('vk_launch_search');
+    if (cached) return cached;
+  } catch {
+    // ignore
+  }
+
+  // 3. Проверяем hash, если параметры были переданы после #
+  const hash = window.location.hash || '';
+  if (hash && (hash.includes('vk_user_id') || hash.includes('sign='))) {
+    const queryPart = hash.includes('?') ? hash.split('?')[1] : hash.replace(/^#/, '');
+    const formatted = queryPart.startsWith('?') ? queryPart : `?${queryPart}`;
+    try {
+      sessionStorage.setItem('vk_launch_search', formatted);
+    } catch {
+      // ignore
+    }
+    return formatted;
+  }
+
+  return search;
+};
+
 // Перехватчик для автоматической отправки параметров запуска VK
 apiClient.interceptors.request.use((config) => {
-  // 1. Проверяем URL search params от VK
-  const searchParams = typeof window !== 'undefined' ? window.location.search : '';
-  if (searchParams && searchParams.length > 1 && searchParams.includes('vk_user_id')) {
+  // 1. Проверяем URL search params от VK (с кэшированием в сессии на случай SPA-навигации)
+  const searchParams = getVkLaunchParams();
+  if (searchParams && searchParams.length > 1 && (searchParams.includes('vk_user_id') || searchParams.includes('sign='))) {
     config.headers['X-VK-Sign'] = searchParams;
   }
 
