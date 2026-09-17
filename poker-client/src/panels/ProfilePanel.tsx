@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Trophy, Award, Lock, CheckCircle2, Edit3, Calendar, Clock, MapPin, ChevronRight, Zap } from 'lucide-react';
+import { Trophy, Award, Lock, CheckCircle2, Edit3, Calendar, Clock, MapPin, ChevronRight, Zap, LogOut } from 'lucide-react';
 import { useUserStore } from '../store/useUserStore';
 import { useTournamentsStore } from '../store/useTournamentsStore';
 import { useRatingsStore } from '../store/useRatingsStore';
@@ -8,7 +8,7 @@ import { triggerHaptic } from '../utils/vkBridge';
 import { TournamentStatus, type Achievement } from '../types';
 
 export const ProfilePanel: React.FC = () => {
-  const { vkUser, profile, fetchProfile, setIsProfileModalOpen } = useUserStore();
+  const { vkUser, profile, fetchProfile, setIsProfileModalOpen, logout } = useUserStore();
   const { myTournaments, fetchMyTournaments, openDetail } = useTournamentsStore();
   const { leaderboard, fetchLeaderboard } = useRatingsStore();
 
@@ -495,6 +495,25 @@ export const ProfilePanel: React.FC = () => {
             ))}
           </div>
         )}
+      </div>
+
+      {/* 5. ВЫХОД ИЗ ПРОФИЛЯ / СМЕНА АККАУНТА */}
+      <div className="pt-2">
+        <button
+          type="button"
+          onClick={() => {
+            logout();
+          }}
+          className="w-full py-3.5 px-4 rounded-2xl bg-red-950/40 hover:bg-red-950/70 active:bg-red-900/50 border border-red-500/30 hover:border-red-500/50 text-red-300 hover:text-red-200 font-bold text-sm flex items-center justify-center gap-2.5 shadow-lg shadow-black/40 transition-all active:scale-[0.98]"
+          title="Выйти из аккаунта / Сменить профиль"
+          aria-label="Выйти из аккаунта"
+        >
+          <LogOut className="w-4 h-4 text-red-400 shrink-0" />
+          <span>Выйти из профиля</span>
+        </button>
+        <p className="text-[11px] text-center text-[#8fa89b]/60 mt-2">
+          Сбросить сессию и сменить профиль
+        </p>
       </div>
     </div>
   );

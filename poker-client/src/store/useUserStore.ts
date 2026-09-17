@@ -3,6 +3,7 @@ import type { VkUser, AppTab, UserProfile, UpdateProfilePayload } from '../types
 import { useTournamentsStore } from './useTournamentsStore';
 import { useRatingsStore } from './useRatingsStore';
 import { usersApi } from '../api/usersApi';
+import { triggerHaptic, initVkBridge } from '../utils/vkBridge';
 
 interface UserState {
   vkUser: VkUser | null;
@@ -31,6 +32,8 @@ interface UserState {
   fetchProfile: () => Promise<UserProfile | null>;
   updateProfile: (data: UpdateProfilePayload) => Promise<UserProfile>;
   acceptTerms: () => Promise<void>;
+  logout: () => void;
+  resetUser: () => void;
 }
 
 export const useUserStore = create<UserState>((set, get) => ({
@@ -101,6 +104,19 @@ export const useUserStore = create<UserState>((set, get) => ({
       const profile = await usersApi.getMe();
       set({ profile, isLoadingProfile: false });
 
+      if (!get().vkUser && profile.vkId) {
+        set({
+          vkUser: {
+            id: Number(profile.vkId) || 123456789,
+            first_name: profile.firstName || profile.nickname || 'Игрок',
+            last_name: profile.lastName || '',
+            photo_200: profile.avatarUrl,
+            photo_100: profile.avatarUrl,
+            isAdmin: get().isAdmin,
+          },
+        });
+      }
+
       const hasAcceptedTermsLocally = typeof window !== 'undefined' && localStorage.getItem('poker_legal_accepted') === 'true';
       const hasAcceptedTerms = !!profile.acceptedTermsAt || hasAcceptedTermsLocally;
 
@@ -124,10 +140,23 @@ export const useUserStore = create<UserState>((set, get) => ({
 
   updateProfile: async (data) => {
     const updated = await usersApi.updateProfile(data);
+    const currentVkUser = get().vkUser;
+    const vkUser: VkUser = currentVkUser || {
+      id: Number(updated.vkId) || 123456789,
+      first_name: updated.firstName || updated.nickname || 'Игрок',
+      last_name: updated.lastName || '',
+      photo_200: updated.avatarUrl,
+      photo_100: updated.avatarUrl,
+      isAdmin: get().isAdmin,
+    };
+
     if (typeof window !== 'undefined') {
       localStorage.setItem('poker_profile_completed', 'true');
+      if (updated.vkId) {
+        localStorage.setItem('vk_test_user_id', updated.vkId);
+      }
     }
-    set({ profile: updated, isProfileModalOpen: false });
+    set({ profile: updated, vkUser, isProfileModalOpen: false, isAuthenticated: true });
 
     // Обновляем лидерборд и турниры, если изменились никнейм/рейтинг
     useRatingsStore.getState().fetchLeaderboard();
@@ -141,6 +170,17 @@ export const useUserStore = create<UserState>((set, get) => ({
     if (typeof window !== 'undefined') {
       localStorage.setItem('poker_legal_accepted', 'true');
       localStorage.setItem('poker_accepted_terms_at', acceptedAt);
+    }
+
+    if (!get().vkUser) {
+      try {
+        const user = await initVkBridge();
+        if (user) {
+          set({ vkUser: user });
+        }
+      } catch (err) {
+        console.warn('Не удалось инициализировать пользователя при принятии условий:', err);
+      }
     }
 
     try {
@@ -160,6 +200,68 @@ export const useUserStore = create<UserState>((set, get) => ({
     const isProfileComplete = Boolean(profile?.nickname && profile?.phoneNumber) || hasCompletedProfileLocally;
     if (!isProfileComplete) {
       set({ isProfileModalOpen: true });
+    } else {
+      set({ isAuthenticated: true });
     }
+  },
+
+  resetUser: () => {
+    triggerHaptic('medium');
+
+    if (typeof window !== 'undefined') {
+      const keysToRemove = [
+        'poker_legal_accepted',
+        'poker_accepted_terms_at',
+        'poker_profile_completed',
+        'poker_is_admin',
+        'vk_test_user_id',
+        'tg_user_id',
+      ];
+      keysToRemove.forEach((key) => {
+        try {
+          localStorage.removeItem(key);
+        } catch {
+          // ignore
+        }
+      });
+      try {
+        for (let i = localStorage.length - 1; i >= 0; i--) {
+          const key = localStorage.key(i);
+          if (key && (key.startsWith('poker_') || key === 'vk_test_user_id' || key === 'tg_user_id')) {
+            localStorage.removeItem(key);
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    set({
+      vkUser: null,
+      profile: null,
+      isAuthenticated: false,
+      isAdmin: false,
+      isLoadingProfile: false,
+      selectedCityId: null,
+      selectedCity: null,
+      selectedCityName: 'Все города',
+      selectedClubId: null,
+      activeTab: 'schedule',
+      isCityModalOpen: false,
+      isLegalModalOpen: true,
+      isProfileModalOpen: false,
+    });
+
+    useTournamentsStore.setState({
+      myTournaments: [],
+      selectedTournament: null,
+      isDetailModalOpen: false,
+      actionError: null,
+      scheduleError: null,
+    });
+  },
+
+  logout: () => {
+    get().resetUser();
   },
 }));

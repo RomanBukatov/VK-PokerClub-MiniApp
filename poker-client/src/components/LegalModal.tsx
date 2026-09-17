@@ -4,14 +4,20 @@ import { useUserStore } from '../store/useUserStore';
 import { triggerHaptic } from '../utils/vkBridge';
 
 export const LegalModal: React.FC = () => {
-  const { isLegalModalOpen, acceptTerms } = useUserStore();
+  const { isLegalModalOpen } = useUserStore();
+
+  if (!isLegalModalOpen) return null;
+
+  return <LegalModalContent key={isLegalModalOpen ? 'open' : 'closed'} />;
+};
+
+const LegalModalContent: React.FC = () => {
+  const { acceptTerms } = useUserStore();
 
   const [agree152, setAgree152] = useState(false);
   const [agreeOffer, setAgreeOffer] = useState(false);
   const [showFullTerms, setShowFullTerms] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  if (!isLegalModalOpen) return null;
 
   const canAccept = agree152 && agreeOffer;
 

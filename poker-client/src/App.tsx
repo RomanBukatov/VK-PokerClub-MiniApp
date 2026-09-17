@@ -67,10 +67,12 @@ export function App() {
           {/* Модальные окна */}
           <TournamentDetailModal />
           <CitySelectModal />
-          <LegalModal />
-          <WelcomeProfileModal />
         </>
       )}
+
+      {/* Модальные окна оферты и профиля (доступны при необходимости и на стартовом экране) */}
+      <LegalModal />
+      <WelcomeProfileModal />
     </div>
   );
 }
