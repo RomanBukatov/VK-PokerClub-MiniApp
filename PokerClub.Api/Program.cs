@@ -48,7 +48,15 @@ builder.Services.AddScoped<IRatingService, RatingService>();
 builder.Services.AddScoped<ICityService, CityService>();
 builder.Services.AddScoped<IClubService, ClubService>();
 builder.Services.AddScoped<IVkAuthValidator, VkAuthValidator>();
-builder.Services.AddHttpClient<IGoogleSheetsSyncService, GoogleSheetsSyncService>();
+builder.Services.AddHttpClient<IGoogleSheetsSyncService, GoogleSheetsSyncService>(httpClient =>
+{
+    httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
+})
+.ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+{
+    AllowAutoRedirect = true,
+    MaxAutomaticRedirections = 5
+});
 
 // Настройка CORS политики для локальной разработки и доменов ВКонтакте
 builder.Services.AddCors(options =>

@@ -1,6 +1,13 @@
+using System.Net;
+using System.Net.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using PokerClub.Api.Controllers;
 using PokerClub.Domain.Entities;
+using PokerClub.Domain.Interfaces;
 using PokerClub.Infrastructure.Data;
 using PokerClub.Infrastructure.Services;
 using Xunit;
@@ -274,5 +281,649 @@ public class GoogleSheetsSyncServiceTests
         Assert.Equal(440, gulyaev.TotalRating);
         Assert.Equal("1345", gulyaev.ClubCardId);
         Assert.Equal("89223636110", gulyaev.PhoneNumber);
+    }
+
+    private class TestHttpMessageHandler : HttpMessageHandler
+    {
+        private readonly Func<HttpRequestMessage, HttpResponseMessage> _responder;
+        public List<HttpRequestMessage> Requests { get; } = new();
+
+        public TestHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> responder)
+        {
+            _responder = responder;
+        }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Requests.Add(request);
+            return Task.FromResult(_responder(request));
+        }
+    }
+
+    [Fact]
+    public async Task DownloadCsvWithFallbackAsync_EncodesSheetNameInGvizUrl()
+    {
+        using var context = CreateInMemoryDbContext();
+        var handler = new TestHttpMessageHandler(req =>
+        {
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("dummy,csv\r\n1,2")
+            };
+        });
+        using var httpClient = new HttpClient(handler);
+        var service = new GoogleSheetsSyncService(context, httpClient, NullLogger<GoogleSheetsSyncService>.Instance);
+
+        var result = await service.DownloadCsvWithFallbackAsync("Рейтинг сезона", "646289371");
+
+        Assert.Equal("dummy,csv\r\n1,2", result);
+        Assert.Single(handler.Requests);
+        var rawUri = handler.Requests[0].RequestUri!.OriginalString;
+        Assert.Contains("sheet=%D0%A0%D0%B5%D0%B9%D1%82%D0%B8%D0%BD%D0%B3%20%D1%81%D0%B5%D0%B7%D0%BE%D0%BD%D0%B0", rawUri);
+    }
+
+    [Fact]
+    public async Task DownloadCsvWithFallbackAsync_WhenGvizReturns401_FallsBackToGidExport()
+    {
+        using var context = CreateInMemoryDbContext();
+        var handler = new TestHttpMessageHandler(req =>
+        {
+            if (req.RequestUri!.ToString().Contains("gviz/tq"))
+            {
+                return new HttpResponseMessage(HttpStatusCode.Unauthorized)
+                {
+                    Content = new StringContent("Unauthorized")
+                };
+            }
+
+            if (req.RequestUri!.ToString().Contains("export?format=csv&gid=646289371"))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(SampleRatingCsv)
+                };
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+
+        using var httpClient = new HttpClient(handler);
+        var service = new GoogleSheetsSyncService(context, httpClient, NullLogger<GoogleSheetsSyncService>.Instance);
+
+        var result = await service.DownloadCsvWithFallbackAsync("Рейтинг сезона", "646289371");
+
+        Assert.Equal(SampleRatingCsv, result);
+        Assert.Equal(2, handler.Requests.Count);
+        Assert.Contains("gviz/tq", handler.Requests[0].RequestUri!.ToString());
+        Assert.Contains("export?format=csv&gid=646289371", handler.Requests[1].RequestUri!.ToString());
+    }
+
+    [Fact]
+    public async Task DownloadCsvWithFallbackAsync_WhenGvizReturnsHtml_FallsBackToGidExport()
+    {
+        using var context = CreateInMemoryDbContext();
+        var handler = new TestHttpMessageHandler(req =>
+        {
+            if (req.RequestUri!.ToString().Contains("gviz/tq"))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("<!DOCTYPE html><html><head><title>Sign in</title></head></html>")
+                };
+            }
+
+            if (req.RequestUri!.ToString().Contains("export?format=csv&gid=0"))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(SampleRatingCsv)
+                };
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+
+        using var httpClient = new HttpClient(handler);
+        var service = new GoogleSheetsSyncService(context, httpClient, NullLogger<GoogleSheetsSyncService>.Instance);
+
+        var result = await service.DownloadCsvWithFallbackAsync("Общий рейтинг", "0");
+
+        Assert.Equal(SampleRatingCsv, result);
+        Assert.Equal(2, handler.Requests.Count);
+        Assert.Contains("export?format=csv&gid=0", handler.Requests[1].RequestUri!.ToString());
+    }
+
+    [Fact]
+    public async Task DownloadCsvWithFallbackAsync_WhenBothFail_ReturnsNull()
+    {
+        using var context = CreateInMemoryDbContext();
+        var handler = new TestHttpMessageHandler(req => new HttpResponseMessage(HttpStatusCode.Unauthorized)
+        {
+            Content = new StringContent("Unauthorized")
+        });
+
+        using var httpClient = new HttpClient(handler);
+        var service = new GoogleSheetsSyncService(context, httpClient, NullLogger<GoogleSheetsSyncService>.Instance);
+
+        var result = await service.DownloadCsvWithFallbackAsync("Рейтинг сезона", "646289371");
+
+        Assert.Null(result);
+        Assert.Equal(2, handler.Requests.Count);
+    }
+
+    [Fact]
+    public async Task DownloadCsvWithFallbackAsync_SetsUserAgentHeader()
+    {
+        using var context = CreateInMemoryDbContext();
+        var handler = new TestHttpMessageHandler(req => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("col1\r\nval1")
+        });
+
+        using var httpClient = new HttpClient(handler);
+        var service = new GoogleSheetsSyncService(context, httpClient, NullLogger<GoogleSheetsSyncService>.Instance);
+
+        await service.DownloadCsvWithFallbackAsync("Общий рейтинг", "0");
+
+        Assert.Single(handler.Requests);
+        var userAgent = handler.Requests[0].Headers.UserAgent.ToString();
+        Assert.Contains("Mozilla/5.0", userAgent);
+    }
+
+    [Fact]
+    public async Task SyncFromGoogleSheetsAsync_WhenBothSheetsFail_ReturnsErrorMessage()
+    {
+        using var context = CreateInMemoryDbContext();
+        var handler = new TestHttpMessageHandler(req => new HttpResponseMessage(HttpStatusCode.Unauthorized)
+        {
+            Content = new StringContent("Unauthorized")
+        });
+
+        using var httpClient = new HttpClient(handler);
+        var service = new GoogleSheetsSyncService(context, httpClient, NullLogger<GoogleSheetsSyncService>.Instance);
+
+        var result = await service.SyncFromGoogleSheetsAsync();
+
+        Assert.False(result.Success);
+        Assert.Equal("Не удалось загрузить ни лист «Рейтинг сезона», ни «Общий рейтинг».", result.Message);
+    }
+
+    [Fact]
+    public async Task SyncFromGoogleSheetsAsync_WhenGvizFailsButGidFallbackSucceeds_SuccessfullySyncs()
+    {
+        using var context = CreateInMemoryDbContext();
+        var handler = new TestHttpMessageHandler(req =>
+        {
+            var uri = req.RequestUri!.ToString();
+            // Gviz fails with 401
+            if (uri.Contains("gviz/tq"))
+            {
+                return new HttpResponseMessage(HttpStatusCode.Unauthorized)
+                {
+                    Content = new StringContent("Unauthorized")
+                };
+            }
+
+            // Gid fallback for season rating succeeds
+            if (uri.Contains("export?format=csv&gid=646289371"))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(
+                        "\"РЕЙТИНГ СЕЗОНА Место\",\"Игрок\",\"Турниров\",\"Побед\",\"ТОП-3\",\"ТОП-10\",\"Нокаутов\",\"Сумма очков\",\"Среднее место\"\r\n" +
+                        "\"1\",\"Лукашенко Василий\",\"22\",\"2\",\"5\",\"10\",\"40\",\"486\",\"7,36\"\r\n")
+                };
+            }
+
+            // Gid fallback for total rating succeeds
+            if (uri.Contains("export?format=csv&gid=0"))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(
+                        "\"ОБЩИЙ РЕЙТИНГ КЛУБА Место\",\"Игрок\",\"Турниров\",\"Побед\",\"ТОП-3\",\"ТОП-10\",\"Нокаутов\",\"Сумма очков\",\"Среднее место\"\r\n" +
+                        "\"1\",\"Лукашенко Василий\",\"22\",\"2\",\"5\",\"10\",\"40\",\"449\",\"7,36\"\r\n")
+                };
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+
+        using var httpClient = new HttpClient(handler);
+        var service = new GoogleSheetsSyncService(context, httpClient, NullLogger<GoogleSheetsSyncService>.Instance);
+
+        var result = await service.SyncFromGoogleSheetsAsync();
+
+        Assert.True(result.Success);
+        Assert.Equal(1, result.TotalProcessed);
+        Assert.Equal(1, result.CreatedCount);
+
+        var user = await context.Users.FirstOrDefaultAsync();
+        Assert.NotNull(user);
+        Assert.Equal("Лукашенко", user.LastName);
+        Assert.Equal(486, user.SeasonRating);
+        Assert.Equal(449, user.TotalRating);
+    }
+
+    [Fact]
+    public async Task DownloadCsvWithFallbackAsync_WhenGvizThrowsException_FallsBackToGidExport()
+    {
+        using var context = CreateInMemoryDbContext();
+        var handler = new TestHttpMessageHandler(req =>
+        {
+            if (req.RequestUri!.ToString().Contains("gviz/tq"))
+            {
+                throw new HttpRequestException("Network failure on gviz");
+            }
+
+            if (req.RequestUri!.ToString().Contains("export?format=csv&gid=0"))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(SampleRatingCsv)
+                };
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+
+        using var httpClient = new HttpClient(handler);
+        var service = new GoogleSheetsSyncService(context, httpClient, NullLogger<GoogleSheetsSyncService>.Instance);
+
+        var result = await service.DownloadCsvWithFallbackAsync("Общий рейтинг", "0");
+
+        Assert.Equal(SampleRatingCsv, result);
+        Assert.Equal(2, handler.Requests.Count);
+    }
+
+    [Fact]
+    public async Task DownloadCsvWithFallbackAsync_WhenBothGvizAndFallbackThrowExceptions_ReturnsNullGracefully()
+    {
+        using var context = CreateInMemoryDbContext();
+        var handler = new TestHttpMessageHandler(req => throw new HttpRequestException("Total network outage"));
+
+        using var httpClient = new HttpClient(handler);
+        var service = new GoogleSheetsSyncService(context, httpClient, NullLogger<GoogleSheetsSyncService>.Instance);
+
+        var result = await service.DownloadCsvWithFallbackAsync("Общий рейтинг", "0");
+
+        Assert.Null(result);
+        Assert.Equal(2, handler.Requests.Count);
+    }
+
+    [Fact]
+    public async Task SyncFromGoogleSheetsAsync_WhenOnlyOneRatingSheetSucceeds_SyncsSuccessfully()
+    {
+        using var context = CreateInMemoryDbContext();
+        var handler = new TestHttpMessageHandler(req =>
+        {
+            var uri = req.RequestUri!.OriginalString;
+            // Season fails entirely
+            if (uri.Contains("646289371") || uri.Contains(Uri.EscapeDataString("Рейтинг сезона")))
+            {
+                return new HttpResponseMessage(HttpStatusCode.Unauthorized)
+                {
+                    Content = new StringContent("Unauthorized")
+                };
+            }
+
+            // Total succeeds via gviz
+            if (uri.Contains(Uri.EscapeDataString("Общий рейтинг")))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(
+                        "\"ОБЩИЙ РЕЙТИНГ КЛУБА Место\",\"Игрок\",\"Турниров\",\"Побед\",\"ТОП-3\",\"ТОП-10\",\"Нокаутов\",\"Сумма очков\",\"Среднее место\"\r\n" +
+                        "\"1\",\"Лукашенко Василий\",\"22\",\"2\",\"5\",\"10\",\"40\",\"449\",\"7,36\"\r\n")
+                };
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+
+        using var httpClient = new HttpClient(handler);
+        var service = new GoogleSheetsSyncService(context, httpClient, NullLogger<GoogleSheetsSyncService>.Instance);
+
+        var result = await service.SyncFromGoogleSheetsAsync();
+
+        Assert.True(result.Success);
+        Assert.Equal(1, result.TotalProcessed);
+        var user = await context.Users.FirstOrDefaultAsync();
+        Assert.NotNull(user);
+        Assert.Equal(449, user.TotalRating);
+    }
+
+    [Fact]
+    public async Task DownloadCsvWithFallbackAsync_UsesCustomSpreadsheetIdWhenProvided()
+    {
+        using var context = CreateInMemoryDbContext();
+        const string customId = "custom_test_sheet_12345";
+        var handler = new TestHttpMessageHandler(req => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("a,b\r\n1,2")
+        });
+
+        using var httpClient = new HttpClient(handler);
+        var service = new GoogleSheetsSyncService(context, httpClient, NullLogger<GoogleSheetsSyncService>.Instance, customId);
+
+        await service.DownloadCsvWithFallbackAsync("Общий рейтинг", "0");
+
+        Assert.Single(handler.Requests);
+        Assert.Contains(customId, handler.Requests[0].RequestUri!.ToString());
+    }
+
+    [Fact]
+    public async Task DownloadCsvWithFallbackAsync_WhenGvizReturnsGoogleVisualizationError_FallsBackToGidExport()
+    {
+        using var context = CreateInMemoryDbContext();
+        var handler = new TestHttpMessageHandler(req =>
+        {
+            if (req.RequestUri!.ToString().Contains("gviz/tq"))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("/*O_o*/\ngoogle.visualization.Query.setResponse({\"version\":\"0.6\",\"status\":\"error\",\"errors\":[{\"reason\":\"not_found\",\"message\":\"Requested sheet not found\"}]});")
+                };
+            }
+
+            if (req.RequestUri!.ToString().Contains("export?format=csv&gid=0"))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(SampleRatingCsv)
+                };
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+
+        using var httpClient = new HttpClient(handler);
+        var service = new GoogleSheetsSyncService(context, httpClient, NullLogger<GoogleSheetsSyncService>.Instance);
+
+        var result = await service.DownloadCsvWithFallbackAsync("Общий рейтинг", "0");
+
+        Assert.Equal(SampleRatingCsv, result);
+        Assert.Equal(2, handler.Requests.Count);
+        Assert.Contains("export?format=csv&gid=0", handler.Requests[1].RequestUri!.ToString());
+    }
+
+    [Fact]
+    public async Task DownloadCsvWithFallbackAsync_WhenGvizReturnsJsonError_FallsBackToGidExport()
+    {
+        using var context = CreateInMemoryDbContext();
+        var handler = new TestHttpMessageHandler(req =>
+        {
+            if (req.RequestUri!.ToString().Contains("gviz/tq"))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("{\"status\":\"error\",\"message\":\"Sheet not found\"}")
+                };
+            }
+
+            if (req.RequestUri!.ToString().Contains("export?format=csv&gid=646289371"))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(SampleRatingCsv)
+                };
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+
+        using var httpClient = new HttpClient(handler);
+        var service = new GoogleSheetsSyncService(context, httpClient, NullLogger<GoogleSheetsSyncService>.Instance);
+
+        var result = await service.DownloadCsvWithFallbackAsync("Рейтинг сезона", "646289371");
+
+        Assert.Equal(SampleRatingCsv, result);
+        Assert.Equal(2, handler.Requests.Count);
+        Assert.Contains("export?format=csv&gid=646289371", handler.Requests[1].RequestUri!.ToString());
+    }
+
+    [Fact]
+    public async Task DownloadCsvWithFallbackAsync_WhenGidNotProvided_AutoResolvesKnownGidForSeasonAndTotal()
+    {
+        using var context = CreateInMemoryDbContext();
+        var handler = new TestHttpMessageHandler(req =>
+        {
+            var uri = req.RequestUri!.ToString();
+            // Gviz fails
+            if (uri.Contains("gviz/tq"))
+            {
+                return new HttpResponseMessage(HttpStatusCode.Unauthorized)
+                {
+                    Content = new StringContent("Unauthorized")
+                };
+            }
+
+            if (uri.Contains("export?format=csv&gid=646289371"))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("season_csv_data")
+                };
+            }
+
+            if (uri.Contains("export?format=csv&gid=0"))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("total_csv_data")
+                };
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+
+        using var httpClient = new HttpClient(handler);
+        var service = new GoogleSheetsSyncService(context, httpClient, NullLogger<GoogleSheetsSyncService>.Instance);
+
+        // Call without providing gid parameter
+        var seasonResult = await service.DownloadCsvWithFallbackAsync("Рейтинг сезона");
+        var totalResult = await service.DownloadCsvWithFallbackAsync("Общий рейтинг");
+
+        Assert.Equal("season_csv_data", seasonResult);
+        Assert.Equal("total_csv_data", totalResult);
+        Assert.Equal(4, handler.Requests.Count);
+        Assert.Contains("export?format=csv&gid=646289371", handler.Requests[1].RequestUri!.ToString());
+        Assert.Contains("export?format=csv&gid=0", handler.Requests[3].RequestUri!.ToString());
+    }
+
+    [Fact]
+    public async Task GoogleSheetsSyncService_WhenConfigurationHasCustomSpreadsheetId_ReadsFromConfiguration()
+    {
+        using var context = CreateInMemoryDbContext();
+        const string customConfigId = "config_sheet_id_99999";
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                { "GoogleSheets:SpreadsheetId", customConfigId }
+            })
+            .Build();
+
+        var handler = new TestHttpMessageHandler(req => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("col1\r\nval1")
+        });
+
+        using var httpClient = new HttpClient(handler);
+        var service = new GoogleSheetsSyncService(context, httpClient, NullLogger<GoogleSheetsSyncService>.Instance, config);
+
+        await service.DownloadCsvWithFallbackAsync("Общий рейтинг", "0");
+
+        Assert.Single(handler.Requests);
+        Assert.Contains(customConfigId, handler.Requests[0].RequestUri!.ToString());
+    }
+
+    [Fact]
+    public async Task GoogleSheetsSyncService_WhenConfigurationHasCustomRegistrationsGid_UsesRegistrationsGidFallback()
+    {
+        using var context = CreateInMemoryDbContext();
+        const string customRegGid = "777888999";
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                { "GoogleSheets:RegistrationsGid", customRegGid }
+            })
+            .Build();
+
+        var handler = new TestHttpMessageHandler(req =>
+        {
+            var uri = req.RequestUri!.OriginalString;
+            if (uri.Contains("gviz/tq"))
+            {
+                // Rating sheets succeed via gviz, registrations fails via gviz
+                if (uri.Contains("РЕГИСТРАЦИИ", StringComparison.OrdinalIgnoreCase) || 
+                    uri.Contains(Uri.EscapeDataString("РЕГИСТРАЦИИ"), StringComparison.OrdinalIgnoreCase))
+                {
+                    return new HttpResponseMessage(HttpStatusCode.Unauthorized) { Content = new StringContent("Unauthorized") };
+                }
+
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(SampleRatingCsv) };
+            }
+
+            if (uri.Contains($"export?format=csv&gid={customRegGid}"))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(SampleRegistrationsCsv) };
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+
+        using var httpClient = new HttpClient(handler);
+        var service = new GoogleSheetsSyncService(context, httpClient, NullLogger<GoogleSheetsSyncService>.Instance, config);
+
+        var result = await service.SyncFromGoogleSheetsAsync();
+
+        Assert.True(result.Success);
+        // Fallback for registrations succeeded and populated club card IDs
+        var user = await context.Users.FirstOrDefaultAsync(u => u.LastName == "Гуляев");
+        Assert.NotNull(user);
+        Assert.Equal("1345", user.ClubCardId);
+    }
+
+    [Theory]
+    [InlineData("a,b,c\r\n1,2,3", true)]
+    [InlineData("\"Место\",\"Игрок\"\r\n1,\"Иванов\"", true)]
+    [InlineData("<!DOCTYPE html><html><body>Login</body></html>", false)]
+    [InlineData("<html><head><title>Sign in</title></head></html>", false)]
+    [InlineData("   <div class=\"login\">Sign In</div>", false)]
+    [InlineData("/*O_o*/\ngoogle.visualization.Query.setResponse({...});", false)]
+    [InlineData("{\"status\":\"error\",\"message\":\"Not found\"}", false)]
+    [InlineData("", false)]
+    [InlineData("   ", false)]
+    public void IsValidCsvContent_ValidatesCorrectlyAcrossFormats(string content, bool expectedValid)
+    {
+        var isValid = GoogleSheetsSyncService.IsValidCsvContent(content);
+        Assert.Equal(expectedValid, isValid);
+    }
+
+    [Fact]
+    public async Task AdminController_SyncGoogleSheets_WhenSuccessful_ReturnsOk()
+    {
+        using var context = CreateInMemoryDbContext();
+        var handler = new TestHttpMessageHandler(req => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(SampleRatingCsv)
+        });
+
+        using var httpClient = new HttpClient(handler);
+        var syncService = new GoogleSheetsSyncService(context, httpClient, NullLogger<GoogleSheetsSyncService>.Instance);
+        var controller = new AdminController(syncService);
+
+        var actionResult = await controller.SyncGoogleSheets(CancellationToken.None);
+
+        var okResult = Assert.IsType<OkObjectResult>(actionResult.Result);
+        var result = Assert.IsType<GoogleSheetsSyncResult>(okResult.Value);
+        Assert.True(result.Success);
+        Assert.Equal(3, result.TotalProcessed);
+    }
+
+    [Fact]
+    public async Task AdminController_SyncGoogleSheets_WhenFailed_ReturnsBadRequestWithErrorResult()
+    {
+        using var context = CreateInMemoryDbContext();
+        var handler = new TestHttpMessageHandler(req => new HttpResponseMessage(HttpStatusCode.Unauthorized)
+        {
+            Content = new StringContent("Unauthorized")
+        });
+
+        using var httpClient = new HttpClient(handler);
+        var syncService = new GoogleSheetsSyncService(context, httpClient, NullLogger<GoogleSheetsSyncService>.Instance);
+        var controller = new AdminController(syncService);
+
+        var actionResult = await controller.SyncGoogleSheets(CancellationToken.None);
+
+        var badRequestResult = Assert.IsType<BadRequestObjectResult>(actionResult.Result);
+        var result = Assert.IsType<GoogleSheetsSyncResult>(badRequestResult.Value);
+        Assert.False(result.Success);
+        Assert.Equal("Не удалось загрузить ни лист «Рейтинг сезона», ни «Общий рейтинг».", result.Message);
+    }
+
+    [Fact]
+    public void ServiceCollection_CanResolveGoogleSheetsSyncService_WithSocketsHttpHandlerAndUserAgent()
+    {
+        var services = new ServiceCollection();
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                { "ConnectionStrings:DefaultConnection", "Host=localhost;Database=test;Username=test;Password=test" },
+                { "GoogleSheets:SpreadsheetId", "di_test_sheet_id" }
+            })
+            .Build();
+
+        services.AddSingleton<IConfiguration>(configuration);
+        services.AddDbContext<AppDbContext>(opt => opt.UseInMemoryDatabase(Guid.NewGuid().ToString()));
+        services.AddLogging();
+
+        services.AddHttpClient<IGoogleSheetsSyncService, GoogleSheetsSyncService>(httpClient =>
+        {
+            httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
+        })
+        .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+        {
+            AllowAutoRedirect = true,
+            MaxAutomaticRedirections = 5
+        });
+
+        using var provider = services.BuildServiceProvider(new ServiceProviderOptions
+        {
+            ValidateOnBuild = true,
+            ValidateScopes = true
+        });
+
+        using var scope = provider.CreateScope();
+        var service = scope.ServiceProvider.GetRequiredService<IGoogleSheetsSyncService>();
+
+        Assert.NotNull(service);
+        var concrete = Assert.IsType<GoogleSheetsSyncService>(service);
+        Assert.NotNull(concrete);
+    }
+
+    [Fact]
+    public void ServiceCollection_CanResolveGoogleSheetsSyncService_WithoutCustomConfig_UsesDefaults()
+    {
+        var services = new ServiceCollection();
+        var configuration = new ConfigurationBuilder().Build();
+
+        services.AddSingleton<IConfiguration>(configuration);
+        services.AddDbContext<AppDbContext>(opt => opt.UseInMemoryDatabase(Guid.NewGuid().ToString()));
+        services.AddLogging();
+
+        services.AddHttpClient<IGoogleSheetsSyncService, GoogleSheetsSyncService>();
+
+        using var provider = services.BuildServiceProvider(new ServiceProviderOptions
+        {
+            ValidateOnBuild = true,
+            ValidateScopes = true
+        });
+
+        using var scope = provider.CreateScope();
+        var service = scope.ServiceProvider.GetRequiredService<IGoogleSheetsSyncService>();
+
+        Assert.NotNull(service);
+        Assert.IsType<GoogleSheetsSyncService>(service);
     }
 }

@@ -1,6 +1,8 @@
 using System.Globalization;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using PokerClub.Domain.Entities;
 using PokerClub.Domain.Interfaces;
@@ -10,23 +12,75 @@ namespace PokerClub.Infrastructure.Services;
 
 public class GoogleSheetsSyncService : IGoogleSheetsSyncService
 {
-    public const string SeasonRatingCsvUrl = "https://docs.google.com/spreadsheets/d/1GRINVjwfqXsG0vccHfFFOaxzTbo5pcxWBGn1YOgzOn0/gviz/tq?tqx=out:csv&sheet=%D0%A0%D0%B5%D0%B9%D1%82%D0%B8%D0%BD%D0%B3%20%D1%81%D0%B5%D0%B7%D0%BE%D0%BD%D0%B0";
-    public const string TotalRatingCsvUrl = "https://docs.google.com/spreadsheets/d/1GRINVjwfqXsG0vccHfFFOaxzTbo5pcxWBGn1YOgzOn0/gviz/tq?tqx=out:csv&sheet=%D0%9E%D0%B1%D1%89%D0%B8%D0%B9%20%D1%80%D0%B5%D0%B9%D1%82%D0%B8%D0%BD%D0%B3";
-    public const string RegistrationsCsvUrl = "https://docs.google.com/spreadsheets/d/1GRINVjwfqXsG0vccHfFFOaxzTbo5pcxWBGn1YOgzOn0/gviz/tq?tqx=out:csv&sheet=%D0%A0%D0%95%D0%93%D0%98%D0%A1%D0%A2%D0%A0%D0%90%D0%A6%D0%98%D0%98";
+    public const string DefaultSpreadsheetId = "1GRINVjwfqXsG0vccHfFFOaxzTbo5pcxWBGn1YOgzOn0";
+    public const string SeasonRatingSheetName = "Рейтинг сезона";
+    public const string SeasonRatingGid = "646289371";
+    public const string TotalRatingSheetName = "Общий рейтинг";
+    public const string TotalRatingGid = "0";
+    public const string RegistrationsSheetName = "РЕГИСТРАЦИИ";
+
+    public const string SeasonRatingCsvUrl = $"https://docs.google.com/spreadsheets/d/{DefaultSpreadsheetId}/gviz/tq?tqx=out:csv&sheet=%D0%A0%D0%B5%D0%B9%D1%82%D0%B8%D0%BD%D0%B3%20%D1%81%D0%B5%D0%B7%D0%BE%D0%BD%D0%B0";
+    public const string TotalRatingCsvUrl = $"https://docs.google.com/spreadsheets/d/{DefaultSpreadsheetId}/gviz/tq?tqx=out:csv&sheet=%D0%9E%D0%B1%D1%89%D0%B8%D0%B9%20%D1%80%D0%B5%D0%B9%D1%82%D0%B8%D0%BD%D0%B3";
+    public const string RegistrationsCsvUrl = $"https://docs.google.com/spreadsheets/d/{DefaultSpreadsheetId}/gviz/tq?tqx=out:csv&sheet=%D0%A0%D0%95%D0%93%D0%98%D0%A1%D0%A2%D0%A0%D0%90%D0%A6%D0%98%D0%98";
     public const string DefaultCsvUrl = TotalRatingCsvUrl;
 
     private readonly AppDbContext _context;
     private readonly HttpClient _httpClient;
     private readonly ILogger<GoogleSheetsSyncService> _logger;
+    private readonly string _spreadsheetId;
+    private readonly string? _registrationsGid;
 
     public GoogleSheetsSyncService(
         AppDbContext context,
         HttpClient httpClient,
         ILogger<GoogleSheetsSyncService> logger)
+        : this(context, httpClient, logger, (IConfiguration?)null)
+    {
+    }
+
+    [ActivatorUtilitiesConstructor]
+    public GoogleSheetsSyncService(
+        AppDbContext context,
+        HttpClient httpClient,
+        ILogger<GoogleSheetsSyncService> logger,
+        IConfiguration? configuration)
+        : this(
+            context,
+            httpClient,
+            logger,
+            configuration?["GoogleSheets:SpreadsheetId"]
+                ?? configuration?["SPREADSHEET_ID"]
+                ?? configuration?["SpreadsheetId"]
+                ?? DefaultSpreadsheetId,
+            configuration?["GoogleSheets:RegistrationsGid"]
+                ?? configuration?["REGISTRATIONS_GID"])
+    {
+    }
+
+    public GoogleSheetsSyncService(
+        AppDbContext context,
+        HttpClient httpClient,
+        ILogger<GoogleSheetsSyncService> logger,
+        string spreadsheetId,
+        string? registrationsGid = null)
     {
         _context = context;
         _httpClient = httpClient;
         _logger = logger;
+        _spreadsheetId = string.IsNullOrWhiteSpace(spreadsheetId) ? DefaultSpreadsheetId : spreadsheetId;
+        _registrationsGid = registrationsGid;
+
+        try
+        {
+            if (!_httpClient.DefaultRequestHeaders.UserAgent.Any())
+            {
+                _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
+            }
+        }
+        catch
+        {
+            // Ignore if headers are read-only or locked
+        }
     }
 
     public async Task<GoogleSheetsSyncResult> SyncFromGoogleSheetsAsync(CancellationToken cancellationToken = default)
@@ -35,41 +89,8 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
         {
             _logger.LogInformation("Запуск загрузки данных рейтинга из Google Sheets...");
 
-            string? seasonCsvContent = null;
-            try
-            {
-                var seasonResponse = await _httpClient.GetAsync(SeasonRatingCsvUrl, cancellationToken);
-                if (seasonResponse.IsSuccessStatusCode)
-                {
-                    seasonCsvContent = await seasonResponse.Content.ReadAsStringAsync(cancellationToken);
-                }
-                else
-                {
-                    _logger.LogWarning("Лист «Рейтинг сезона» вернул статус {StatusCode}", seasonResponse.StatusCode);
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Не удалось загрузить лист «Рейтинг сезона»");
-            }
-
-            string? totalCsvContent = null;
-            try
-            {
-                var totalResponse = await _httpClient.GetAsync(TotalRatingCsvUrl, cancellationToken);
-                if (totalResponse.IsSuccessStatusCode)
-                {
-                    totalCsvContent = await totalResponse.Content.ReadAsStringAsync(cancellationToken);
-                }
-                else
-                {
-                    _logger.LogWarning("Лист «Общий рейтинг» вернул статус {StatusCode}", totalResponse.StatusCode);
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Не удалось загрузить лист «Общий рейтинг»");
-            }
+            var seasonCsvContent = await DownloadCsvWithFallbackAsync(SeasonRatingSheetName, SeasonRatingGid, cancellationToken);
+            var totalCsvContent = await DownloadCsvWithFallbackAsync(TotalRatingSheetName, TotalRatingGid, cancellationToken);
 
             if (string.IsNullOrWhiteSpace(seasonCsvContent) && string.IsNullOrWhiteSpace(totalCsvContent))
             {
@@ -81,15 +102,16 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
             string? registrationsCsvContent = null;
             try
             {
-                var regResponse = await _httpClient.GetAsync(RegistrationsCsvUrl, cancellationToken);
-                if (regResponse.IsSuccessStatusCode)
-                {
-                    registrationsCsvContent = await regResponse.Content.ReadAsStringAsync(cancellationToken);
-                }
+                registrationsCsvContent = await DownloadCsvWithFallbackAsync(RegistrationsSheetName, _registrationsGid, cancellationToken);
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Не удалось загрузить лист «РЕГИСТРАЦИИ», продолжаем синхронизацию только по рейтингу.");
+                _logger.LogWarning(ex, "Не удалось загрузить лист «{RegistrationsSheetName}», продолжаем синхронизацию только по рейтингу.", RegistrationsSheetName);
+            }
+
+            if (string.IsNullOrWhiteSpace(registrationsCsvContent))
+            {
+                _logger.LogWarning("Лист «{RegistrationsSheetName}» не был загружен или пуст, продолжаем синхронизацию только по рейтингу.", RegistrationsSheetName);
             }
 
             return await SyncFromCsvAsync(seasonCsvContent, totalCsvContent, registrationsCsvContent, cancellationToken);
@@ -99,6 +121,128 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
             _logger.LogError(ex, "Исключение при синхронизации с Google Sheets");
             return new GoogleSheetsSyncResult(false, 0, 0, 0, $"Ошибка при синхронизации: {ex.Message}");
         }
+    }
+
+    public async Task<string?> DownloadCsvWithFallbackAsync(
+        string sheetName, 
+        string? gid = null, 
+        CancellationToken cancellationToken = default)
+    {
+        // Auto-resolve known gids if not explicitly provided
+        if (string.IsNullOrWhiteSpace(gid))
+        {
+            if (string.Equals(sheetName, SeasonRatingSheetName, StringComparison.OrdinalIgnoreCase))
+            {
+                gid = SeasonRatingGid;
+            }
+            else if (string.Equals(sheetName, TotalRatingSheetName, StringComparison.OrdinalIgnoreCase))
+            {
+                gid = TotalRatingGid;
+            }
+        }
+
+        var encodedSheetName = Uri.EscapeDataString(sheetName);
+        var gvizUrl = $"https://docs.google.com/spreadsheets/d/{_spreadsheetId}/gviz/tq?tqx=out:csv&sheet={encodedSheetName}";
+
+        try
+        {
+            _logger.LogInformation("Попытка загрузки листа «{SheetName}» через gviz API. URL: {Url}", sheetName, gvizUrl);
+            var response = await _httpClient.GetAsync(gvizUrl, cancellationToken);
+            if (response.IsSuccessStatusCode)
+            {
+                var content = await response.Content.ReadAsStringAsync(cancellationToken);
+                if (IsValidCsvContent(content))
+                {
+                    _logger.LogInformation("Лист «{SheetName}» успешно загружен через gviz API.", sheetName);
+                    return content;
+                }
+
+                _logger.LogError(
+                    "Лист «{SheetName}» вернул HTTP {StatusCode}, но содержимое не является валидным CSV. URL: {Url}, Ответ: {ResponseBody}",
+                    sheetName, $"{(int)response.StatusCode} ({response.StatusCode})", gvizUrl, TruncateResponse(content));
+            }
+            else
+            {
+                var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
+                _logger.LogError(
+                    "Ошибка загрузки листа «{SheetName}» через gviz. URL: {Url}, HTTP статус: {StatusCode}, Ответ: {ResponseBody}",
+                    sheetName, gvizUrl, $"{(int)response.StatusCode} ({response.StatusCode})", TruncateResponse(errorBody));
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Исключение при скачивании CSV для листа «{SheetName}» через gviz. URL: {Url}", sheetName, gvizUrl);
+        }
+
+        if (!string.IsNullOrWhiteSpace(gid))
+        {
+            var exportUrl = $"https://docs.google.com/spreadsheets/d/{_spreadsheetId}/export?format=csv&gid={gid}";
+            try
+            {
+                _logger.LogInformation("Попытка резервной загрузки листа «{SheetName}» по gid={Gid}. URL: {Url}", sheetName, gid, exportUrl);
+                var fallbackResponse = await _httpClient.GetAsync(exportUrl, cancellationToken);
+                if (fallbackResponse.IsSuccessStatusCode)
+                {
+                    var fallbackContent = await fallbackResponse.Content.ReadAsStringAsync(cancellationToken);
+                    if (IsValidCsvContent(fallbackContent))
+                    {
+                        _logger.LogInformation("Лист «{SheetName}» успешно загружен по запасному URL (gid={Gid}).", sheetName, gid);
+                        return fallbackContent;
+                    }
+
+                    _logger.LogError(
+                        "Запасной экспорт листа «{SheetName}» по gid={Gid} вернул HTTP {StatusCode}, но содержимое не является валидным CSV. URL: {Url}, Ответ: {ResponseBody}",
+                        sheetName, gid, $"{(int)fallbackResponse.StatusCode} ({fallbackResponse.StatusCode})", exportUrl, TruncateResponse(fallbackContent));
+                }
+                else
+                {
+                    var fallbackErrorBody = await fallbackResponse.Content.ReadAsStringAsync(cancellationToken);
+                    _logger.LogError(
+                        "Ошибка скачивания CSV по запасному URL для листа «{SheetName}» (gid={Gid}). URL: {Url}, HTTP статус: {StatusCode}, Ответ: {ResponseBody}",
+                        sheetName, gid, exportUrl, $"{(int)fallbackResponse.StatusCode} ({fallbackResponse.StatusCode})", TruncateResponse(fallbackErrorBody));
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Исключение при скачивании CSV по запасному URL для листа «{SheetName}» (gid={Gid}). URL: {Url}", sheetName, gid, exportUrl);
+            }
+        }
+
+        return null;
+    }
+
+    public static bool IsHtmlContent(string? content)
+    {
+        if (string.IsNullOrWhiteSpace(content)) return false;
+        var trimmed = content.TrimStart().TrimStart('\uFEFF');
+        return trimmed.StartsWith('<') ||
+               trimmed.Contains("<!DOCTYPE", StringComparison.OrdinalIgnoreCase) ||
+               trimmed.Contains("<html", StringComparison.OrdinalIgnoreCase) ||
+               trimmed.Contains("<body", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static bool IsValidCsvContent(string? content)
+    {
+        if (string.IsNullOrWhiteSpace(content)) return false;
+        if (IsHtmlContent(content)) return false;
+
+        var trimmed = content.TrimStart().TrimStart('\uFEFF');
+        if (trimmed.StartsWith("/*", StringComparison.Ordinal) ||
+            trimmed.StartsWith('{') ||
+            trimmed.Contains("google.visualization", StringComparison.OrdinalIgnoreCase) ||
+            trimmed.Contains("\"status\":\"error\"", StringComparison.OrdinalIgnoreCase) ||
+            trimmed.Contains("\"status\": \"error\"", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    public static string TruncateResponse(string? content, int maxLength = 2000)
+    {
+        if (string.IsNullOrEmpty(content)) return string.Empty;
+        return content.Length <= maxLength ? content : content[..maxLength] + "... [truncated]";
     }
 
     public Task<GoogleSheetsSyncResult> SyncFromCsvAsync(string csvContent, CancellationToken cancellationToken = default)
