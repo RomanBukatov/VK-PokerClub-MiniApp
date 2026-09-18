@@ -76,6 +76,13 @@ export interface LeaderboardEntry {
   points?: number;
 }
 
+export interface LeaderboardResponse {
+  items: LeaderboardEntry[];
+  totalCount: number;
+  limit: number;
+  offset: number;
+}
+
 export interface VkUser {
   id: number;
   first_name: string;

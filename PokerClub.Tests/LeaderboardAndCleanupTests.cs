@@ -115,7 +115,8 @@ public class LeaderboardAndCleanupTests
         var ratingService = new RatingService(context);
 
         // Сезонный рейтинг: Лукашенко (486) > Гуляев (485)
-        var seasonLeaderboard = await ratingService.GetLeaderboardAsync(limit: 10, type: "season");
+        var (seasonLeaderboard, seasonTotal) = await ratingService.GetLeaderboardAsync(limit: 10, offset: 0, type: "season");
+        Assert.Equal(2, seasonTotal);
         Assert.Equal(2, seasonLeaderboard.Count);
         Assert.Equal("Лукашенко", seasonLeaderboard[0].LastName);
         Assert.Equal(486, seasonLeaderboard[0].SeasonRating);
@@ -123,7 +124,8 @@ public class LeaderboardAndCleanupTests
         Assert.Equal(485, seasonLeaderboard[1].SeasonRating);
 
         // Общий рейтинг: Гуляев (500) > Лукашенко (449)
-        var allTimeLeaderboard = await ratingService.GetLeaderboardAsync(limit: 10, type: "all");
+        var (allTimeLeaderboard, allTotal) = await ratingService.GetLeaderboardAsync(limit: 10, offset: 0, type: "all");
+        Assert.Equal(2, allTotal);
         Assert.Equal(2, allTimeLeaderboard.Count);
         Assert.Equal("Гуляев", allTimeLeaderboard[0].LastName);
         Assert.Equal(500, allTimeLeaderboard[0].TotalRating);
@@ -146,10 +148,12 @@ public class LeaderboardAndCleanupTests
         var controller = new RatingsController(ratingService);
 
         // Season leaderboard
-        var seasonResult = await controller.GetLeaderboard(limit: 50, type: "season");
+        var seasonResult = await controller.GetLeaderboard(limit: 50, offset: 0, type: "season");
         var okSeason = Assert.IsType<OkObjectResult>(seasonResult.Result);
-        var seasonList = Assert.IsType<List<LeaderboardEntryDto>>(okSeason.Value);
+        var seasonResponse = Assert.IsType<LeaderboardResponseDto>(okSeason.Value);
+        var seasonList = seasonResponse.Items;
 
+        Assert.Equal(2, seasonResponse.TotalCount);
         Assert.Equal(2, seasonList.Count);
         Assert.Equal(1, seasonList[0].Rank);
         Assert.Equal("Василий", seasonList[0].FirstName);
@@ -162,10 +166,12 @@ public class LeaderboardAndCleanupTests
         Assert.Equal(485, seasonList[1].Points);
 
         // All-time leaderboard
-        var allResult = await controller.GetLeaderboard(limit: 50, type: "all");
+        var allResult = await controller.GetLeaderboard(limit: 50, offset: 0, type: "all");
         var okAll = Assert.IsType<OkObjectResult>(allResult.Result);
-        var allList = Assert.IsType<List<LeaderboardEntryDto>>(okAll.Value);
+        var allResponse = Assert.IsType<LeaderboardResponseDto>(okAll.Value);
+        var allList = allResponse.Items;
 
+        Assert.Equal(2, allResponse.TotalCount);
         Assert.Equal(2, allList.Count);
         Assert.Equal(1, allList[0].Rank);
         Assert.Equal("Василий", allList[0].FirstName);
@@ -254,13 +260,15 @@ public class LeaderboardAndCleanupTests
         var ratingService = new RatingService(context);
         var controller = new RatingsController(ratingService);
 
-        var result = await controller.GetLeaderboard(limit: requestLimit, type: type);
+        var result = await controller.GetLeaderboard(limit: requestLimit, offset: 0, type: type);
         var okResult = Assert.IsType<OkObjectResult>(result.Result);
-        var list = Assert.IsType<List<LeaderboardEntryDto>>(okResult.Value);
+        var response = Assert.IsType<LeaderboardResponseDto>(okResult.Value);
+        var list = response.Items;
 
         Assert.Equal(expectedLimit, list.Count);
         Assert.Equal(1, list[0].Rank);
         Assert.Equal("Василий", list[0].FirstName);
+        Assert.Equal(120, response.TotalCount);
 
         if (type == "all")
         {
@@ -270,6 +278,48 @@ public class LeaderboardAndCleanupTests
         {
             Assert.Equal(999, list[0].Points);
         }
+    }
+
+    [Fact]
+    public async Task RatingsController_Pagination_ReturnsCorrectOffsetAndCalculatedRanks()
+    {
+        using var context = CreateInMemoryDbContext();
+
+        var users = new List<User>();
+        for (int i = 1; i <= 60; i++)
+        {
+            users.Add(new User
+            {
+                VkId = $"user_{i}",
+                FirstName = $"Игрок{i}",
+                LastName = $"Тест{i}",
+                SeasonRating = 1000 - i,
+                TotalRating = 1000 - i
+            });
+        }
+        context.Users.AddRange(users);
+        await context.SaveChangesAsync();
+
+        var ratingService = new RatingService(context);
+        var controller = new RatingsController(ratingService);
+
+        // Page 1: limit 50, offset 0
+        var page1Result = await controller.GetLeaderboard(limit: 50, offset: 0, type: "season");
+        var ok1 = Assert.IsType<OkObjectResult>(page1Result.Result);
+        var resp1 = Assert.IsType<LeaderboardResponseDto>(ok1.Value);
+        Assert.Equal(60, resp1.TotalCount);
+        Assert.Equal(50, resp1.Items.Count);
+        Assert.Equal(1, resp1.Items[0].Rank);
+        Assert.Equal(50, resp1.Items[49].Rank);
+
+        // Page 2: limit 50, offset 50
+        var page2Result = await controller.GetLeaderboard(limit: 50, offset: 50, type: "season");
+        var ok2 = Assert.IsType<OkObjectResult>(page2Result.Result);
+        var resp2 = Assert.IsType<LeaderboardResponseDto>(ok2.Value);
+        Assert.Equal(60, resp2.TotalCount);
+        Assert.Equal(10, resp2.Items.Count);
+        Assert.Equal(51, resp2.Items[0].Rank);
+        Assert.Equal(60, resp2.Items[9].Rank);
     }
 
     [Theory]

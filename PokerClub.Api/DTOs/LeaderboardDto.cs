@@ -23,3 +23,10 @@ public record LeaderboardEntryDto(
     int SeasonRating = 0,
     int Points = 0
 );
+
+public record LeaderboardResponseDto(
+    List<LeaderboardEntryDto> Items,
+    int TotalCount,
+    int Limit,
+    int Offset
+);

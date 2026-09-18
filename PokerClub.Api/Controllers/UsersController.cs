@@ -7,6 +7,7 @@ using PokerClub.Api.Filters;
 using PokerClub.Api.Models;
 using PokerClub.Api.Services;
 using PokerClub.Domain.Entities;
+using PokerClub.Domain.Services;
 using PokerClub.Infrastructure.Data;
 using PokerClub.Infrastructure.Services;
 
@@ -352,13 +353,7 @@ public class UsersController : ControllerBase
         );
     }
 
-    public static string CalculateClubStatus(int rating) => rating switch
-    {
-        <= 100 => "Newbie",
-        <= 250 => "Fish",
-        <= 400 => "Reg",
-        _ => "Pro"
-    };
+    public static string CalculateClubStatus(int rating) => RankService.CalculateClubStatus(rating);
 
     public static string NormalizePhone(string? phone)
     {

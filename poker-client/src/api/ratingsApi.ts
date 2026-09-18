@@ -1,11 +1,12 @@
 import { apiClient } from './apiClient';
-import type { LeaderboardEntry } from '../types';
+import type { LeaderboardEntry, LeaderboardResponse } from '../types';
 
 export const ratingsApi = {
   async getLeaderboard(
     typeOrLimit: 'season' | 'all' | number = 'season',
-    limitOrType: number | 'season' | 'all' = 50
-  ): Promise<LeaderboardEntry[]> {
+    limitOrType: number | 'season' | 'all' = 50,
+    offset = 0
+  ): Promise<LeaderboardResponse> {
     let type: 'season' | 'all' = 'season';
     let limit = 50;
 
@@ -21,8 +22,19 @@ export const ratingsApi = {
       }
     }
 
-    const response = await apiClient.get<LeaderboardEntry[]>(`/api/ratings/leaderboard?type=${type}&limit=${limit}`);
-    return response.data;
+    const response = await apiClient.get<LeaderboardResponse | LeaderboardEntry[]>(
+      `/api/ratings/leaderboard?type=${type}&limit=${limit}&offset=${offset}`
+    );
+    const data = response.data;
+    if (Array.isArray(data)) {
+      return {
+        items: data,
+        totalCount: data.length,
+        limit,
+        offset,
+      };
+    }
+    return data;
   },
 
   async assignPoints(tournamentId: number, userPoints: Record<number, number>): Promise<{ message: string }> {

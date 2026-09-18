@@ -15,8 +15,11 @@ public class RatingService : IRatingService
         _context = context;
     }
 
-    public async Task<List<User>> GetLeaderboardAsync(int limit = 50, string type = "season")
+    public async Task<(List<User> Users, int TotalCount)> GetLeaderboardAsync(int limit = 50, int offset = 0, string type = "season")
     {
+        if (limit <= 0) limit = 50;
+        if (offset < 0) offset = 0;
+
         var isSeason = !string.Equals(type, "all", StringComparison.OrdinalIgnoreCase) && 
                        !string.Equals(type, "all-time", StringComparison.OrdinalIgnoreCase);
 
@@ -24,21 +27,29 @@ public class RatingService : IRatingService
 
         if (isSeason)
         {
-            return await query
-                .Where(u => u.SeasonRating > 0)
+            var filtered = query.Where(u => u.SeasonRating > 0);
+            var totalCount = await filtered.CountAsync();
+            var users = await filtered
                 .OrderByDescending(u => u.SeasonRating)
                 .ThenBy(u => u.Id)
+                .Skip(offset)
                 .Take(limit)
                 .ToListAsync();
+
+            return (users, totalCount);
         }
         else
         {
-            return await query
-                .Where(u => u.TotalRating > 0)
+            var filtered = query.Where(u => u.TotalRating > 0);
+            var totalCount = await filtered.CountAsync();
+            var users = await filtered
                 .OrderByDescending(u => u.TotalRating)
                 .ThenBy(u => u.Id)
+                .Skip(offset)
                 .Take(limit)
                 .ToListAsync();
+
+            return (users, totalCount);
         }
     }
 

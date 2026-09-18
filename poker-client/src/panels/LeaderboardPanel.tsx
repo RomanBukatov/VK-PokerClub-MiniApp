@@ -4,8 +4,17 @@ import { useUserStore } from '../store/useUserStore';
 import { triggerHaptic } from '../utils/vkBridge';
 
 export const LeaderboardPanel: React.FC = () => {
-  const { leaderboard, isLoading, fetchLeaderboard, seasonTab, setSeasonTab } = useRatingsStore();
-  const { vkUser } = useUserStore();
+  const { 
+    leaderboard, 
+    totalCount, 
+    isLoading, 
+    isLoadingMore, 
+    fetchLeaderboard, 
+    loadMore, 
+    seasonTab, 
+    setSeasonTab 
+  } = useRatingsStore();
+  const { vkUser, profile } = useUserStore();
 
   useEffect(() => {
     fetchLeaderboard(seasonTab === 'all-time' ? 'all' : 'season');
@@ -14,6 +23,16 @@ export const LeaderboardPanel: React.FC = () => {
   const currentUserEntry = vkUser 
     ? leaderboard.find((u) => u.vkId === vkUser.id.toString())
     : null;
+
+  const userPoints = currentUserEntry != null
+    ? (currentUserEntry.points ?? 0)
+    : (seasonTab === 'current' ? (profile?.seasonRating ?? 0) : (profile?.totalRating ?? 0));
+
+  const userRankLabel = currentUserEntry != null
+    ? `# ${currentUserEntry.rank}`
+    : userPoints > 0
+    ? `${leaderboard.length > 0 ? `${leaderboard.length}+` : '50+'} в клубе`
+    : 'Не в рейтинге';
 
   const getInitials = (first?: string, last?: string) => {
     const f = first?.[0] || 'А';
@@ -92,14 +111,12 @@ export const LeaderboardPanel: React.FC = () => {
             {seasonTab === 'current' ? 'ТЕКУЩИЙ СЕЗОН' : 'ЗА ВСЕ ВРЕМЯ'}
           </div>
           <div className="text-xl font-extrabold text-white">
-            {currentUserEntry ? `# ${currentUserEntry.rank}` : 'Не в рейтинге'}
+            {userRankLabel}
           </div>
         </div>
 
         <div className="text-2xl font-black text-white">
-          {currentUserEntry 
-            ? `${(currentUserEntry.points ?? 0).toLocaleString('ru-RU')} очков` 
-            : '0 очков'}
+          {userPoints.toLocaleString('ru-RU')} очков
         </div>
       </div>
 
@@ -182,6 +199,29 @@ export const LeaderboardPanel: React.FC = () => {
               </div>
             );
           })}
+
+          {leaderboard.length < totalCount && (
+            <div className="pt-3 pb-2 flex justify-center">
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('light');
+                  loadMore();
+                }}
+                disabled={isLoadingMore}
+                className="w-full py-3.5 px-5 rounded-2xl bg-gradient-to-r from-[#d8af56] via-[#ffd700] to-[#b38833] hover:from-[#ffd700] hover:to-[#c39a44] text-[#122e23] font-black text-xs uppercase tracking-wider shadow-lg shadow-[#c39a44]/25 active:scale-[0.98] transition-all flex items-center justify-center gap-2 border border-[#ffd700]/40 disabled:opacity-60 cursor-pointer"
+              >
+                {isLoadingMore ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-[#122e23]/30 border-t-[#122e23] rounded-full animate-spin" />
+                    <span>Загрузка игроков...</span>
+                  </>
+                ) : (
+                  <span>Показать еще (загружено {leaderboard.length} из {totalCount})</span>
+                )}
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>

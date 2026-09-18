@@ -38,7 +38,7 @@ public class UsersControllerTests
         var profile = Assert.IsType<UserProfileDto>(okResult.Value);
 
         Assert.Equal("999", profile.VkId);
-        Assert.Equal("Newbie", profile.Status);
+        Assert.Equal("Новичок", profile.Status);
         Assert.Equal(0, profile.TotalRating);
 
         var dbUser = await context.Users.FirstOrDefaultAsync(u => u.VkId == "999");
@@ -79,7 +79,7 @@ public class UsersControllerTests
         Assert.Equal("+7 (999) 000-11-22", profile.PhoneNumber);
         Assert.Equal("123", profile.ClubCardId);
         Assert.NotNull(profile.AcceptedTermsAt);
-        Assert.Equal("Fish", profile.Status); // 250 rating is Fish
+        Assert.Equal("Новичок", profile.Status); // 250 rating is Новичок (< 300)
     }
 
     [Fact]
@@ -137,7 +137,7 @@ public class UsersControllerTests
         Assert.Equal(486, profile.TotalRating);
         Assert.Equal(22, profile.TournamentsPlayed);
         Assert.Equal(2, profile.WinsCount);
-        Assert.Equal("Pro", profile.Status); // 486 is Pro (401+)
+        Assert.Equal("Игрок", profile.Status); // 486 is Игрок (300-599)
         Assert.Equal("1", profile.ClubCardId);
 
         // Placeholder sheetUser was removed
@@ -181,7 +181,7 @@ public class UsersControllerTests
 
         Assert.Equal(0, profile.TotalRating);
         Assert.Equal(0, profile.SeasonRating);
-        Assert.Equal("Newbie", profile.Status);
+        Assert.Equal("Новичок", profile.Status);
         Assert.Null(profile.ClubCardId);
 
         // Старый sheetUser не затронут
@@ -308,7 +308,7 @@ public class UsersControllerTests
         Assert.Equal(12, profile.TournamentsPlayed);
         Assert.Equal(3, profile.WinsCount);
         Assert.Equal("999", profile.ClubCardId);
-        Assert.Equal("Reg", profile.Status); // 350 is Reg (251-400)
+        Assert.Equal("Игрок", profile.Status); // 350 is Игрок (300-599)
 
         // sheetUser удален из базы во избежание дубликатов
         var sheetInDb = await context.Users.FirstOrDefaultAsync(u => u.VkId == "sheet_999_test");
@@ -397,17 +397,29 @@ public class UsersControllerTests
     }
 
     [Theory]
-    [InlineData(0, "Newbie")]
-    [InlineData(50, "Newbie")]
-    [InlineData(100, "Newbie")]
-    [InlineData(101, "Fish")]
-    [InlineData(250, "Fish")]
-    [InlineData(251, "Reg")]
-    [InlineData(400, "Reg")]
-    [InlineData(401, "Pro")]
-    [InlineData(486, "Pro")]
-    [InlineData(1000, "Pro")]
-    public void CalculateClubStatus_CalibratedThresholds_ReturnsCorrectStatus(int rating, string expectedStatus)
+    [InlineData(0, "Новичок")]
+    [InlineData(50, "Новичок")]
+    [InlineData(100, "Новичок")]
+    [InlineData(299, "Новичок")]
+    [InlineData(300, "Игрок")]
+    [InlineData(599, "Игрок")]
+    [InlineData(600, "Претендент")]
+    [InlineData(800, "Регуляр")]
+    [InlineData(1100, "Тактик")]
+    [InlineData(1400, "Стратег")]
+    [InlineData(1800, "Профи")]
+    [InlineData(2100, "Эксперт")]
+    [InlineData(2600, "Мастер")]
+    [InlineData(3100, "Грандмастер")]
+    [InlineData(3600, "Элита")]
+    [InlineData(5000, "Легенда")]
+    [InlineData(6500, "Чемпион")]
+    [InlineData(10000, "Титан")]
+    [InlineData(15000, "Икона Монте-Карло")]
+    [InlineData(16000, "Икона МК x2")]
+    [InlineData(30000, "Икона МК x2")]
+    [InlineData(30001, "Икона МК x3")]
+    public void CalculateClubStatus_MonteCarlo15RanksAndPrestige_ReturnsCorrectStatus(int rating, string expectedStatus)
     {
         var status = UsersController.CalculateClubStatus(rating);
         Assert.Equal(expectedStatus, status);

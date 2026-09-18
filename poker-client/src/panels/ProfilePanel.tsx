@@ -24,6 +24,7 @@ import { useRatingsStore } from '../store/useRatingsStore';
 import { formatChips, formatCurrency } from '../utils/formatters';
 import { triggerHaptic } from '../utils/vkBridge';
 import { TournamentStatus, type Achievement } from '../types';
+import { getRankProgress } from '../config/ranks.config';
 
 export const ProfilePanel: React.FC = () => {
   const { vkUser, profile, fetchProfile, setIsProfileModalOpen, logout } = useUserStore();
@@ -52,23 +53,8 @@ export const ProfilePanel: React.FC = () => {
     ? `${((winsCount / tournamentsPlayed) * 100).toFixed(1)}%` 
     : '0.0%';
 
-  // Определение клубного статуса (откалибровано под статистику клуба: <=100 Newbie, <=250 Fish, <=400 Reg, 401+ Pro)
-  const getClubStatus = (rating: number, serverStatus?: string) => {
-    const status = serverStatus || (rating <= 100 ? 'Newbie' : rating <= 250 ? 'Fish' : rating <= 400 ? 'Reg' : 'Pro');
-    switch (status) {
-      case 'Newbie':
-        return { name: 'Newbie', color: 'from-slate-500 to-slate-700', text: 'text-slate-200', border: 'border-slate-400/30' };
-      case 'Fish':
-        return { name: 'Fish', color: 'from-cyan-600 to-teal-700', text: 'text-cyan-200', border: 'border-cyan-400/40' };
-      case 'Reg':
-        return { name: 'Reg', color: 'from-emerald-600 to-amber-600', text: 'text-emerald-200', border: 'border-emerald-400/40' };
-      case 'Pro':
-      default:
-        return { name: 'Pro', color: 'from-[#d8af56] to-[#916b1e]', text: 'text-[#ffd700]', border: 'border-[#c39a44]/50' };
-    }
-  };
-
-  const clubStatus = getClubStatus(currentRating, profile?.status);
+  // Официальная 15-уровневая система рангов клуба Monte Carlo
+  const rankProgress = getRankProgress(currentRating);
 
   // Система достижений (6-8 ачивок)
   const achievements: Achievement[] = [
@@ -209,8 +195,9 @@ export const ProfilePanel: React.FC = () => {
                 )}
               </div>
               {/* Статус бейдж поверх аватара */}
-              <div className={`absolute -bottom-1.5 -right-1.5 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-gradient-to-r ${clubStatus.color} text-white shadow-md border border-white/20`}>
-                {clubStatus.name}
+              <div className={`absolute -bottom-1.5 -right-1.5 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-gradient-to-r ${rankProgress.currentRank.gradient} text-white shadow-md border ${rankProgress.currentRank.borderColor} flex items-center gap-1 max-w-[105px]`}>
+                <span className="shrink-0">{rankProgress.currentRank.icon}</span>
+                <span className="truncate">{rankProgress.isPrestige ? rankProgress.displayName : (rankProgress.currentRank.level === 1 ? 'Икона МК' : rankProgress.displayName)}</span>
               </div>
             </div>
 
@@ -284,7 +271,73 @@ export const ProfilePanel: React.FC = () => {
         </div>
       </div>
 
-      {/* 2. МЕТРИКИ ИГРОКА (2x2 GRID) */}
+      {/* 2. СИСТЕМА РАНГОВ MONTE CARLO (15 УРОВНЕЙ & ПРЕСТИЖ) */}
+      <div className="p-4 rounded-3xl bg-gradient-to-b from-[#0e2a20] to-[#071912] border border-[#c39a44]/30 shadow-2xl space-y-3 relative overflow-hidden">
+        {/* Фоновое свечение ранга */}
+        <div className="absolute top-0 right-0 w-32 h-32 bg-[#c39a44]/10 rounded-full blur-2xl pointer-events-none" />
+
+        <div className="flex items-center justify-between relative z-10">
+          <div className="flex items-center gap-2.5">
+            <span className="text-2xl shrink-0 drop-shadow">{rankProgress.currentRank.icon}</span>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-base font-black text-white tracking-tight">
+                  {rankProgress.displayName}
+                </span>
+                <span className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold uppercase tracking-wide ${rankProgress.currentRank.badgeBg} ${rankProgress.currentRank.textColor} border ${rankProgress.currentRank.borderColor}`}>
+                  {rankProgress.badgeText}
+                </span>
+              </div>
+              <p className="text-[10px] text-[#8fa89b] mt-0.5">
+                {rankProgress.isPrestige 
+                  ? `Престиж Monte Carlo · ${rankProgress.displayName}`
+                  : `Ранг Monte Carlo · Уровень ${rankProgress.currentRank.level} из 15`}
+              </p>
+            </div>
+          </div>
+
+          <div className="text-right">
+            <span className="text-sm font-black text-[#ffd700]">
+              {rankProgress.progressPercent}%
+            </span>
+          </div>
+        </div>
+
+        {/* Прогресс-бар ранга */}
+        <div className="w-full bg-black/60 rounded-full h-2.5 border border-white/10 overflow-hidden p-0.5 shadow-inner">
+          <div
+            className={`h-full rounded-full transition-all duration-700 bg-gradient-to-r ${
+              rankProgress.isPrestige
+                ? 'from-[#ffd700] via-[#c39a44] to-[#ffd700]'
+                : rankProgress.currentRank.gradient
+            }`}
+            style={{ width: `${Math.max(rankProgress.progressPercent, 4)}%` }}
+          />
+        </div>
+
+        {/* Индикатор до следующего ранга:
+            «Текущий уровень: Профи ➔ До ранга Эксперт осталось 300 очков» */}
+        <div className="flex items-center justify-between text-[11px] font-bold text-[#d1e0d7] pt-0.5 relative z-10">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-[#8fa89b]">Текущий уровень:</span>
+            <span className="text-white font-extrabold">{rankProgress.displayName}</span>
+            <span className="text-[#c39a44]">➔</span>
+            <span className="text-[#8fa89b]">До ранга</span>
+            <span className="text-[#ffd700] font-extrabold">{rankProgress.nextRank.name}</span>
+            <span className="text-[#8fa89b]">осталось</span>
+            <span className="text-[#ffd700] font-black">{rankProgress.pointsToNext.toLocaleString('ru-RU')}</span>
+            <span className="text-[#8fa89b]">очков</span>
+          </div>
+
+          <div className="flex items-center gap-1 shrink-0 ml-2 text-[10px] text-[#8fa89b]">
+            <span>{currentRating.toLocaleString('ru-RU')}</span>
+            <span>/</span>
+            <span>{rankProgress.targetPoints.toLocaleString('ru-RU')}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* 3. МЕТРИКИ ИГРОКА (2x2 GRID) */}
       <div>
         <h3 className="text-sm font-extrabold uppercase tracking-wider text-[#8fa89b] mb-3 flex items-center gap-2">
           <Award className="w-4 h-4 text-[#c39a44]" />
