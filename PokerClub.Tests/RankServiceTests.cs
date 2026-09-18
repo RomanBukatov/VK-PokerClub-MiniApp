@@ -51,11 +51,24 @@ public class RankServiceTests
     }
 
     [Fact]
+    public void Ranks_AreOrderedFromLevel1To15()
+    {
+        Assert.Equal(15, RankService.Ranks.Count);
+        for (int i = 0; i < RankService.Ranks.Count; i++)
+        {
+            Assert.Equal(i + 1, RankService.Ranks[i].Level);
+        }
+        Assert.Equal("Новичок", RankService.Ranks[0].Name);
+        Assert.Equal("Икона Монте-Карло", RankService.Ranks[14].Name);
+    }
+
+    [Fact]
     public void GetRankProgress_Pro_Returns300PointsLeftToExpert()
     {
         // «Текущий уровень: Профи ➔ До ранга Эксперт осталось 300 очков»
         var progress = RankService.GetRankProgress(1800);
 
+        Assert.Equal(7, progress.Level);
         Assert.Equal("Профи", progress.Name);
         Assert.Equal("Профи", progress.DisplayName);
         Assert.Equal("Эксперт", progress.NextRankName);
@@ -71,6 +84,7 @@ public class RankServiceTests
     {
         var progress = RankService.GetRankProgress(0);
 
+        Assert.Equal(1, progress.Level);
         Assert.Equal("Новичок", progress.Name);
         Assert.Equal("Игрок", progress.NextRankName);
         Assert.Equal(300, progress.PointsToNext);
@@ -84,6 +98,7 @@ public class RankServiceTests
         // From 1800 (Профи) to 2100 (Эксперт): halfway is 1950 (150 pts left, 50%)
         var progress = RankService.GetRankProgress(1950);
 
+        Assert.Equal(7, progress.Level);
         Assert.Equal("Профи", progress.Name);
         Assert.Equal("Эксперт", progress.NextRankName);
         Assert.Equal(150, progress.PointsToNext);
@@ -95,6 +110,7 @@ public class RankServiceTests
     {
         var progress = RankService.GetRankProgress(15000);
 
+        Assert.Equal(15, progress.Level);
         Assert.Equal("Икона Монте-Карло", progress.Name);
         Assert.Equal("Икона Монте-Карло", progress.DisplayName);
         Assert.Equal("Икона МК x2", progress.NextRankName);
@@ -110,6 +126,7 @@ public class RankServiceTests
         // 16500 points is in prestige x2 (target: 30000, points left: 13500, progress: 1500/15000 = 10%)
         var progress = RankService.GetRankProgress(16500);
 
+        Assert.Equal(15, progress.Level);
         Assert.True(progress.IsPrestige);
         Assert.Equal(2, progress.PrestigeMultiplier);
         Assert.Equal("Икона МК x2", progress.DisplayName);
@@ -124,6 +141,7 @@ public class RankServiceTests
         // 35000 points is in prestige x3 (target: 45000, points left: 10000, progress: 5000/15000 = 33%)
         var progress = RankService.GetRankProgress(35000);
 
+        Assert.Equal(15, progress.Level);
         Assert.True(progress.IsPrestige);
         Assert.Equal(3, progress.PrestigeMultiplier);
         Assert.Equal("Икона МК x3", progress.DisplayName);

@@ -24,21 +24,21 @@ public static class RankService
 {
     public static readonly IReadOnlyList<RankDefinition> Ranks = new List<RankDefinition>
     {
-        new(15, "Новичок", 0, "🎟️"),
-        new(14, "Игрок", 300, "🎲"),
-        new(13, "Претендент", 600, "🃏"),
-        new(12, "Регуляр", 800, "♣️"),
-        new(11, "Тактик", 1100, "♟️"),
-        new(10, "Стратег", 1400, "🫀"),
-        new(9,  "Профи", 1800, "♠️"),
+        new(1,  "Новичок", 0, "🎟️"),
+        new(2,  "Игрок", 300, "🎲"),
+        new(3,  "Претендент", 600, "🃏"),
+        new(4,  "Регуляр", 800, "♣️"),
+        new(5,  "Тактик", 1100, "♟️"),
+        new(6,  "Стратег", 1400, "🫀"),
+        new(7,  "Профи", 1800, "♠️"),
         new(8,  "Эксперт", 2100, "🎩"),
-        new(7,  "Мастер", 2600, "🎯"),
-        new(6,  "Грандмастер", 3100, "🏆"),
-        new(5,  "Элита", 3600, "💎"),
-        new(4,  "Легенда", 5000, "👑"),
-        new(3,  "Чемпион", 6500, "🔱"),
-        new(2,  "Титан", 10000, "⚡"),
-        new(1,  "Икона Монте-Карло", 15000, "⚓")
+        new(9,  "Мастер", 2600, "🎯"),
+        new(10, "Грандмастер", 3100, "🏆"),
+        new(11, "Элита", 3600, "💎"),
+        new(12, "Легенда", 5000, "👑"),
+        new(13, "Чемпион", 6500, "🔱"),
+        new(14, "Титан", 10000, "⚡"),
+        new(15, "Икона Монте-Карло", 15000, "⚓")
     };
 
     public static string CalculateClubStatus(int rating)
@@ -74,7 +74,7 @@ public static class RankService
             int progressPercent = Math.Clamp((int)Math.Round(((double)(rating - basePoints) / 15000) * 100), 0, 100);
 
             return new RankProgressDto(
-                Level: 1,
+                Level: 15,
                 Name: "Икона Монте-Карло",
                 DisplayName: displayName,
                 Icon: "⚓",
@@ -90,7 +90,7 @@ public static class RankService
         if (rating == 15000)
         {
             return new RankProgressDto(
-                Level: 1,
+                Level: 15,
                 Name: "Икона Монте-Карло",
                 DisplayName: "Икона Монте-Карло",
                 Icon: "⚓",

@@ -2,13 +2,13 @@ import { describe, it, expect } from 'bun:test';
 import { RANKS, getRankProgress, getClubRankName } from './ranks.config';
 
 describe('ranks.config', () => {
-  it('should have exactly 15 ranks ordered from level 15 to level 1', () => {
+  it('should have exactly 15 ranks ordered from level 1 to level 15', () => {
     expect(RANKS.length).toBe(15);
-    expect(RANKS[0].level).toBe(15);
+    expect(RANKS[0].level).toBe(1);
     expect(RANKS[0].name).toBe('Новичок');
     expect(RANKS[0].icon).toBe('🎟️');
 
-    expect(RANKS[14].level).toBe(1);
+    expect(RANKS[14].level).toBe(15);
     expect(RANKS[14].name).toBe('Икона Монте-Карло');
     expect(RANKS[14].icon).toBe('⚓');
   });
@@ -41,7 +41,7 @@ describe('ranks.config', () => {
   it('should match the customer specification: «Текущий уровень: Профи ➔ До ранга Эксперт осталось 300 очков»', () => {
     const progress = getRankProgress(1800);
     expect(progress.displayName).toBe('Профи');
-    expect(progress.badgeText).toBe('9 LVL');
+    expect(progress.badgeText).toBe('7 LVL');
     expect(progress.nextRank.name).toBe('Эксперт');
     expect(progress.pointsToNext).toBe(300);
     expect(progress.progressPercent).toBe(0);
@@ -50,7 +50,7 @@ describe('ranks.config', () => {
   it('should calculate progress for Новичок at 0 points', () => {
     const progress = getRankProgress(0);
     expect(progress.displayName).toBe('Новичок');
-    expect(progress.badgeText).toBe('15 LVL');
+    expect(progress.badgeText).toBe('1 LVL');
     expect(progress.nextRank.name).toBe('Игрок');
     expect(progress.pointsToNext).toBe(300);
     expect(progress.progressPercent).toBe(0);
@@ -67,7 +67,7 @@ describe('ranks.config', () => {
   it('should handle exactly 15000 points (Икона Монте-Карло)', () => {
     const progress = getRankProgress(15000);
     expect(progress.displayName).toBe('Икона Монте-Карло');
-    expect(progress.badgeText).toBe('1 LVL');
+    expect(progress.badgeText).toBe('15 LVL');
     expect(progress.nextRank.name).toBe('Икона МК x2');
     expect(progress.pointsToNext).toBe(15000);
     expect(progress.progressPercent).toBe(0);

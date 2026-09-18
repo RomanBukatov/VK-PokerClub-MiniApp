@@ -11,7 +11,7 @@ export interface RankConfig {
 
 export const RANKS: RankConfig[] = [
   {
-    level: 15,
+    level: 1,
     name: 'Новичок',
     minRating: 0,
     icon: '🎟️',
@@ -21,7 +21,7 @@ export const RANKS: RankConfig[] = [
     badgeBg: 'bg-slate-700/60',
   },
   {
-    level: 14,
+    level: 2,
     name: 'Игрок',
     minRating: 300,
     icon: '🎲',
@@ -31,7 +31,7 @@ export const RANKS: RankConfig[] = [
     badgeBg: 'bg-blue-800/60',
   },
   {
-    level: 13,
+    level: 3,
     name: 'Претендент',
     minRating: 600,
     icon: '🃏',
@@ -41,7 +41,7 @@ export const RANKS: RankConfig[] = [
     badgeBg: 'bg-teal-800/60',
   },
   {
-    level: 12,
+    level: 4,
     name: 'Регуляр',
     minRating: 800,
     icon: '♣️',
@@ -51,7 +51,7 @@ export const RANKS: RankConfig[] = [
     badgeBg: 'bg-emerald-800/60',
   },
   {
-    level: 11,
+    level: 5,
     name: 'Тактик',
     minRating: 1100,
     icon: '♟️',
@@ -61,7 +61,7 @@ export const RANKS: RankConfig[] = [
     badgeBg: 'bg-sky-800/60',
   },
   {
-    level: 10,
+    level: 6,
     name: 'Стратег',
     minRating: 1400,
     icon: '🫀',
@@ -71,7 +71,7 @@ export const RANKS: RankConfig[] = [
     badgeBg: 'bg-rose-800/60',
   },
   {
-    level: 9,
+    level: 7,
     name: 'Профи',
     minRating: 1800,
     icon: '♠️',
@@ -91,7 +91,7 @@ export const RANKS: RankConfig[] = [
     badgeBg: 'bg-violet-800/60',
   },
   {
-    level: 7,
+    level: 9,
     name: 'Мастер',
     minRating: 2600,
     icon: '🎯',
@@ -101,7 +101,7 @@ export const RANKS: RankConfig[] = [
     badgeBg: 'bg-red-800/60',
   },
   {
-    level: 6,
+    level: 10,
     name: 'Грандмастер',
     minRating: 3100,
     icon: '🏆',
@@ -111,7 +111,7 @@ export const RANKS: RankConfig[] = [
     badgeBg: 'bg-[#916b1e]/60',
   },
   {
-    level: 5,
+    level: 11,
     name: 'Элита',
     minRating: 3600,
     icon: '💎',
@@ -121,7 +121,7 @@ export const RANKS: RankConfig[] = [
     badgeBg: 'bg-cyan-700/60',
   },
   {
-    level: 4,
+    level: 12,
     name: 'Легенда',
     minRating: 5000,
     icon: '👑',
@@ -131,7 +131,7 @@ export const RANKS: RankConfig[] = [
     badgeBg: 'bg-purple-800/60',
   },
   {
-    level: 3,
+    level: 13,
     name: 'Чемпион',
     minRating: 6500,
     icon: '🔱',
@@ -141,7 +141,7 @@ export const RANKS: RankConfig[] = [
     badgeBg: 'bg-yellow-700/60',
   },
   {
-    level: 2,
+    level: 14,
     name: 'Титан',
     minRating: 10000,
     icon: '⚡',
@@ -151,7 +151,7 @@ export const RANKS: RankConfig[] = [
     badgeBg: 'bg-indigo-800/60',
   },
   {
-    level: 1,
+    level: 15,
     name: 'Икона Монте-Карло',
     minRating: 15000,
     icon: '⚓',
@@ -214,7 +214,7 @@ export function getRankProgress(rating: number): UserRankProgress {
     return {
       currentRank: iconRank,
       nextRank: {
-        level: 1,
+        level: 15,
         name: `Икона МК x${prestigeMultiplier + 1}`,
         minRating: targetPts,
         icon: '⚓',
@@ -235,7 +235,7 @@ export function getRankProgress(rating: number): UserRankProgress {
     return {
       currentRank: iconRank,
       nextRank: {
-        level: 1,
+        level: 15,
         name: 'Икона МК x2',
         minRating: 30000,
         icon: '⚓',

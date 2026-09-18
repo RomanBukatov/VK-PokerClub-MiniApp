@@ -197,7 +197,7 @@ export const ProfilePanel: React.FC = () => {
               {/* Статус бейдж поверх аватара */}
               <div className={`absolute -bottom-1.5 -right-1.5 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-gradient-to-r ${rankProgress.currentRank.gradient} text-white shadow-md border ${rankProgress.currentRank.borderColor} flex items-center gap-1 max-w-[105px]`}>
                 <span className="shrink-0">{rankProgress.currentRank.icon}</span>
-                <span className="truncate">{rankProgress.isPrestige ? rankProgress.displayName : (rankProgress.currentRank.level === 1 ? 'Икона МК' : rankProgress.displayName)}</span>
+                <span className="truncate">{rankProgress.isPrestige ? rankProgress.displayName : (rankProgress.currentRank.level === 15 ? 'Икона МК' : rankProgress.displayName)}</span>
               </div>
             </div>
 
@@ -291,7 +291,7 @@ export const ProfilePanel: React.FC = () => {
               <p className="text-[10px] text-[#8fa89b] mt-0.5">
                 {rankProgress.isPrestige 
                   ? `Престиж Monte Carlo · ${rankProgress.displayName}`
-                  : `Ранг Monte Carlo · Уровень ${rankProgress.currentRank.level} из 15`}
+                  : `${rankProgress.displayName} · ${rankProgress.badgeText} (Уровень ${rankProgress.currentRank.level} из 15)`}
               </p>
             </div>
           </div>
