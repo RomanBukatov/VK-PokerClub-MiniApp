@@ -220,10 +220,22 @@ export const ProfilePanel: React.FC = () => {
                 <h2 className="text-xl font-black text-white tracking-tight">
                   {displayNickname}
                 </h2>
-                {displayCardId && (
+                {displayCardId ? (
                   <span className="px-2 py-0.5 rounded-lg bg-black/40 border border-white/10 text-[10px] font-bold text-[#c39a44]">
                     {displayCardId}
                   </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('light');
+                      setIsProfileModalOpen(true);
+                    }}
+                    className="px-2 py-0.5 rounded-lg bg-[#c39a44]/20 border border-[#c39a44]/40 hover:bg-[#c39a44]/30 text-[10px] font-bold text-[#ffd700] flex items-center gap-1 transition-all active:scale-95"
+                    title="Привязать клубную карту"
+                  >
+                    + Привязать карту
+                  </button>
                 )}
               </div>
               <p className="text-xs font-semibold text-[#d1e0d7] mt-0.5">

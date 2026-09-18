@@ -237,7 +237,9 @@ const ProfileModalContent: React.FC = () => {
                 value={phoneNumber}
                 onChange={handlePhoneChange}
                 onKeyDown={handlePhoneKeyDown}
-                className="w-full bg-black/40 border border-white/10 focus:border-[#c39a44] rounded-2xl py-3 pl-11 pr-4 text-sm font-semibold text-white placeholder-white/20 focus:outline-none transition-all"
+                className={`w-full bg-black/40 border ${
+                  error && error.includes('телефон') ? 'border-red-500/80 focus:border-red-400' : 'border-white/10 focus:border-[#c39a44]'
+                } rounded-2xl py-3 pl-11 pr-4 text-sm font-semibold text-white placeholder-white/20 focus:outline-none transition-all`}
               />
             </div>
             <p className="text-[10px] text-[#606a66] mt-1">
@@ -258,7 +260,9 @@ const ProfileModalContent: React.FC = () => {
                 placeholder="Например: 1266"
                 value={clubCardId}
                 onChange={(e) => setClubCardId(e.target.value)}
-                className="w-full bg-black/40 border border-white/10 focus:border-[#c39a44] rounded-2xl py-3 pl-11 pr-4 text-sm font-semibold text-white placeholder-white/20 focus:outline-none transition-all"
+                className={`w-full bg-black/40 border ${
+                  error && (error.includes('карт') || error.includes('карты')) ? 'border-red-500/80 focus:border-red-400' : 'border-white/10 focus:border-[#c39a44]'
+                } rounded-2xl py-3 pl-11 pr-4 text-sm font-semibold text-white placeholder-white/20 focus:outline-none transition-all`}
               />
             </div>
             <p className="text-[10px] text-[#606a66] mt-1">

@@ -20,5 +20,6 @@ public record UserProfileDto(
     int KnockoutsCount,
     double AvgPlace,
     DateTime CreatedAt,
-    int SeasonRating = 0
+    int SeasonRating = 0,
+    bool IsAdmin = false
 );

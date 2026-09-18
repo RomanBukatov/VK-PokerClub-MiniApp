@@ -10,6 +10,8 @@ interface UserState {
   profile: UserProfile | null;
   isAuthenticated: boolean;
   isAdmin: boolean;
+  hasAdminRole: boolean;
+  activeRole: 'admin' | 'player';
   isLoading: boolean;
   isLoadingProfile: boolean;
   selectedCityId: number | null;
@@ -23,6 +25,7 @@ interface UserState {
 
   setUser: (user: VkUser | null) => void;
   setIsAdmin: (isAdmin: boolean) => void;
+  setActiveRole: (role: 'admin' | 'player') => void;
   setSelectedCity: (cityId: number | null, cityName: string) => void;
   setSelectedClub: (clubId: number | null) => void;
   setActiveTab: (tab: AppTab) => void;
@@ -39,30 +42,74 @@ interface UserState {
   resetUser: () => void;
 }
 
+const getInitialState = () => {
+  const hasAdmin = typeof window !== 'undefined' && localStorage.getItem('poker_has_admin_role') === 'true';
+  const savedActiveRole = typeof window !== 'undefined' ? localStorage.getItem('poker_active_role') : null;
+  const savedRole = typeof window !== 'undefined' ? localStorage.getItem('poker_is_admin') : null;
+  const activeRole: 'admin' | 'player' = hasAdmin ? (savedActiveRole === 'player' || savedRole === 'false' ? 'player' : 'admin') : 'player';
+  const isAdmin = hasAdmin && activeRole === 'admin';
+
+  return {
+    hasAdminRole: hasAdmin,
+    activeRole,
+    isAdmin,
+    activeTab: (isAdmin ? 'admin-tournaments' : 'schedule') as AppTab,
+  };
+};
+
+const initialState = getInitialState();
+
 export const useUserStore = create<UserState>((set, get) => ({
   vkUser: null,
   profile: null,
   isAuthenticated: false,
-  isAdmin: false,
+  isAdmin: initialState.isAdmin,
+  hasAdminRole: initialState.hasAdminRole,
+  activeRole: initialState.activeRole,
   isLoading: false,
   isLoadingProfile: false,
   selectedCityId: null,
   selectedCity: null,
   selectedCityName: 'Все города',
   selectedClubId: null,
-  activeTab: 'schedule',
+  activeTab: initialState.activeTab,
   isCityModalOpen: false,
   isLegalModalOpen: false,
   isProfileModalOpen: false,
 
   setUser: (user) => {
+    const hasAdminRight = user?.isAdmin === true || get().hasAdminRole || (typeof window !== 'undefined' && localStorage.getItem('poker_has_admin_role') === 'true');
+    const savedActiveRole = typeof window !== 'undefined' ? localStorage.getItem('poker_active_role') : null;
     const savedRole = typeof window !== 'undefined' ? localStorage.getItem('poker_is_admin') : null;
-    const isAdmin = user?.isAdmin === true ? (savedRole !== null ? savedRole === 'true' : true) : false;
-    if (typeof window !== 'undefined' && !user?.isAdmin) {
-      localStorage.setItem('poker_is_admin', 'false');
+
+    let activeRole: 'admin' | 'player' = 'player';
+    if (hasAdminRight) {
+      if (savedActiveRole === 'player' || savedRole === 'false') {
+        activeRole = 'player';
+      } else {
+        activeRole = 'admin';
+      }
     }
+
+    const isAdmin = hasAdminRight && activeRole === 'admin';
+
+    if (typeof window !== 'undefined') {
+      if (hasAdminRight) {
+        localStorage.setItem('poker_has_admin_role', 'true');
+        localStorage.setItem('poker_is_admin', isAdmin ? 'true' : 'false');
+        localStorage.setItem('poker_active_role', activeRole);
+      } else {
+        localStorage.setItem('poker_is_admin', 'false');
+        if (!localStorage.getItem('poker_has_admin_role')) {
+          localStorage.setItem('poker_active_role', 'player');
+        }
+      }
+    }
+
     set({
-      vkUser: user,
+      vkUser: user ? { ...user, isAdmin: hasAdminRight } : null,
+      hasAdminRole: hasAdminRight,
+      activeRole,
       isAuthenticated: !!user,
       isAdmin,
       activeTab: isAdmin ? 'admin-tournaments' : 'schedule',
@@ -74,19 +121,35 @@ export const useUserStore = create<UserState>((set, get) => ({
   },
 
   setIsAdmin: (isAdmin) => {
-    const user = get().vkUser;
-    const effectiveIsAdmin = user?.isAdmin === true ? isAdmin : false;
+    const { vkUser, profile, hasAdminRole } = get();
+    const canBeAdmin = hasAdminRole || vkUser?.isAdmin === true || profile?.isAdmin === true;
+    const effectiveIsAdmin = canBeAdmin ? isAdmin : false;
+    const activeRole: 'admin' | 'player' = effectiveIsAdmin ? 'admin' : 'player';
+
     if (typeof window !== 'undefined') {
-      localStorage.setItem('poker_is_admin', effectiveIsAdmin ? 'true' : 'false');
+      if (canBeAdmin) {
+        localStorage.setItem('poker_has_admin_role', 'true');
+        localStorage.setItem('poker_is_admin', effectiveIsAdmin ? 'true' : 'false');
+        localStorage.setItem('poker_active_role', activeRole);
+      } else {
+        localStorage.removeItem('poker_has_admin_role');
+        localStorage.setItem('poker_is_admin', 'false');
+        localStorage.setItem('poker_active_role', 'player');
+      }
     }
+
     set((state) => {
       let nextTab = state.activeTab;
-      if (effectiveIsAdmin && state.activeTab === 'schedule') {
+      if (effectiveIsAdmin && (state.activeTab === 'schedule' || state.activeTab === 'profile')) {
         nextTab = 'admin-tournaments';
       } else if (!effectiveIsAdmin && (state.activeTab === 'admin-tournaments' || state.activeTab === 'admin-create')) {
         nextTab = 'schedule';
       }
-      return { isAdmin: effectiveIsAdmin, activeTab: nextTab };
+      return { 
+        isAdmin: effectiveIsAdmin, 
+        activeRole,
+        activeTab: nextTab 
+      };
     });
 
     // При переключении режима обновляем расписание в соответствии с ролью
@@ -100,6 +163,10 @@ export const useUserStore = create<UserState>((set, get) => ({
     }
   },
 
+  setActiveRole: (role) => {
+    get().setIsAdmin(role === 'admin');
+  },
+
   setSelectedCity: (cityId, cityName) => set({ selectedCityId: cityId, selectedCity: cityId, selectedCityName: cityName, selectedClubId: null }),
   setSelectedClub: (clubId) => set({ selectedClubId: clubId }),
   setActiveTab: (tab) => set({ activeTab: tab }),
@@ -111,20 +178,59 @@ export const useUserStore = create<UserState>((set, get) => ({
     set({ isLoading: true, isLoadingProfile: true });
     try {
       const profile = await usersApi.getMe();
-      set({ profile });
+      const isProfileAdmin = profile?.isAdmin === true;
+      const currentVkUser = get().vkUser;
+      const hasAdminRole = isProfileAdmin;
 
-      if (!get().vkUser && profile.vkId) {
-        set({
-          vkUser: {
+      const savedActiveRole = typeof window !== 'undefined' ? localStorage.getItem('poker_active_role') : null;
+      const savedIsAdmin = typeof window !== 'undefined' ? localStorage.getItem('poker_is_admin') : null;
+
+      let activeRole: 'admin' | 'player' = 'player';
+      if (hasAdminRole) {
+        if (savedActiveRole === 'player' || savedIsAdmin === 'false') {
+          activeRole = 'player';
+        } else {
+          activeRole = 'admin';
+        }
+      } else {
+        activeRole = 'player';
+      }
+
+      const effectiveIsAdmin = hasAdminRole && activeRole === 'admin';
+
+      if (typeof window !== 'undefined') {
+        if (hasAdminRole) {
+          localStorage.setItem('poker_has_admin_role', 'true');
+          localStorage.setItem('poker_active_role', activeRole);
+          localStorage.setItem('poker_is_admin', effectiveIsAdmin ? 'true' : 'false');
+        } else {
+          localStorage.removeItem('poker_has_admin_role');
+          localStorage.setItem('poker_active_role', 'player');
+          localStorage.setItem('poker_is_admin', 'false');
+        }
+      }
+
+      const updatedVkUser: VkUser = currentVkUser
+        ? { ...currentVkUser, isAdmin: hasAdminRole }
+        : {
             id: Number(profile.vkId) || 0,
             first_name: profile.firstName || profile.nickname || 'Игрок',
             last_name: profile.lastName || '',
             photo_200: profile.avatarUrl,
             photo_100: profile.avatarUrl,
-            isAdmin: get().isAdmin,
-          },
-        });
-      }
+            isAdmin: hasAdminRole,
+          };
+
+      set((state) => ({
+        profile,
+        vkUser: updatedVkUser,
+        hasAdminRole,
+        activeRole,
+        isAdmin: effectiveIsAdmin,
+        activeTab: effectiveIsAdmin
+          ? ((state.activeTab === 'schedule' || state.activeTab === 'profile') ? 'admin-tournaments' : state.activeTab)
+          : (state.activeTab === 'admin-tournaments' || state.activeTab === 'admin-create' ? 'schedule' : state.activeTab),
+      }));
 
       const hasAcceptedTermsLocally = typeof window !== 'undefined' && localStorage.getItem('poker_legal_accepted') === 'true';
       const hasAcceptedTerms = !!profile.acceptedTermsAt || hasAcceptedTermsLocally;
@@ -177,13 +283,17 @@ export const useUserStore = create<UserState>((set, get) => ({
   updateProfile: async (data) => {
     const updated = await usersApi.updateProfile(data);
     const currentVkUser = get().vkUser;
-    const vkUser: VkUser = currentVkUser || {
+    const hasAdmin = get().hasAdminRole || currentVkUser?.isAdmin === true || updated.isAdmin === true;
+    const vkUser: VkUser = currentVkUser ? {
+      ...currentVkUser,
+      isAdmin: hasAdmin,
+    } : {
       id: Number(updated.vkId) || 0,
       first_name: updated.firstName || updated.nickname || 'Игрок',
       last_name: updated.lastName || '',
       photo_200: updated.avatarUrl,
       photo_100: updated.avatarUrl,
-      isAdmin: get().isAdmin,
+      isAdmin: hasAdmin,
     };
 
     if (typeof window !== 'undefined') {
@@ -191,8 +301,11 @@ export const useUserStore = create<UserState>((set, get) => ({
       if (updated.vkId) {
         localStorage.setItem('vk_test_user_id', updated.vkId);
       }
+      if (hasAdmin) {
+        localStorage.setItem('poker_has_admin_role', 'true');
+      }
     }
-    set({ profile: updated, vkUser, isProfileModalOpen: false, isAuthenticated: true });
+    set({ profile: updated, vkUser, hasAdminRole: hasAdmin, isProfileModalOpen: false, isAuthenticated: true });
 
     // Обновляем лидерборд и турниры, если изменились никнейм/рейтинг
     useRatingsStore.getState().fetchLeaderboard();
@@ -249,7 +362,9 @@ export const useUserStore = create<UserState>((set, get) => ({
         'poker_legal_accepted',
         'poker_accepted_terms_at',
         'poker_profile_completed',
+        'poker_has_admin_role',
         'poker_is_admin',
+        'poker_active_role',
         'vk_test_user_id',
         'tg_user_id',
       ];
@@ -277,6 +392,8 @@ export const useUserStore = create<UserState>((set, get) => ({
       profile: null,
       isAuthenticated: false,
       isAdmin: false,
+      hasAdminRole: false,
+      activeRole: 'player',
       isLoading: false,
       isLoadingProfile: false,
       selectedCityId: null,

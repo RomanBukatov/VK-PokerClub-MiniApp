@@ -16,13 +16,33 @@ public class VkAuthValidator : IVkAuthValidator
         _logger = logger;
     }
 
+    public bool IsConfiguredAdmin(string vkUserId)
+    {
+        if (string.IsNullOrWhiteSpace(vkUserId))
+            return false;
+
+        var cleanTarget = NormalizeVkId(vkUserId);
+        return _options.AdminVkIds != null && _options.AdminVkIds.Any(id => 
+            string.Equals(NormalizeVkId(id), cleanTarget, StringComparison.OrdinalIgnoreCase));
+    }
+
+    public static string NormalizeVkId(string id)
+    {
+        var trimmed = id.Trim();
+        if (trimmed.StartsWith("id", StringComparison.OrdinalIgnoreCase) && trimmed.Length > 2 && char.IsDigit(trimmed[2]))
+        {
+            return trimmed[2..];
+        }
+        return trimmed;
+    }
+
     public bool IsAdmin(string vkUserId, HttpContext? httpContext = null)
     {
         if (string.IsNullOrWhiteSpace(vkUserId))
             return false;
 
         // Права администратора выдаются строго при совпадении vk_user_id со списком AdminVkIds.
-        bool isTrustedAdmin = _options.AdminVkIds != null && _options.AdminVkIds.Contains(vkUserId);
+        bool isTrustedAdmin = IsConfiguredAdmin(vkUserId);
 
         if (!isTrustedAdmin)
             return false;

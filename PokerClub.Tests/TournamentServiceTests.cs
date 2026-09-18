@@ -1,10 +1,15 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Abstractions;
+using Microsoft.AspNetCore.Mvc.Filters;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using PokerClub.Api.Controllers;
 using PokerClub.Api.DTOs;
+using PokerClub.Api.Filters;
 using PokerClub.Api.Models;
 using PokerClub.Api.Services;
 using PokerClub.Domain.Entities;
@@ -606,6 +611,86 @@ public class TournamentServiceTests
         }
 
         Assert.False(validator.IsAdmin("unknown_id"));
+    }
+
+    [Fact]
+    public async Task VkAuthorizeAttribute_RequireAdmin_WhenUserInAdminVkIds_AllowsAccessEvenIfXIsAdminFalse()
+    {
+        var options = Options.Create(new VkOptions
+        {
+            RequireValidation = false,
+            AdminVkIds = new List<string> { "308885723" }
+        });
+
+        var validator = new VkAuthValidator(options, NullLogger<VkAuthValidator>.Instance);
+        var services = new ServiceCollection();
+        services.AddSingleton<IVkAuthValidator>(validator);
+        var serviceProvider = services.BuildServiceProvider();
+
+        var httpContext = new DefaultHttpContext { RequestServices = serviceProvider };
+        httpContext.Request.Headers["X-Test-Vk-Id"] = "308885723";
+        httpContext.Request.Headers["X-Is-Admin"] = "false";
+
+        var actionContext = new ActionContext(httpContext, new RouteData(), new ActionDescriptor());
+        var actionExecutingContext = new ActionExecutingContext(
+            actionContext,
+            new List<IFilterMetadata>(),
+            new Dictionary<string, object?>(),
+            controller: new object()
+        );
+
+        var filter = new VkAuthorizeAttribute { RequireAdmin = true };
+        bool nextCalled = false;
+
+        await filter.OnActionExecutionAsync(actionExecutingContext, () =>
+        {
+            nextCalled = true;
+            return Task.FromResult(new ActionExecutedContext(actionContext, new List<IFilterMetadata>(), new object()));
+        });
+
+        Assert.True(nextCalled);
+        Assert.Null(actionExecutingContext.Result);
+        Assert.True((bool?)httpContext.Items["IsAdmin"]);
+    }
+
+    [Fact]
+    public async Task VkAuthorizeAttribute_RequireAdmin_WhenUserNotInAdminVkIds_Returns403EvenIfXIsAdminTrue()
+    {
+        var options = Options.Create(new VkOptions
+        {
+            RequireValidation = false,
+            AdminVkIds = new List<string> { "308885723" }
+        });
+
+        var validator = new VkAuthValidator(options, NullLogger<VkAuthValidator>.Instance);
+        var services = new ServiceCollection();
+        services.AddSingleton<IVkAuthValidator>(validator);
+        var serviceProvider = services.BuildServiceProvider();
+
+        var httpContext = new DefaultHttpContext { RequestServices = serviceProvider };
+        httpContext.Request.Headers["X-Test-Vk-Id"] = "999";
+        httpContext.Request.Headers["X-Is-Admin"] = "true";
+
+        var actionContext = new ActionContext(httpContext, new RouteData(), new ActionDescriptor());
+        var actionExecutingContext = new ActionExecutingContext(
+            actionContext,
+            new List<IFilterMetadata>(),
+            new Dictionary<string, object?>(),
+            controller: new object()
+        );
+
+        var filter = new VkAuthorizeAttribute { RequireAdmin = true };
+        bool nextCalled = false;
+
+        await filter.OnActionExecutionAsync(actionExecutingContext, () =>
+        {
+            nextCalled = true;
+            return Task.FromResult(new ActionExecutedContext(actionContext, new List<IFilterMetadata>(), new object()));
+        });
+
+        Assert.False(nextCalled);
+        var objectResult = Assert.IsType<ObjectResult>(actionExecutingContext.Result);
+        Assert.Equal(403, objectResult.StatusCode);
     }
 }
 

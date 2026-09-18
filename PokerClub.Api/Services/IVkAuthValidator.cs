@@ -6,4 +6,5 @@ public interface IVkAuthValidator
 {
     VkAuthResult Validate(HttpContext httpContext);
     bool IsAdmin(string vkUserId, HttpContext? httpContext = null);
+    bool IsConfiguredAdmin(string vkUserId);
 }

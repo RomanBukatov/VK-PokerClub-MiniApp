@@ -88,9 +88,14 @@ export async function initVkBridge(): Promise<VkUser> {
   // Если приложение открыто в обычном браузере (локально или на сервере без параметров запуска VK)
   if (!isVkEnvironment) {
     console.info('Запуск в обычном браузере (Гость Клуба).');
-    localStorage.setItem('vk_test_user_id', MOCK_USER.id.toString());
-    localStorage.setItem('poker_is_admin', 'false');
-    return MOCK_USER;
+    const existingTestId = typeof window !== 'undefined' ? localStorage.getItem('vk_test_user_id') : null;
+    if (!existingTestId && typeof window !== 'undefined') {
+      localStorage.setItem('vk_test_user_id', MOCK_USER.id.toString());
+    }
+    return {
+      ...MOCK_USER,
+      id: existingTestId ? (Number(existingTestId) || 0) : 0,
+    };
   }
 
   try {
@@ -134,9 +139,14 @@ export async function initVkBridge(): Promise<VkUser> {
     };
   } catch (err) {
     console.warn('VK Bridge не ответил или запущен вне VK. Применен гостевой профиль (Гость Клуба).', err);
-    localStorage.setItem('vk_test_user_id', MOCK_USER.id.toString());
-    localStorage.setItem('poker_is_admin', 'false');
-    return MOCK_USER;
+    const existingTestId = typeof window !== 'undefined' ? localStorage.getItem('vk_test_user_id') : null;
+    if (!existingTestId && typeof window !== 'undefined') {
+      localStorage.setItem('vk_test_user_id', MOCK_USER.id.toString());
+    }
+    return {
+      ...MOCK_USER,
+      id: existingTestId ? (Number(existingTestId) || 0) : 0,
+    };
   }
 }
 

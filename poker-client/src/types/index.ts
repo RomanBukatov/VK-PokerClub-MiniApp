@@ -132,6 +132,7 @@ export interface UserProfile {
   knockoutsCount: number;
   avgPlace: number;
   createdAt: string;
+  isAdmin?: boolean;
 }
 
 export interface UpdateProfilePayload {

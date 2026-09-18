@@ -10,7 +10,8 @@ interface HeaderProps {
 }
 
 export const Header: React.FC<HeaderProps> = ({ title, subtitle }) => {
-  const { activeTab, isAdmin, setIsAdmin, setIsCityModalOpen, selectedCityName, vkUser } = useUserStore();
+  const { activeTab, isAdmin, setIsAdmin, setIsCityModalOpen, selectedCityName, vkUser, profile, hasAdminRole } = useUserStore();
+  const canSwitchAdmin = hasAdminRole || vkUser?.isAdmin === true || profile?.isAdmin === true;
 
   const getHeaderInfo = () => {
     if (title && subtitle) return { title, subtitle };
@@ -54,7 +55,7 @@ export const Header: React.FC<HeaderProps> = ({ title, subtitle }) => {
 
         {/* Правая часть: Админ переключатель и логотип */}
         <div className="flex items-center gap-2.5">
-          {vkUser?.isAdmin === true && (
+          {canSwitchAdmin && (
             <button
               type="button"
               onClick={() => {

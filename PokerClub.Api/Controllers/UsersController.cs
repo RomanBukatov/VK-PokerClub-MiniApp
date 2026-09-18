@@ -4,6 +4,8 @@ using Microsoft.EntityFrameworkCore;
 using PokerClub.Api.DTOs;
 using PokerClub.Api.Extensions;
 using PokerClub.Api.Filters;
+using PokerClub.Api.Models;
+using PokerClub.Api.Services;
 using PokerClub.Domain.Entities;
 using PokerClub.Infrastructure.Data;
 using PokerClub.Infrastructure.Services;
@@ -15,12 +17,14 @@ namespace PokerClub.Api.Controllers;
 public class UsersController : ControllerBase
 {
     private readonly AppDbContext _context;
+    private readonly IVkAuthValidator? _vkAuthValidator;
     private readonly ILogger<UsersController> _logger;
 
-    public UsersController(AppDbContext context, ILogger<UsersController> logger)
+    public UsersController(AppDbContext context, ILogger<UsersController> logger, IVkAuthValidator? vkAuthValidator = null)
     {
         _context = context;
         _logger = logger;
+        _vkAuthValidator = vkAuthValidator;
     }
 
     [HttpGet("me")]
@@ -73,7 +77,8 @@ public class UsersController : ControllerBase
             await _context.SaveChangesAsync();
         }
 
-        return Ok(ToProfileDto(user));
+        bool isAdmin = CheckIsAdmin(currentVkId);
+        return Ok(ToProfileDto(user, isAdmin));
     }
 
     [HttpPost("profile")]
@@ -128,14 +133,83 @@ public class UsersController : ControllerBase
             user.Nickname = request.Nickname.Trim();
         }
 
+        var requestedCardId = request.ClubCardId?.Trim();
+        var requestedPhone = request.PhoneNumber?.Trim();
+
         if (request.PhoneNumber != null)
         {
-            user.PhoneNumber = request.PhoneNumber.Trim();
+            user.PhoneNumber = requestedPhone;
         }
 
-        if (request.ClubCardId != null)
+        if (!string.IsNullOrEmpty(requestedCardId))
         {
-            user.ClubCardId = request.ClubCardId.Trim();
+            // Если пользователь уже привязал эту карту ранее — повторная проверка не требуется
+            bool alreadyOwnsCard = !string.IsNullOrWhiteSpace(user.ClubCardId) &&
+                                   string.Equals(user.ClubCardId.Trim(), requestedCardId, StringComparison.OrdinalIgnoreCase);
+
+            if (!alreadyOwnsCard)
+            {
+                // Правило 2: Защита от дубликатов (1 карта = 1 аккаунт)
+                var isCardTakenByRealUser = await _context.Users.AnyAsync(u => 
+                    u.ClubCardId != null &&
+                    u.ClubCardId.ToLower() == requestedCardId.ToLower() &&
+                    u.Id != user.Id &&
+                    !u.VkId.StartsWith("sheet_"));
+
+                if (isCardTakenByRealUser)
+                {
+                    return BadRequest(new { Message = "Эта клубная карта уже привязана к другому профилю. Обратитесь к администратору клуба." });
+                }
+
+                // Правило 3: Защита от угона чужого рейтинга (Сверка телефона)
+                var sheetUser = await _context.Users.FirstOrDefaultAsync(u => 
+                    u.ClubCardId != null &&
+                    u.ClubCardId.ToLower() == requestedCardId.ToLower() &&
+                    u.Id != user.Id &&
+                    u.VkId.StartsWith("sheet_"));
+
+                if (sheetUser != null)
+                {
+                    // Сверка телефона владельца карты в базе
+                    if (!string.IsNullOrWhiteSpace(sheetUser.PhoneNumber))
+                    {
+                        var cardPhone10 = NormalizePhone(sheetUser.PhoneNumber);
+                        var userPhone10 = NormalizePhone(requestedPhone ?? user.PhoneNumber);
+
+                        if (string.IsNullOrEmpty(userPhone10) || cardPhone10 != userPhone10)
+                        {
+                            return BadRequest(new { Message = "Указанный номер телефона не совпадает с телефоном владельца карты в базе клуба. Если это ваша карта — обратитесь к администратору." });
+                        }
+                    }
+
+                    // Успешная верификация: перенос накопленных очков и статистики
+                    user.TotalRating = sheetUser.TotalRating;
+                    user.SeasonRating = sheetUser.SeasonRating;
+                    user.TournamentsPlayed = sheetUser.TournamentsPlayed;
+                    user.WinsCount = sheetUser.WinsCount;
+                    user.Top3Count = sheetUser.Top3Count;
+                    user.Top10Count = sheetUser.Top10Count;
+                    user.KnockoutsCount = sheetUser.KnockoutsCount;
+                    user.AvgPlace = sheetUser.AvgPlace;
+
+                    // Перепривязываем регистрации в турнирах
+                    var sheetRegs = await _context.Registrations.Where(r => r.UserId == sheetUser.Id).ToListAsync();
+                    foreach (var reg in sheetRegs)
+                    {
+                        reg.UserId = user.Id;
+                    }
+
+                    _context.Users.Remove(sheetUser);
+                    _logger.LogInformation("Успешно привязана клубная карта {CardId} к пользователю {VkId}: перенесено {Points} очков", requestedCardId, user.VkId, user.TotalRating);
+                }
+
+                user.ClubCardId = requestedCardId;
+            }
+        }
+        else if (request.ClubCardId != null)
+        {
+            // Правило 1: Пользователь явно очистил поле карты
+            user.ClubCardId = null;
         }
 
         if (!string.IsNullOrWhiteSpace(request.FullName))
@@ -173,41 +247,9 @@ public class UsersController : ControllerBase
             user.AcceptedTermsAt = request.AcceptedTermsAt ?? DateTime.UtcNow;
         }
 
-        // Если у пользователя еще 0 очков, проверяем наличие импортированной записи из Google Sheets по имени или номеру карты
-        if (user.TotalRating == 0 && user.TournamentsPlayed == 0)
-        {
-            var fullName = $"{user.LastName} {user.FirstName}".Trim();
-            var sheetUsers = await _context.Users
-                .Where(u => u.VkId.StartsWith("sheet_") && u.Id != user.Id)
-                .ToListAsync();
-
-            var match = GoogleSheetsSyncService.FindMatchingUser(sheetUsers, fullName, user.ClubCardId);
-            if (match != null)
-            {
-                user.SeasonRating = match.SeasonRating;
-                user.TotalRating = match.TotalRating;
-                user.TournamentsPlayed = match.TournamentsPlayed;
-                user.WinsCount = match.WinsCount;
-                user.Top3Count = match.Top3Count;
-                user.Top10Count = match.Top10Count;
-                user.KnockoutsCount = match.KnockoutsCount;
-                user.AvgPlace = match.AvgPlace;
-                if (string.IsNullOrWhiteSpace(user.ClubCardId) && !string.IsNullOrWhiteSpace(match.ClubCardId))
-                {
-                    user.ClubCardId = match.ClubCardId;
-                }
-                if (string.IsNullOrWhiteSpace(user.PhoneNumber) && !string.IsNullOrWhiteSpace(match.PhoneNumber))
-                {
-                    user.PhoneNumber = match.PhoneNumber;
-                }
-
-                _context.Users.Remove(match);
-                _logger.LogInformation("Объединен профиль пользователя {VkId} с данными из таблицы: {Points} очков", user.VkId, user.TotalRating);
-            }
-        }
-
         await _context.SaveChangesAsync();
-        return Ok(ToProfileDto(user));
+        bool isAdmin = CheckIsAdmin(currentVkId);
+        return Ok(ToProfileDto(user, isAdmin));
     }
 
     [HttpPost("accept-terms")]
@@ -252,7 +294,33 @@ public class UsersController : ControllerBase
         });
     }
 
-    private static UserProfileDto ToProfileDto(User user)
+    private bool CheckIsAdmin(string vkId)
+    {
+        if (string.IsNullOrWhiteSpace(vkId))
+            return false;
+
+        if (HttpContext?.Items.TryGetValue(HttpContextExtensions.IsAdminItemKey, out var val) == true && val is bool isAdmin)
+        {
+            return isAdmin;
+        }
+
+        var validator = _vkAuthValidator ?? HttpContext?.RequestServices?.GetService<IVkAuthValidator>();
+        if (validator != null)
+        {
+            return validator.IsConfiguredAdmin(vkId);
+        }
+
+        var vkOptions = HttpContext?.RequestServices?.GetService<Microsoft.Extensions.Options.IOptions<VkOptions>>()?.Value;
+        if (vkOptions?.AdminVkIds != null)
+        {
+            var cleanTarget = VkAuthValidator.NormalizeVkId(vkId);
+            return vkOptions.AdminVkIds.Any(id => string.Equals(VkAuthValidator.NormalizeVkId(id), cleanTarget, StringComparison.OrdinalIgnoreCase));
+        }
+
+        return false;
+    }
+
+    private static UserProfileDto ToProfileDto(User user, bool isAdmin = false)
     {
         var fullName = $"{user.FirstName} {user.LastName}".Trim();
         if (string.IsNullOrWhiteSpace(fullName)) fullName = user.Nickname ?? "Игрок";
@@ -279,7 +347,8 @@ public class UsersController : ControllerBase
             user.KnockoutsCount,
             user.AvgPlace,
             user.CreatedAt,
-            user.SeasonRating
+            user.SeasonRating,
+            isAdmin
         );
     }
 
@@ -290,4 +359,11 @@ public class UsersController : ControllerBase
         <= 400 => "Reg",
         _ => "Pro"
     };
+
+    public static string NormalizePhone(string? phone)
+    {
+        if (string.IsNullOrWhiteSpace(phone)) return string.Empty;
+        var digits = Regex.Replace(phone, @"\D", "");
+        return digits.Length >= 10 ? digits[^10..] : digits;
+    }
 }

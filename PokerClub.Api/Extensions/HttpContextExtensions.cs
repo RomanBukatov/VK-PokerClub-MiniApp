@@ -67,6 +67,16 @@ public static class HttpContextExtensions
             return isAdmin;
         }
 
+        var vkId = context.GetVkUserId();
+        if (!string.IsNullOrWhiteSpace(vkId))
+        {
+            var validator = context.RequestServices?.GetService<Services.IVkAuthValidator>();
+            if (validator != null && validator.IsConfiguredAdmin(vkId))
+            {
+                return true;
+            }
+        }
+
         if (context.Request.Headers.TryGetValue("X-Is-Admin", out var adminHeader))
         {
             var valStr = adminHeader.ToString().Trim();

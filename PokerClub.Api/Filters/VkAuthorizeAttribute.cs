@@ -23,7 +23,9 @@ public class VkAuthorizeAttribute : Attribute, IAsyncActionFilter
             return;
         }
 
-        if (RequireAdmin && !result.IsAdmin)
+        bool isConfiguredAdmin = validator.IsConfiguredAdmin(result.VkUserId);
+
+        if (RequireAdmin && !isConfiguredAdmin)
         {
             context.Result = new ObjectResult(new 
             { 
@@ -36,7 +38,7 @@ public class VkAuthorizeAttribute : Attribute, IAsyncActionFilter
         }
 
         context.HttpContext.Items["VkUserId"] = result.VkUserId;
-        context.HttpContext.Items["IsAdmin"] = result.IsAdmin;
+        context.HttpContext.Items["IsAdmin"] = isConfiguredAdmin;
 
         await next();
     }

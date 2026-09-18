@@ -275,4 +275,233 @@ describe('useUserStore logout and reset', () => {
     expect(useUserStore.getState().isAdmin).toBe(true);
     expect(window.localStorage.getItem('poker_is_admin')).toBe('true');
   });
+
+  it('should set hasAdminRole and vkUser.isAdmin when fetchProfile returns profile.isAdmin === true', async () => {
+    useUserStore.getState().logout();
+    const originalGetMe = usersApi.getMe;
+    usersApi.getMe = async () => ({
+      id: 77,
+      vkId: '308885723',
+      firstName: 'Администратор',
+      lastName: 'Клуба',
+      totalRating: 100,
+      status: 'Newbie',
+      tournamentsPlayed: 0,
+      winsCount: 0,
+      top3Count: 0,
+      top10Count: 0,
+      knockoutsCount: 0,
+      avgPlace: 0,
+      createdAt: '2026-01-01',
+      isAdmin: true,
+    });
+
+    try {
+      await useUserStore.getState().fetchProfile();
+      const state = useUserStore.getState();
+
+      expect(state.hasAdminRole).toBe(true);
+      expect(state.vkUser?.isAdmin).toBe(true);
+      expect(state.isAdmin).toBe(true);
+      expect(state.activeRole).toBe('admin');
+      expect(state.activeTab).toBe('admin-tournaments');
+      expect(window.localStorage.getItem('poker_active_role')).toBe('admin');
+      expect(window.localStorage.getItem('poker_is_admin')).toBe('true');
+    } finally {
+      usersApi.getMe = originalGetMe;
+    }
+  });
+
+  it('should preserve saved player activeRole when fetchProfile returns profile.isAdmin === true', async () => {
+    useUserStore.getState().logout();
+    window.localStorage.setItem('poker_active_role', 'player');
+    window.localStorage.setItem('poker_is_admin', 'false');
+
+    const originalGetMe = usersApi.getMe;
+    usersApi.getMe = async () => ({
+      id: 77,
+      vkId: '308885723',
+      firstName: 'Администратор',
+      lastName: 'Клуба',
+      totalRating: 100,
+      status: 'Newbie',
+      tournamentsPlayed: 0,
+      winsCount: 0,
+      top3Count: 0,
+      top10Count: 0,
+      knockoutsCount: 0,
+      avgPlace: 0,
+      createdAt: '2026-01-01',
+      isAdmin: true,
+    });
+
+    try {
+      await useUserStore.getState().fetchProfile();
+      const state = useUserStore.getState();
+
+      // Permanent right is preserved!
+      expect(state.hasAdminRole).toBe(true);
+      expect(state.vkUser?.isAdmin).toBe(true);
+      // But active viewing mode is player!
+      expect(state.activeRole).toBe('player');
+      expect(state.isAdmin).toBe(false);
+      expect(state.activeTab).toBe('schedule');
+
+      // Admin can toggle into admin mode at will
+      useUserStore.getState().setIsAdmin(true);
+      const adminState = useUserStore.getState();
+      expect(adminState.isAdmin).toBe(true);
+      expect(adminState.activeRole).toBe('admin');
+      expect(adminState.activeTab).toBe('admin-tournaments');
+      expect(window.localStorage.getItem('poker_active_role')).toBe('admin');
+      expect(window.localStorage.getItem('poker_is_admin')).toBe('true');
+
+      // And toggle back into player mode
+      useUserStore.getState().setIsAdmin(false);
+      const playerState = useUserStore.getState();
+      expect(playerState.isAdmin).toBe(false);
+      expect(playerState.activeRole).toBe('player');
+      expect(playerState.activeTab).toBe('schedule');
+      expect(window.localStorage.getItem('poker_active_role')).toBe('player');
+      expect(window.localStorage.getItem('poker_is_admin')).toBe('false');
+    } finally {
+      usersApi.getMe = originalGetMe;
+    }
+  });
+
+  it('should prevent non-admin from acquiring admin role when profile.isAdmin is false', async () => {
+    useUserStore.getState().logout();
+    const originalGetMe = usersApi.getMe;
+    usersApi.getMe = async () => ({
+      id: 88,
+      vkId: '999999999',
+      firstName: 'Обычный',
+      lastName: 'Игрок',
+      totalRating: 50,
+      status: 'Newbie',
+      tournamentsPlayed: 1,
+      winsCount: 0,
+      top3Count: 0,
+      top10Count: 0,
+      knockoutsCount: 0,
+      avgPlace: 5,
+      createdAt: '2026-01-01',
+      isAdmin: false,
+    });
+
+    try {
+      await useUserStore.getState().fetchProfile();
+      const state = useUserStore.getState();
+
+      expect(state.hasAdminRole).toBe(false);
+      expect(state.vkUser?.isAdmin).toBe(false);
+      expect(state.isAdmin).toBe(false);
+      expect(state.activeRole).toBe('player');
+
+      // Attempting to force setIsAdmin(true)
+      useUserStore.getState().setIsAdmin(true);
+      const afterState = useUserStore.getState();
+      expect(afterState.isAdmin).toBe(false);
+      expect(afterState.activeRole).toBe('player');
+      expect(afterState.activeTab).toBe('schedule');
+    } finally {
+      usersApi.getMe = originalGetMe;
+    }
+  });
+
+  it('should preserve activeRole admin across reload (setUser with vkUser.isAdmin: false then fetchProfile)', async () => {
+    useUserStore.getState().logout();
+    window.localStorage.setItem('poker_has_admin_role', 'true');
+    window.localStorage.setItem('poker_active_role', 'admin');
+    window.localStorage.setItem('poker_is_admin', 'true');
+
+    // Simulate VK Bridge startup which provides vkUser with isAdmin: false
+    useUserStore.getState().setUser({
+      id: 308885723,
+      first_name: 'Роман',
+      last_name: 'Букатов',
+      isAdmin: false,
+    });
+
+    const stateAfterSetUser = useUserStore.getState();
+    expect(stateAfterSetUser.hasAdminRole).toBe(true);
+    expect(stateAfterSetUser.activeRole).toBe('admin');
+    expect(stateAfterSetUser.isAdmin).toBe(true);
+    expect(stateAfterSetUser.activeTab).toBe('admin-tournaments');
+    expect(window.localStorage.getItem('poker_active_role')).toBe('admin');
+    expect(window.localStorage.getItem('poker_is_admin')).toBe('true');
+
+    const originalGetMe = usersApi.getMe;
+    usersApi.getMe = async () => ({
+      id: 77,
+      vkId: '308885723',
+      firstName: 'Роман',
+      lastName: 'Букатов',
+      totalRating: 500,
+      status: 'Pro',
+      tournamentsPlayed: 10,
+      winsCount: 3,
+      top3Count: 5,
+      top10Count: 8,
+      knockoutsCount: 15,
+      avgPlace: 2.5,
+      createdAt: '2026-01-01',
+      isAdmin: true,
+    });
+
+    try {
+      await useUserStore.getState().fetchProfile();
+      const finalState = useUserStore.getState();
+      expect(finalState.hasAdminRole).toBe(true);
+      expect(finalState.activeRole).toBe('admin');
+      expect(finalState.isAdmin).toBe(true);
+      expect(finalState.activeTab).toBe('admin-tournaments');
+      expect(window.localStorage.getItem('poker_active_role')).toBe('admin');
+      expect(window.localStorage.getItem('poker_is_admin')).toBe('true');
+    } finally {
+      usersApi.getMe = originalGetMe;
+    }
+  });
+
+  it('should redirect activeTab correctly when toggling between admin and player modes', () => {
+    useUserStore.getState().logout();
+    useUserStore.getState().setUser({
+      id: 308885723,
+      first_name: 'Роман',
+      last_name: 'Букатов',
+      isAdmin: true,
+    });
+
+    // 1. In admin mode, navigate to admin-create
+    useUserStore.getState().setActiveTab('admin-create');
+    expect(useUserStore.getState().activeTab).toBe('admin-create');
+
+    // 2. Toggle to player mode -> should redirect to schedule
+    useUserStore.getState().setIsAdmin(false);
+    expect(useUserStore.getState().isAdmin).toBe(false);
+    expect(useUserStore.getState().activeRole).toBe('player');
+    expect(useUserStore.getState().activeTab).toBe('schedule');
+
+    // 3. In player mode, navigate to profile tab
+    useUserStore.getState().setActiveTab('profile');
+    expect(useUserStore.getState().activeTab).toBe('profile');
+
+    // 4. Toggle to admin mode -> should redirect from profile to admin-tournaments
+    useUserStore.getState().setIsAdmin(true);
+    expect(useUserStore.getState().isAdmin).toBe(true);
+    expect(useUserStore.getState().activeRole).toBe('admin');
+    expect(useUserStore.getState().activeTab).toBe('admin-tournaments');
+
+    // 5. In admin mode, navigate to shared tab leaderboard
+    useUserStore.getState().setActiveTab('leaderboard');
+    expect(useUserStore.getState().activeTab).toBe('leaderboard');
+
+    // 6. Toggle to player mode -> leaderboard should stay active
+    useUserStore.getState().setIsAdmin(false);
+    expect(useUserStore.getState().activeTab).toBe('leaderboard');
+
+    // 7. Toggle back to admin mode -> leaderboard should stay active
+    useUserStore.getState().setIsAdmin(true);
+    expect(useUserStore.getState().activeTab).toBe('leaderboard');
+  });
 });
