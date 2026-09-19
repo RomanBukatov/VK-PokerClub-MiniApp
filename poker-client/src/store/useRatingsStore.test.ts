@@ -231,5 +231,72 @@ describe('useRatingsStore pagination', () => {
       ratingsApi.getLeaderboard = originalGetLeaderboard;
     }
   });
+
+  it('fetchLeaderboard updates seasonName from API response', async () => {
+    const originalGetLeaderboard = ratingsApi.getLeaderboard;
+
+    ratingsApi.getLeaderboard = mock(async () => ({
+      items: [{ rank: 1, id: 1, vkId: 'vk_1', firstName: 'Player1', totalRating: 1000 }],
+      totalCount: 1,
+      limit: 50,
+      offset: 0,
+      seasonName: 'Осень 2026 (Финал)',
+    }));
+
+    try {
+      await useRatingsStore.getState().fetchLeaderboard('season');
+
+      const state = useRatingsStore.getState();
+      expect(state.seasonName).toBe('Осень 2026 (Финал)');
+    } finally {
+      ratingsApi.getLeaderboard = originalGetLeaderboard;
+    }
+  });
+
+  it('fetchLeaderboard with whitespace seasonName falls back to default', async () => {
+    const originalGetLeaderboard = ratingsApi.getLeaderboard;
+
+    ratingsApi.getLeaderboard = mock(async () => ({
+      items: [{ rank: 1, id: 1, vkId: 'vk_1', firstName: 'Player1', totalRating: 1000 }],
+      totalCount: 1,
+      limit: 50,
+      offset: 0,
+      seasonName: '   ',
+    }));
+
+    try {
+      useRatingsStore.setState({ seasonName: 'Осень 2026' });
+      await useRatingsStore.getState().fetchLeaderboard('season');
+
+      const state = useRatingsStore.getState();
+      expect(state.seasonName).toBe('Осень 2026');
+    } finally {
+      ratingsApi.getLeaderboard = originalGetLeaderboard;
+    }
+  });
+
+  it('setSeasonName trims whitespace and defaults empty input to Осень 2026', () => {
+    useRatingsStore.getState().setSeasonName('  Зима 2026  ');
+    expect(useRatingsStore.getState().seasonName).toBe('Зима 2026');
+
+    useRatingsStore.getState().setSeasonName('   ');
+    expect(useRatingsStore.getState().seasonName).toBe('Осень 2026');
+  });
+});
+
+describe('getLeaderboardSubtitle logic', () => {
+  it('returns All-Time subtitle when seasonTab is all or all-time', async () => {
+    const { getLeaderboardSubtitle } = await import('../panels/LeaderboardPanel');
+    expect(getLeaderboardSubtitle('all')).toBe('Общий зачет клуба · Зал славы');
+    expect(getLeaderboardSubtitle('all-time')).toBe('Общий зачет клуба · Зал славы');
+  });
+
+  it('returns current season subtitle with activeSeasonName or default', async () => {
+    const { getLeaderboardSubtitle } = await import('../panels/LeaderboardPanel');
+    expect(getLeaderboardSubtitle('current')).toBe('Сезон: Осень 2026');
+    expect(getLeaderboardSubtitle('current', 'Осень 2026')).toBe('Сезон: Осень 2026');
+    expect(getLeaderboardSubtitle('current', 'Зима 2026')).toBe('Сезон: Зима 2026');
+    expect(getLeaderboardSubtitle('current', '   ')).toBe('Сезон: Осень 2026');
+  });
 });
 

@@ -32,4 +32,5 @@ public interface IGoogleSheetsSyncService
     Task<GoogleSheetsSyncResult> SyncFromCsvAsync(string csvContent, CancellationToken cancellationToken = default);
     Task<GoogleSheetsSyncResult> SyncFromCsvAsync(string ratingCsvContent, string? registrationsCsvContent, CancellationToken cancellationToken = default);
     Task<GoogleSheetsSyncResult> SyncFromCsvAsync(string? seasonRatingCsvContent, string? totalRatingCsvContent, string? registrationsCsvContent, CancellationToken cancellationToken = default);
+    string GetActiveSeasonName() => "Осень 2026";
 }

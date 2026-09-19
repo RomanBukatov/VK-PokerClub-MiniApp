@@ -81,6 +81,7 @@ export interface LeaderboardResponse {
   totalCount: number;
   limit: number;
   offset: number;
+  seasonName?: string;
 }
 
 export interface VkUser {

@@ -5,6 +5,12 @@ import { useUserStore } from '../store/useUserStore';
 import { triggerHaptic } from '../utils/vkBridge';
 import { PublicPlayerModal } from '../components/PublicPlayerModal';
 
+export const getLeaderboardSubtitle = (seasonTab: string, seasonName?: string) => {
+  const isAllTime = seasonTab === 'all' || seasonTab === 'all-time';
+  const activeSeasonName = seasonName?.trim() || 'Осень 2026';
+  return isAllTime ? 'Общий зачет клуба · Зал славы' : `Сезон: ${activeSeasonName}`;
+};
+
 export const LeaderboardPanel: React.FC = () => {
   const { 
     leaderboard, 
@@ -14,16 +20,21 @@ export const LeaderboardPanel: React.FC = () => {
     loadMore, 
     isLoadingMore, 
     seasonTab, 
-    setSeasonTab 
+    setSeasonTab,
+    seasonName,
   } = useRatingsStore();
   const { fetchSchedule } = useTournamentsStore();
   const { vkUser, profile } = useUserStore();
 
   const [selectedPlayerId, setSelectedPlayerId] = useState<number | string | null>(null);
 
+  const isAllTime = seasonTab === 'all' || seasonTab === 'all-time';
+  const activeSeasonName = seasonName?.trim() || 'Осень 2026';
+  const subtitle = getLeaderboardSubtitle(seasonTab, seasonName);
+
   useEffect(() => {
-    fetchLeaderboard(seasonTab === 'all-time' ? 'all' : 'season');
-  }, [seasonTab, fetchLeaderboard]);
+    fetchLeaderboard(isAllTime ? 'all' : 'season');
+  }, [isAllTime, fetchLeaderboard]);
 
   useEffect(() => {
     // Фоновое тихое обновление данных каждые 5 минут
@@ -108,9 +119,9 @@ export const LeaderboardPanel: React.FC = () => {
         </button>
 
         <button
-          onClick={() => { triggerHaptic('light'); setSeasonTab('all-time'); }}
+          onClick={() => { triggerHaptic('light'); setSeasonTab('all'); }}
           className={`px-5 py-2 rounded-full text-xs font-bold transition-all ${
-            seasonTab === 'all-time'
+            isAllTime
               ? 'bg-[#3b4e44] text-white shadow-md'
               : 'bg-black/40 border border-[#1d3b2c] text-[#7d9b8c] hover:text-white'
           }`}
@@ -119,11 +130,14 @@ export const LeaderboardPanel: React.FC = () => {
         </button>
       </div>
 
+      {/* Подзаголовок для доступности и тестов */}
+      <div className="sr-only" data-testid="leaderboard-subtitle">{subtitle}</div>
+
       {/* Карточка текущего сезона пользователя */}
       <div className="p-5 rounded-3xl bg-black/50 border border-white/10 shadow-xl flex items-center justify-between">
         <div>
           <div className="text-[10px] uppercase font-bold text-[#8fa89b] tracking-wider mb-1">
-            {seasonTab === 'current' ? 'ТЕКУЩИЙ СЕЗОН' : 'ЗА ВСЕ ВРЕМЯ'}
+            {seasonTab === 'current' ? `ТЕКУЩИЙ СЕЗОН · ${activeSeasonName.toUpperCase()}` : 'ЗА ВСЕ ВРЕМЯ'}
           </div>
           <div className="text-xl font-extrabold text-white">
             {userRankLabel}

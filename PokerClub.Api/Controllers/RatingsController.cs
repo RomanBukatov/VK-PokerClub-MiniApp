@@ -15,15 +15,18 @@ public class RatingsController : ControllerBase
     private readonly IRatingService _ratingService;
     private readonly IMemoryCache? _memoryCache;
     private readonly ILeaderboardCacheResetToken? _cacheResetToken;
+    private readonly IGoogleSheetsSyncService? _syncService;
 
     public RatingsController(
         IRatingService ratingService,
         IMemoryCache? memoryCache = null,
-        ILeaderboardCacheResetToken? cacheResetToken = null)
+        ILeaderboardCacheResetToken? cacheResetToken = null,
+        IGoogleSheetsSyncService? syncService = null)
     {
         _ratingService = ratingService;
         _memoryCache = memoryCache;
         _cacheResetToken = cacheResetToken;
+        _syncService = syncService;
     }
 
     [HttpGet("leaderboard")]
@@ -64,7 +67,11 @@ public class RatingsController : ControllerBase
             );
         }).ToList();
 
-        var response = new LeaderboardResponseDto(items, totalCount, limit, offset);
+        var activeSeason = _syncService?.GetActiveSeasonName();
+        var seasonName = string.IsNullOrWhiteSpace(activeSeason)
+            ? GoogleSheetsSyncService.CurrentSeasonName
+            : activeSeason.Trim();
+        var response = new LeaderboardResponseDto(items, totalCount, limit, offset, seasonName);
 
         if (_memoryCache != null)
         {

@@ -6,6 +6,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using PokerClub.Api.Controllers;
+using PokerClub.Api.DTOs;
 using PokerClub.Domain.Entities;
 using PokerClub.Domain.Interfaces;
 using PokerClub.Infrastructure.Data;
@@ -1004,5 +1005,42 @@ public class GoogleSheetsSyncServiceTests
 
         Assert.NotNull(service);
         Assert.IsType<GoogleSheetsSyncService>(service);
+    }
+
+    [Theory]
+    [InlineData("Чугаев Михаил,,,,\r\nВыбранный сезон:,ТЕХНИЧЕСКОЕ ОТКРЫТИЕ,,,,\r\n,,,,\r\nМесто,Игрок", "ТЕХНИЧЕСКОЕ ОТКРЫТИЕ")]
+    [InlineData("Чугаев Михаил,,,,\r\nВыбранный сезон:,Осень 2026,,,,\r\n,,,,\r\nМесто,Игрок", "Осень 2026")]
+    [InlineData("\"Выбранный сезон: Место\",\"ТЕХНИЧЕСКОЕ ОТКРЫТИЕ Игрок\",\"Турниров\"", "ТЕХНИЧЕСКОЕ ОТКРЫТИЕ")]
+    [InlineData("\"Выбранный сезон: Место\",\"Осень 2026 Игрок\",\"Турниров\"", "Осень 2026")]
+    [InlineData(",\r\n,\r\n,Осень 2026\r\n1,Игрок", "Осень 2026")]
+    [InlineData(",\r\n,Заголовок B2\r\n,Осень 2026 (B3)\r\n1,Игрок", "Осень 2026 (B3)")]
+    [InlineData("Сезон: Зима 2026\r\n1,Игрок", "Зима 2026")]
+    [InlineData("Сезон Весна 2027\r\n1,Игрок", "Весна 2027")]
+    [InlineData(",\r\n,\r\n,Сезон:\u00A0Лето\u00A02026\r\n1,Игрок", "Лето 2026")]
+    [InlineData(",\r\n,\r\n,Выбранный сезон\r\n1,Игрок", "Осень 2026")]
+    [InlineData("", "Осень 2026")]
+    [InlineData(null, "Осень 2026")]
+    public void ExtractSeasonName_CorrectlyExtractsSeasonOrDefaults(string? csvContent, string expected)
+    {
+        var result = GoogleSheetsSyncService.ExtractSeasonName(csvContent);
+        Assert.Equal(expected, result);
+    }
+
+    [Fact]
+    public async Task GetLeaderboard_IncludesSeasonNameInResponseDto()
+    {
+        using var context = CreateInMemoryDbContext();
+        context.Users.Add(new User { VkId = "u1", FirstName = "Иван", SeasonRating = 100 });
+        await context.SaveChangesAsync();
+
+        var ratingService = new RatingService(context);
+        var controller = new RatingsController(ratingService);
+
+        var result = await controller.GetLeaderboard();
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        var dto = Assert.IsType<LeaderboardResponseDto>(ok.Value);
+
+        Assert.NotNull(dto.SeasonName);
+        Assert.Equal("Осень 2026", dto.SeasonName);
     }
 }

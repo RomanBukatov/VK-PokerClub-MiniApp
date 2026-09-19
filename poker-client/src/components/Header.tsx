@@ -1,6 +1,8 @@
 import React from 'react';
 import { MapPin, ChevronDown, Shield, User } from 'lucide-react';
 import { useUserStore } from '../store/useUserStore';
+import { useRatingsStore } from '../store/useRatingsStore';
+import { getLeaderboardSubtitle } from '../panels/LeaderboardPanel';
 import { triggerHaptic } from '../utils/vkBridge';
 import { CURRENT_BRANDING } from '../config/branding';
 
@@ -11,6 +13,7 @@ interface HeaderProps {
 
 export const Header: React.FC<HeaderProps> = ({ title, subtitle }) => {
   const { activeTab, isAdmin, setIsAdmin, setIsCityModalOpen, selectedCityName, vkUser, profile, hasAdminRole } = useUserStore();
+  const { seasonTab, seasonName } = useRatingsStore();
   const canSwitchAdmin = hasAdminRole || vkUser?.isAdmin === true || profile?.isAdmin === true;
 
   const getHeaderInfo = () => {
@@ -20,7 +23,7 @@ export const Header: React.FC<HeaderProps> = ({ title, subtitle }) => {
       case 'schedule':
         return { title: 'Турниры', subtitle: 'Ближайшие игры в нашем клубе' };
       case 'leaderboard':
-        return { title: 'Рейтинг', subtitle: 'Сезон: лето 2026' };
+        return { title: 'Рейтинг', subtitle: getLeaderboardSubtitle(seasonTab, seasonName) };
       case 'profile':
         return { title: 'Профиль', subtitle: 'Ваши игры и результаты' };
       case 'admin-tournaments':

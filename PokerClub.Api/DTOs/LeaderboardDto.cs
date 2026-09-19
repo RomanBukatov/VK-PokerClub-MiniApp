@@ -28,5 +28,6 @@ public record LeaderboardResponseDto(
     List<LeaderboardEntryDto> Items,
     int TotalCount,
     int Limit,
-    int Offset
+    int Offset,
+    string SeasonName = "Осень 2026"
 );

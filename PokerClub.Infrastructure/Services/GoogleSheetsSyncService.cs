@@ -18,6 +18,18 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
     public const string TotalRatingSheetName = "Общий рейтинг";
     public const string TotalRatingGid = "0";
     public const string RegistrationsSheetName = "РЕГИСТРАЦИИ";
+    public const string RegistrationsGid = "646289371";
+    public const string DefaultSeasonName = "Осень 2026";
+
+    private static string _activeSeasonName = DefaultSeasonName;
+
+    public static string CurrentSeasonName
+    {
+        get => _activeSeasonName;
+        set => _activeSeasonName = string.IsNullOrWhiteSpace(value) ? DefaultSeasonName : value.Trim();
+    }
+
+    public string GetActiveSeasonName() => CurrentSeasonName;
 
     public const string SeasonRatingCsvUrl = $"https://docs.google.com/spreadsheets/d/{DefaultSpreadsheetId}/gviz/tq?tqx=out:csv&sheet=%D0%A0%D0%B5%D0%B9%D1%82%D0%B8%D0%BD%D0%B3%20%D1%81%D0%B5%D0%B7%D0%BE%D0%BD%D0%B0";
     public const string TotalRatingCsvUrl = $"https://docs.google.com/spreadsheets/d/{DefaultSpreadsheetId}/gviz/tq?tqx=out:csv&sheet=%D0%9E%D0%B1%D1%89%D0%B8%D0%B9%20%D1%80%D0%B5%D0%B9%D1%82%D0%B8%D0%BD%D0%B3";
@@ -158,6 +170,10 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
             else if (string.Equals(sheetName, TotalRatingSheetName, StringComparison.OrdinalIgnoreCase))
             {
                 gid = TotalRatingGid;
+            }
+            else if (string.Equals(sheetName, RegistrationsSheetName, StringComparison.OrdinalIgnoreCase))
+            {
+                gid = RegistrationsGid;
             }
         }
 
@@ -364,6 +380,15 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
         if (string.IsNullOrWhiteSpace(seasonRatingCsvContent) && string.IsNullOrWhiteSpace(totalRatingCsvContent))
         {
             return new GoogleSheetsSyncResult(false, 0, 0, 0, "CSV контент пуст.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(seasonRatingCsvContent))
+        {
+            var parsedSeason = ExtractSeasonName(seasonRatingCsvContent);
+            if (!string.IsNullOrWhiteSpace(parsedSeason))
+            {
+                CurrentSeasonName = parsedSeason;
+            }
         }
 
         var seasonRows = ParseRatingSheet(seasonRatingCsvContent ?? "");
@@ -757,5 +782,151 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
         }
 
         return rows;
+    }
+
+    public static string ExtractSeasonName(string? csvContent)
+    {
+        if (string.IsNullOrWhiteSpace(csvContent))
+            return DefaultSeasonName;
+
+        var rows = ParseCsv(csvContent);
+        if (rows.Count == 0)
+            return DefaultSeasonName;
+
+        // 1. Ищем строку, содержащую ключевое слово "сезон" (в первых 10 строках, до строк игроков)
+        for (int i = 0; i < Math.Min(10, rows.Count); i++)
+        {
+            var row = rows[i];
+            if (row.Count == 0) continue;
+
+            // Если это строка игрока (начинается с числа места, например "1"), прекращаем поиск до таблицы
+            if (int.TryParse(row[0].Trim(), out _))
+                break;
+
+            // Вариант 1a: Ячейка 0 содержит "сезон" (например, "Выбранный сезон:"), а значение в ячейке 1 (B2 или B3)
+            if (row[0].Contains("сезон", StringComparison.OrdinalIgnoreCase))
+            {
+                if (row.Count > 1 && !string.IsNullOrWhiteSpace(row[1]))
+                {
+                    var val = CleanSeasonName(row[1]);
+                    if (!string.IsNullOrEmpty(val))
+                        return val;
+                }
+
+                var colonIdx = row[0].IndexOf(':');
+                if (colonIdx >= 0 && colonIdx + 1 < row[0].Length)
+                {
+                    var val = CleanSeasonName(row[0][(colonIdx + 1)..]);
+                    if (!string.IsNullOrEmpty(val))
+                        return val;
+                }
+
+                if (row[0].Trim().StartsWith("сезон", StringComparison.OrdinalIgnoreCase) && row[0].Length > 5)
+                {
+                    var val = CleanSeasonName(row[0][5..]);
+                    if (!string.IsNullOrEmpty(val))
+                        return val;
+                }
+            }
+
+            // Вариант 1b: Ячейка 1 содержит "сезон"
+            if (row.Count > 1 && row[1].Contains("сезон", StringComparison.OrdinalIgnoreCase))
+            {
+                var colonIdx = row[1].IndexOf(':');
+                if (colonIdx >= 0 && colonIdx + 1 < row[1].Length)
+                {
+                    var val = CleanSeasonName(row[1][(colonIdx + 1)..]);
+                    if (!string.IsNullOrEmpty(val))
+                        return val;
+                }
+                if (row[1].Trim().StartsWith("сезон", StringComparison.OrdinalIgnoreCase) && row[1].Length > 5)
+                {
+                    var val = CleanSeasonName(row[1][5..]);
+                    if (!string.IsNullOrEmpty(val))
+                        return val;
+                }
+                if (row.Count > 2 && !string.IsNullOrWhiteSpace(row[2]))
+                {
+                    var val = CleanSeasonName(row[2]);
+                    if (!string.IsNullOrEmpty(val))
+                        return val;
+                }
+            }
+        }
+
+        // 2. Проверяем формат gviz (где заголовки объединены в первой строке: "ТЕХНИЧЕСКОЕ ОТКРЫТИЕ Игрок")
+        var headerRow = rows[0];
+        if (headerRow.Count > 1 && !int.TryParse(headerRow[0].Trim(), out _))
+        {
+            var col1 = headerRow[1];
+            if (col1.EndsWith("Игрок", StringComparison.OrdinalIgnoreCase))
+            {
+                var candidate = col1[..col1.LastIndexOf("Игрок", StringComparison.OrdinalIgnoreCase)].Trim();
+                var val = CleanSeasonName(candidate);
+                if (!string.IsNullOrEmpty(val))
+                    return val;
+            }
+        }
+
+        // 3. Проверяем ячейку B3 (строка индекс 2, колонка индекс 1)
+        // ВНИМАНИЕ: B3 имеет приоритет согласно ТЗ ("ячейка B3 листа «Рейтинг сезона»")
+        if (rows.Count > 2 && rows[2].Count > 1 && !int.TryParse(rows[2][0].Trim(), out _))
+        {
+            var candidateB3 = CleanSeasonName(rows[2][1]);
+            if (!string.IsNullOrEmpty(candidateB3))
+                return candidateB3;
+        }
+
+        // 4. Проверяем ячейку B2 (строка индекс 1, колонка индекс 1)
+        if (rows.Count > 1 && rows[1].Count > 1 && !int.TryParse(rows[1][0].Trim(), out _))
+        {
+            var candidateB2 = CleanSeasonName(rows[1][1]);
+            if (!string.IsNullOrEmpty(candidateB2))
+                return candidateB2;
+        }
+
+        return DefaultSeasonName;
+    }
+
+    public static string? CleanSeasonName(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        var trimmed = raw.Replace('\u00A0', ' ').Trim().Trim('"', '\'', ':', ' ', '\t');
+        if (string.IsNullOrWhiteSpace(trimmed)) return null;
+
+        if (trimmed.StartsWith("Сезон:", StringComparison.OrdinalIgnoreCase))
+        {
+            trimmed = trimmed[6..].Trim().Trim('"', '\'', ':', ' ', '\t');
+        }
+        else if (trimmed.StartsWith("Сезон", StringComparison.OrdinalIgnoreCase))
+        {
+            trimmed = trimmed[5..].Trim().Trim('"', '\'', ':', ' ', '\t');
+        }
+
+        if (trimmed.EndsWith("Игрок", StringComparison.OrdinalIgnoreCase))
+        {
+            trimmed = trimmed[..^5].Trim().Trim('"', '\'', ':', ' ', '\t');
+        }
+
+        if (string.IsNullOrWhiteSpace(trimmed)) return null;
+
+        if (trimmed.Equals("Игрок", StringComparison.OrdinalIgnoreCase) ||
+            trimmed.Equals("Место", StringComparison.OrdinalIgnoreCase) ||
+            trimmed.Equals("Турниров", StringComparison.OrdinalIgnoreCase) ||
+            trimmed.Equals("Побед", StringComparison.OrdinalIgnoreCase) ||
+            trimmed.Equals("ТОП-3", StringComparison.OrdinalIgnoreCase) ||
+            trimmed.Equals("ТОП 3", StringComparison.OrdinalIgnoreCase) ||
+            trimmed.Equals("ТОП-10", StringComparison.OrdinalIgnoreCase) ||
+            trimmed.Equals("ТОП 10", StringComparison.OrdinalIgnoreCase) ||
+            trimmed.Equals("Нокаутов", StringComparison.OrdinalIgnoreCase) ||
+            trimmed.Equals("Сумма очков", StringComparison.OrdinalIgnoreCase) ||
+            trimmed.Equals("Среднее место", StringComparison.OrdinalIgnoreCase) ||
+            trimmed.Equals("Выбранный сезон", StringComparison.OrdinalIgnoreCase) ||
+            trimmed.Equals("Сезон", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return trimmed;
     }
 }
