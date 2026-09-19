@@ -12,6 +12,44 @@ export const getLeaderboardSubtitle = (seasonTab: string, seasonName?: string) =
   return isAllTime ? 'Общий зачет клуба · Зал славы' : `Сезон: ${activeSeasonName}`;
 };
 
+// eslint-disable-next-line react-refresh/only-export-components
+export const getZoneStyle = (rank: number) => {
+  if (rank <= 70) {
+    return {
+      cardBg: 'bg-emerald-950/30 border-emerald-500/40',
+      rankColor: 'text-emerald-400 font-extrabold',
+      badge: 'Финал',
+      badgeColor: 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40',
+      avatarBg: 'bg-emerald-800 text-white',
+    };
+  }
+  if (rank <= 100) {
+    return {
+      cardBg: 'bg-amber-950/25 border-amber-500/30',
+      rankColor: 'text-amber-400 font-bold',
+      badge: 'Претендент',
+      badgeColor: 'bg-amber-500/20 text-amber-300 border border-amber-500/30',
+      avatarBg: 'bg-amber-800/80 text-white',
+    };
+  }
+  if (rank <= 120) {
+    return {
+      cardBg: 'bg-rose-950/20 border-rose-500/30',
+      rankColor: 'text-rose-400 font-bold',
+      badge: 'Риск',
+      badgeColor: 'bg-rose-500/20 text-rose-300 border border-rose-500/30',
+      avatarBg: 'bg-rose-900/60 text-white',
+    };
+  }
+  return {
+    cardBg: 'bg-black/40 border-white/10',
+    rankColor: 'text-gray-400 font-medium',
+    badge: null,
+    badgeColor: '',
+    avatarBg: 'bg-[#606a66] text-white',
+  };
+};
+
 export const LeaderboardPanel: React.FC = () => {
   const { 
     leaderboard, 
@@ -68,43 +106,6 @@ export const LeaderboardPanel: React.FC = () => {
     return `${f}${l}`.toUpperCase();
   };
 
-  const getZoneStyle = (rank: number) => {
-    if (rank <= 10) {
-      return {
-        cardBg: 'bg-emerald-950/30 border-emerald-500/40',
-        rankColor: 'text-emerald-400 font-extrabold',
-        badge: 'Финал',
-        badgeColor: 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40',
-        avatarBg: 'bg-emerald-800 text-white',
-      };
-    }
-    if (rank <= 15) {
-      return {
-        cardBg: 'bg-amber-950/25 border-amber-500/30',
-        rankColor: 'text-amber-400 font-bold',
-        badge: 'Топ-15',
-        badgeColor: 'bg-amber-500/20 text-amber-300 border border-amber-500/30',
-        avatarBg: 'bg-amber-800/80 text-white',
-      };
-    }
-    if (rank <= 20) {
-      return {
-        cardBg: 'bg-rose-950/20 border-rose-500/30',
-        rankColor: 'text-rose-400 font-bold',
-        badge: 'Зона риска',
-        badgeColor: 'bg-rose-500/20 text-rose-300 border border-rose-500/30',
-        avatarBg: 'bg-rose-900/60 text-white',
-      };
-    }
-    return {
-      cardBg: 'bg-black/40 border-white/10',
-      rankColor: 'text-gray-400 font-medium',
-      badge: null,
-      badgeColor: '',
-      avatarBg: 'bg-[#606a66] text-white',
-    };
-  };
-
   return (
     <div className="px-5 pb-24 animate-fade-in space-y-4">
       {/* Сезонные табы-пиллы */}
@@ -155,19 +156,19 @@ export const LeaderboardPanel: React.FC = () => {
       <div className="flex items-center justify-between px-2 text-[10px] font-semibold text-[#8fa89b]">
         <div className="flex items-center gap-1.5">
           <span className="w-2 h-2 rounded-full bg-emerald-400" />
-          <span>1-10 Финал</span>
+          <span>1–70 Финал</span>
         </div>
         <div className="flex items-center gap-1.5">
           <span className="w-2 h-2 rounded-full bg-amber-400" />
-          <span>11-15 Топ</span>
+          <span>71–100 Претендент</span>
         </div>
         <div className="flex items-center gap-1.5">
           <span className="w-2 h-2 rounded-full bg-rose-400" />
-          <span>16-20 Риск</span>
+          <span>101–120 Риск</span>
         </div>
         <div className="flex items-center gap-1.5">
           <span className="w-2 h-2 rounded-full bg-gray-500" />
-          <span>21+</span>
+          <span>121+</span>
         </div>
       </div>
 
