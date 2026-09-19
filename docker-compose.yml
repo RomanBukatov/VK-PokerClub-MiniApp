@@ -35,6 +35,10 @@ services:
       - VkOptions__ClientSecret=${VK_PROTECTED_KEY}
       - VK_ADMIN_IDS=${VK_ADMIN_IDS:-}
       - ConnectionStrings__DefaultConnection=Host=poker-db;Port=5432;Database=${DB_NAME:-poker_club_db};Username=${DB_USER:-poker_admin};Password=${DB_PASSWORD:-super_secret_poker_password_2026}
+      - GOOGLE_SHEETS_SPREADSHEET_ID=${GOOGLE_SHEETS_SPREADSHEET_ID:-1zxU_LOSjIsjrEHw7eq366BQMLWQ4x8pSDIiMdUxWPOs}
+      - GOOGLE_SHEETS_SEASON_GID=${GOOGLE_SHEETS_SEASON_GID:-202622}
+      - GoogleSheets__SpreadsheetId=${GOOGLE_SHEETS_SPREADSHEET_ID:-1zxU_LOSjIsjrEHw7eq366BQMLWQ4x8pSDIiMdUxWPOs}
+      - GoogleSheets__SeasonGid=${GOOGLE_SHEETS_SEASON_GID:-202622}
     ports:
       - "5052:5052"
     networks:

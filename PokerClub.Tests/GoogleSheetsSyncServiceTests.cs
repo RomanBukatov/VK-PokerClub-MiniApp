@@ -1043,4 +1043,285 @@ public class GoogleSheetsSyncServiceTests
         Assert.NotNull(dto.SeasonName);
         Assert.Equal("Осень 2026", dto.SeasonName);
     }
+
+    [Fact]
+    public async Task SyncFromCsv_WhenAutumnSeasonHasNoGamesOrZeroPoints_SetsSeasonRatingZeroAndPreservesTotalRating()
+    {
+        using var context = CreateInMemoryDbContext();
+        var existingUser = new User
+        {
+            VkId = "vk_lukashenko",
+            FirstName = "Василий",
+            LastName = "Лукашенко",
+            TotalRating = 449,
+            SeasonRating = 486,
+            TournamentsPlayed = 22
+        };
+        context.Users.Add(existingUser);
+        await context.SaveChangesAsync();
+
+        using var httpClient = new HttpClient();
+        var service = new GoogleSheetsSyncService(context, httpClient, NullLogger<GoogleSheetsSyncService>.Instance);
+
+        const string emptyAutumnSeasonCsv =
+            "\"РЕЙТИНГ ОСЕННЕГО СЕЗОНА 2026\",,,,,,,,\r\n" +
+            "\"Турниры сезона «AUTUMN SEASON 2026»\",,,,,,,,\r\n" +
+            ",,,,,,,,\r\n" +
+            "\"Место\",\"Игрок\",\"Турниров\",\"Побед\",\"ТОП‑3\",\"ТОП‑10\",\"Нокаутов\",\"Очков\",\"Среднее место\"\r\n";
+
+        const string newTotalRatingCsv =
+            "\"ОБЩИЙ РЕЙТИНГ MONTE CARLO\",,,,,,,,\r\n" +
+            "\"Все участники и все проведённые турниры клуба\",,,,,,,,\r\n" +
+            ",,,,,,,,\r\n" +
+            "\"Место\",\"Игрок\",\"Турниров\",\"Побед\",\"ТОП‑3\",\"ТОП‑10\",\"Нокаутов\",\"Очков\",\"Среднее место\"\r\n" +
+            "\"1\",\"Лукашенко Василий\",\"25\",\"3\",\"6\",\"12\",\"52\",\"593\",\"7,06\"\r\n" +
+            "\"2\",\"Гуляев Игорь\",\"28\",\"1\",\"6\",\"10\",\"28\",\"495\",\"5,62\"\r\n";
+
+        var result = await service.SyncFromCsvAsync(emptyAutumnSeasonCsv, newTotalRatingCsv, null);
+
+        Assert.True(result.Success);
+        Assert.Equal(2, result.TotalProcessed);
+
+        var lukashenko = await context.Users.FirstAsync(u => u.VkId == "vk_lukashenko");
+        Assert.Equal(0, lukashenko.SeasonRating);
+        Assert.Equal(593, lukashenko.TotalRating);
+        Assert.Equal(25, lukashenko.TournamentsPlayed);
+
+        var gulyaev = await context.Users.FirstAsync(u => u.LastName == "Гуляев");
+        Assert.Equal(0, gulyaev.SeasonRating);
+        Assert.Equal(495, gulyaev.TotalRating);
+        Assert.Equal(28, gulyaev.TournamentsPlayed);
+
+        Assert.Equal("Осень 2026", GoogleSheetsSyncService.CurrentSeasonName);
+    }
+
+    [Fact]
+    public async Task SyncFromCsv_WhenAutumnSeasonHasRowsWithZeroPoints_SetsSeasonRatingZeroAndPreservesTotalRating()
+    {
+        using var context = CreateInMemoryDbContext();
+        var existingUser = new User
+        {
+            VkId = "vk_lukashenko",
+            FirstName = "Василий",
+            LastName = "Лукашенко",
+            TotalRating = 449,
+            SeasonRating = 486
+        };
+        context.Users.Add(existingUser);
+        await context.SaveChangesAsync();
+
+        using var httpClient = new HttpClient();
+        var service = new GoogleSheetsSyncService(context, httpClient, NullLogger<GoogleSheetsSyncService>.Instance);
+
+        const string zeroPointsAutumnSeasonCsv =
+            "\"Место\",\"Игрок\",\"Турниров\",\"Побед\",\"ТОП‑3\",\"ТОП‑10\",\"Нокаутов\",\"Очков\",\"Среднее место\"\r\n" +
+            "\"1\",\"Лукашенко Василий\",\"0\",\"0\",\"0\",\"0\",\"0\",\"0\",\"0,00\"\r\n";
+
+        const string totalRatingCsv =
+            "\"Место\",\"Игрок\",\"Турниров\",\"Побед\",\"ТОП‑3\",\"ТОП‑10\",\"Нокаутов\",\"Очков\",\"Среднее место\"\r\n" +
+            "\"1\",\"Лукашенко Василий\",\"25\",\"3\",\"6\",\"12\",\"52\",\"593\",\"7,06\"\r\n";
+
+        var result = await service.SyncFromCsvAsync(zeroPointsAutumnSeasonCsv, totalRatingCsv, null);
+
+        Assert.True(result.Success);
+
+        var lukashenko = await context.Users.FirstAsync(u => u.VkId == "vk_lukashenko");
+        Assert.Equal(0, lukashenko.SeasonRating);
+        Assert.Equal(593, lukashenko.TotalRating);
+    }
+
+    [Fact]
+    public async Task GoogleSheetsSyncService_ReadsSpreadsheetIdAndSeasonGidFromConfiguration()
+    {
+        using var context = CreateInMemoryDbContext();
+        const string expectedSheetId = "1zxU_LOSjIsjrEHw7eq366BQMLWQ4x8pSDIiMdUxWPOs";
+        const string expectedSeasonGid = "202622";
+
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                { "GOOGLE_SHEETS_SPREADSHEET_ID", expectedSheetId },
+                { "GOOGLE_SHEETS_SEASON_GID", expectedSeasonGid }
+            })
+            .Build();
+
+        var handler = new TestHttpMessageHandler(req =>
+        {
+            var uri = req.RequestUri!.ToString();
+            if (uri.Contains("export?format=csv&gid=202622"))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("\"РЕЙТИНГ ОСЕННЕГО СЕЗОНА 2026\"\r\n\"Место\",\"Игрок\"\r\n")
+                };
+            }
+
+            if (uri.Contains("export?format=csv&gid=0"))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("\"ОБЩИЙ РЕЙТИНГ\"\r\n\"1\",\"Лукашенко Василий\",\"25\",\"3\",\"6\",\"12\",\"52\",\"593\",\"7,06\"\r\n")
+                };
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+
+        using var httpClient = new HttpClient(handler);
+        var service = new GoogleSheetsSyncService(context, httpClient, NullLogger<GoogleSheetsSyncService>.Instance, config);
+
+        var result = await service.SyncFromGoogleSheetsAsync();
+
+        Assert.True(result.Success);
+        Assert.Contains(handler.Requests, r => r.RequestUri!.ToString().Contains(expectedSheetId));
+        Assert.Contains(handler.Requests, r => r.RequestUri!.ToString().Contains($"gid={expectedSeasonGid}"));
+
+        var user = await context.Users.FirstOrDefaultAsync();
+        Assert.NotNull(user);
+        Assert.Equal(0, user.SeasonRating);
+        Assert.Equal(593, user.TotalRating);
+    }
+
+    [Fact]
+    public async Task SyncFromCsv_WhenUserNotInTotalRatingSheet_ResetsSeasonRatingToZeroAndPreservesTotalRating()
+    {
+        using var context = CreateInMemoryDbContext();
+        var inactiveUser = new User
+        {
+            VkId = "vk_inactive",
+            FirstName = "Иван",
+            LastName = "Иванов",
+            TotalRating = 300,
+            SeasonRating = 150
+        };
+        var activeUser = new User
+        {
+            VkId = "vk_active",
+            FirstName = "Василий",
+            LastName = "Лукашенко",
+            TotalRating = 449,
+            SeasonRating = 486
+        };
+        context.Users.AddRange(inactiveUser, activeUser);
+        await context.SaveChangesAsync();
+
+        using var httpClient = new HttpClient();
+        var service = new GoogleSheetsSyncService(context, httpClient, NullLogger<GoogleSheetsSyncService>.Instance);
+
+        const string emptyAutumnCsv =
+            "\"РЕЙТИНГ ОСЕННЕГО СЕЗОНА 2026\",,,,,,,,\r\n" +
+            "\"Турниры сезона «AUTUMN SEASON 2026»\",,,,,,,,\r\n" +
+            ",,,,,,,,\r\n" +
+            "\"Место\",\"Игрок\",\"Турниров\",\"Побед\",\"ТОП‑3\",\"ТОП‑10\",\"Нокаутов\",\"Очков\",\"Среднее место\"\r\n";
+
+        const string totalRatingCsv =
+            "\"Место\",\"Игрок\",\"Турниров\",\"Побед\",\"ТОП‑3\",\"ТОП‑10\",\"Нокаутов\",\"Очков\",\"Среднее место\"\r\n" +
+            "\"1\",\"Лукашенко Василий\",\"25\",\"3\",\"6\",\"12\",\"52\",\"593\",\"7,06\"\r\n";
+
+        var result = await service.SyncFromCsvAsync(emptyAutumnCsv, totalRatingCsv, null);
+
+        Assert.True(result.Success);
+
+        var refreshedInactive = await context.Users.FirstAsync(u => u.VkId == "vk_inactive");
+        Assert.Equal(0, refreshedInactive.SeasonRating);
+        Assert.Equal(300, refreshedInactive.TotalRating);
+
+        var refreshedActive = await context.Users.FirstAsync(u => u.VkId == "vk_active");
+        Assert.Equal(0, refreshedActive.SeasonRating);
+        Assert.Equal(593, refreshedActive.TotalRating);
+    }
+
+    [Fact]
+    public async Task SyncFromCsv_WhenAutumnSeasonHasActivePoints_SetsPointsForSeasonPlayersAndZeroForOthers()
+    {
+        using var context = CreateInMemoryDbContext();
+        var lukashenko = new User
+        {
+            VkId = "vk_lukashenko",
+            FirstName = "Василий",
+            LastName = "Лукашенко",
+            TotalRating = 449,
+            SeasonRating = 486
+        };
+        var gulyaev = new User
+        {
+            VkId = "vk_gulyaev",
+            FirstName = "Игорь",
+            LastName = "Гуляев",
+            TotalRating = 400,
+            SeasonRating = 300
+        };
+        context.Users.AddRange(lukashenko, gulyaev);
+        await context.SaveChangesAsync();
+
+        using var httpClient = new HttpClient();
+        var service = new GoogleSheetsSyncService(context, httpClient, NullLogger<GoogleSheetsSyncService>.Instance);
+
+        const string autumnSeasonCsv =
+            "\"РЕЙТИНГ ОСЕННЕГО СЕЗОНА 2026\",,,,,,,,\r\n" +
+            "\"Место\",\"Игрок\",\"Турниров\",\"Побед\",\"ТОП‑3\",\"ТОП‑10\",\"Нокаутов\",\"Очков\",\"Среднее место\"\r\n" +
+            "\"1\",\"Лукашенко Василий\",\"1\",\"1\",\"1\",\"1\",\"5\",\"75\",\"1,00\"\r\n";
+
+        const string totalRatingCsv =
+            "\"Место\",\"Игрок\",\"Турниров\",\"Побед\",\"ТОП‑3\",\"ТОП‑10\",\"Нокаутов\",\"Очков\",\"Среднее место\"\r\n" +
+            "\"1\",\"Лукашенко Василий\",\"26\",\"4\",\"7\",\"13\",\"57\",\"668\",\"6,80\"\r\n" +
+            "\"2\",\"Гуляев Игорь\",\"28\",\"1\",\"6\",\"10\",\"28\",\"495\",\"5,62\"\r\n";
+
+        var result = await service.SyncFromCsvAsync(autumnSeasonCsv, totalRatingCsv, null);
+
+        Assert.True(result.Success);
+
+        var refreshedLukashenko = await context.Users.FirstAsync(u => u.VkId == "vk_lukashenko");
+        Assert.Equal(75, refreshedLukashenko.SeasonRating);
+        Assert.Equal(668, refreshedLukashenko.TotalRating);
+
+        var refreshedGulyaev = await context.Users.FirstAsync(u => u.VkId == "vk_gulyaev");
+        Assert.Equal(0, refreshedGulyaev.SeasonRating);
+        Assert.Equal(495, refreshedGulyaev.TotalRating);
+    }
+
+    [Fact]
+    public async Task SyncFromGoogleSheetsAsync_WithLiveAutumnGvizFormat_CorrectlySyncsLeaderboard()
+    {
+        using var context = CreateInMemoryDbContext();
+        var handler = new TestHttpMessageHandler(req =>
+        {
+            var uri = req.RequestUri!.ToString();
+            if (uri.Contains("gviz/tq") && (uri.Contains("Осенний сезон 2026") || uri.Contains("202622") || uri.Contains("%D0%9E%D1%81%D0%B5%D0%BD%D0%BD%D0%B8%D0%B9")))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(
+                        "\"РЕЙТИНГ ОСЕННЕГО СЕЗОНА 2026\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"\r\n" +
+                        "\"Турниры сезона «AUTUMN SEASON 2026»\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"\r\n")
+                };
+            }
+
+            if (uri.Contains("gviz/tq") && (uri.Contains("Общий рейтинг") || uri.Contains("%D0%9E%D0%B1%D1%89%D0%B8%D0%B9")))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(
+                        "\"ОБЩИЙ РЕЙТИНГ MONTE CARLO Все участники и все проведённые турниры клуба Место\",\"Игрок\",\"Турниров\",\"Побед\",\"ТОП‑3\",\"ТОП‑10\",\"Нокаутов\",\"Очков\",\"Среднее место\"\r\n" +
+                        "\"1\",\"Лукашенко Василий\",\"25\",\"3\",\"6\",\"12\",\"52\",\"593\",\"7,06\"\r\n")
+                };
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+
+        using var httpClient = new HttpClient(handler);
+        var service = new GoogleSheetsSyncService(context, httpClient, NullLogger<GoogleSheetsSyncService>.Instance);
+
+        var result = await service.SyncFromGoogleSheetsAsync();
+
+        Assert.True(result.Success);
+        Assert.Equal(1, result.TotalProcessed);
+
+        var user = await context.Users.FirstOrDefaultAsync();
+        Assert.NotNull(user);
+        Assert.Equal(0, user.SeasonRating);
+        Assert.Equal(593, user.TotalRating);
+        Assert.Equal("Осень 2026", GoogleSheetsSyncService.CurrentSeasonName);
+    }
 }

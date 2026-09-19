@@ -1,12 +1,13 @@
 import { writeFileSync } from 'fs';
 
-const SPREADSHEET_ID = '1GRINVjwfqXsG0vccHfFFOaxzTbo5pcxWBGn1YOgzOn0';
+const SPREADSHEET_ID = process.env.GOOGLE_SHEETS_SPREADSHEET_ID || '1zxU_LOSjIsjrEHw7eq366BQMLWQ4x8pSDIiMdUxWPOs';
 
 const SHEETS = [
   'Общий рейтинг',
+  'Осенний сезон 2026',
+  'Сезон открытия',
+  'ТОП-20 турниров',
   'Рейтинг сезона',
-  'ТОП-20',
-  'Данные для витрины',
   'РЕГИСТРАЦИИ',
 ];
 

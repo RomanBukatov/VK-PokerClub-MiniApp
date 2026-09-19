@@ -12,8 +12,11 @@ namespace PokerClub.Infrastructure.Services;
 
 public class GoogleSheetsSyncService : IGoogleSheetsSyncService
 {
-    public const string DefaultSpreadsheetId = "1GRINVjwfqXsG0vccHfFFOaxzTbo5pcxWBGn1YOgzOn0";
+    public const string DefaultSpreadsheetId = "1zxU_LOSjIsjrEHw7eq366BQMLWQ4x8pSDIiMdUxWPOs";
+    public const string AutumnSeasonSheetName = "Осенний сезон 2026";
+    public const string LegacySeasonRatingSheetName = "Рейтинг сезона";
     public const string SeasonRatingSheetName = "Рейтинг сезона";
+    public const string DefaultSeasonGid = "202622";
     public const string SeasonRatingGid = "646289371";
     public const string TotalRatingSheetName = "Общий рейтинг";
     public const string TotalRatingGid = "0";
@@ -31,7 +34,7 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
 
     public string GetActiveSeasonName() => CurrentSeasonName;
 
-    public const string SeasonRatingCsvUrl = $"https://docs.google.com/spreadsheets/d/{DefaultSpreadsheetId}/gviz/tq?tqx=out:csv&sheet=%D0%A0%D0%B5%D0%B9%D1%82%D0%B8%D0%BD%D0%B3%20%D1%81%D0%B5%D0%B7%D0%BE%D0%BD%D0%B0";
+    public const string SeasonRatingCsvUrl = $"https://docs.google.com/spreadsheets/d/{DefaultSpreadsheetId}/gviz/tq?tqx=out:csv&sheet=%D0%9E%D1%81%D0%B5%D0%BD%D0%BD%D0%B8%D0%B9%20%D1%81%D0%B5%D0%B7%D0%BE%D0%BD%202026";
     public const string TotalRatingCsvUrl = $"https://docs.google.com/spreadsheets/d/{DefaultSpreadsheetId}/gviz/tq?tqx=out:csv&sheet=%D0%9E%D0%B1%D1%89%D0%B8%D0%B9%20%D1%80%D0%B5%D0%B9%D1%82%D0%B8%D0%BD%D0%B3";
     public const string RegistrationsCsvUrl = $"https://docs.google.com/spreadsheets/d/{DefaultSpreadsheetId}/gviz/tq?tqx=out:csv&sheet=%D0%A0%D0%95%D0%93%D0%98%D0%A1%D0%A2%D0%A0%D0%90%D0%A6%D0%98%D0%98";
     public const string DefaultCsvUrl = TotalRatingCsvUrl;
@@ -40,6 +43,8 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
     private readonly HttpClient _httpClient;
     private readonly ILogger<GoogleSheetsSyncService> _logger;
     private readonly string _spreadsheetId;
+    private readonly string _seasonGid;
+    private readonly string _seasonSheetName;
     private readonly string? _registrationsGid;
     private readonly ILeaderboardCacheResetToken? _cacheResetToken;
 
@@ -63,11 +68,24 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
             httpClient,
             logger,
             configuration?["GoogleSheets:SpreadsheetId"]
+                ?? configuration?["GOOGLE_SHEETS_SPREADSHEET_ID"]
                 ?? configuration?["SPREADSHEET_ID"]
                 ?? configuration?["SpreadsheetId"]
+                ?? Environment.GetEnvironmentVariable("GOOGLE_SHEETS_SPREADSHEET_ID")
                 ?? DefaultSpreadsheetId,
+            configuration?["GoogleSheets:SeasonGid"]
+                ?? configuration?["GOOGLE_SHEETS_SEASON_GID"]
+                ?? configuration?["SEASON_GID"]
+                ?? configuration?["SeasonGid"]
+                ?? Environment.GetEnvironmentVariable("GOOGLE_SHEETS_SEASON_GID")
+                ?? DefaultSeasonGid,
+            configuration?["GoogleSheets:SeasonSheetName"]
+                ?? configuration?["GOOGLE_SHEETS_SEASON_SHEET_NAME"]
+                ?? configuration?["SEASON_SHEET_NAME"]
+                ?? AutumnSeasonSheetName,
             configuration?["GoogleSheets:RegistrationsGid"]
-                ?? configuration?["REGISTRATIONS_GID"],
+                ?? configuration?["REGISTRATIONS_GID"]
+                ?? Environment.GetEnvironmentVariable("GOOGLE_SHEETS_REGISTRATIONS_GID"),
             cacheResetToken)
     {
     }
@@ -79,11 +97,26 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
         string spreadsheetId,
         string? registrationsGid = null,
         ILeaderboardCacheResetToken? cacheResetToken = null)
+        : this(context, httpClient, logger, spreadsheetId, DefaultSeasonGid, AutumnSeasonSheetName, registrationsGid, cacheResetToken)
+    {
+    }
+
+    public GoogleSheetsSyncService(
+        AppDbContext context,
+        HttpClient httpClient,
+        ILogger<GoogleSheetsSyncService> logger,
+        string spreadsheetId,
+        string seasonGid,
+        string seasonSheetName,
+        string? registrationsGid = null,
+        ILeaderboardCacheResetToken? cacheResetToken = null)
     {
         _context = context;
         _httpClient = httpClient;
         _logger = logger;
         _spreadsheetId = string.IsNullOrWhiteSpace(spreadsheetId) ? DefaultSpreadsheetId : spreadsheetId;
+        _seasonGid = string.IsNullOrWhiteSpace(seasonGid) ? DefaultSeasonGid : seasonGid;
+        _seasonSheetName = string.IsNullOrWhiteSpace(seasonSheetName) ? AutumnSeasonSheetName : seasonSheetName;
         _registrationsGid = registrationsGid;
         _cacheResetToken = cacheResetToken;
 
@@ -117,7 +150,13 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
         {
             _logger.LogInformation("Запуск загрузки данных рейтинга из Google Sheets...");
 
-            var seasonCsvContent = await DownloadCsvWithFallbackAsync(SeasonRatingSheetName, SeasonRatingGid, cancellationToken);
+            var seasonCsvContent = await DownloadCsvWithFallbackAsync(_seasonSheetName, _seasonGid, cancellationToken);
+            if (string.IsNullOrWhiteSpace(seasonCsvContent) && !string.Equals(_seasonGid, SeasonRatingGid, StringComparison.OrdinalIgnoreCase))
+            {
+                // Резервная попытка загрузить по legacy имени / gid, если активный сезон не вернул данных
+                seasonCsvContent = await DownloadCsvWithFallbackAsync(LegacySeasonRatingSheetName, SeasonRatingGid, cancellationToken);
+            }
+
             var totalCsvContent = await DownloadCsvWithFallbackAsync(TotalRatingSheetName, TotalRatingGid, cancellationToken);
 
             if (string.IsNullOrWhiteSpace(seasonCsvContent) && string.IsNullOrWhiteSpace(totalCsvContent))
@@ -163,7 +202,14 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
         // Auto-resolve known gids if not explicitly provided
         if (string.IsNullOrWhiteSpace(gid))
         {
-            if (string.Equals(sheetName, SeasonRatingSheetName, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(sheetName, AutumnSeasonSheetName, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(sheetName, "Осень 2026", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(sheetName, _seasonSheetName, StringComparison.OrdinalIgnoreCase))
+            {
+                gid = _seasonGid;
+            }
+            else if (string.Equals(sheetName, SeasonRatingSheetName, StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(sheetName, LegacySeasonRatingSheetName, StringComparison.OrdinalIgnoreCase))
             {
                 gid = SeasonRatingGid;
             }
@@ -177,8 +223,9 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
             }
         }
 
-        var encodedSheetName = Uri.EscapeDataString(sheetName);
-        var gvizUrl = $"https://docs.google.com/spreadsheets/d/{_spreadsheetId}/gviz/tq?tqx=out:csv&sheet={encodedSheetName}";
+        var gvizUrl = !string.IsNullOrWhiteSpace(sheetName)
+            ? $"https://docs.google.com/spreadsheets/d/{_spreadsheetId}/gviz/tq?tqx=out:csv&sheet={Uri.EscapeDataString(sheetName)}"
+            : $"https://docs.google.com/spreadsheets/d/{_spreadsheetId}/gviz/tq?tqx=out:csv&gid={gid}";
 
         try
         {
@@ -391,6 +438,7 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
             }
         }
 
+        var hasSeasonSheet = !string.IsNullOrWhiteSpace(seasonRatingCsvContent);
         var seasonRows = ParseRatingSheet(seasonRatingCsvContent ?? "");
         var totalRows = ParseRatingSheet(totalRatingCsvContent ?? "");
 
@@ -429,6 +477,12 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
                 matchedUser.Top10Count = row.Top10Count;
                 matchedUser.KnockoutsCount = row.KnockoutsCount;
                 matchedUser.AvgPlace = row.AvgPlace;
+
+                // Если предоставлен лист сезона, сбрасываем SeasonRating в 0 (будет установлен в row.Points ниже, если игрок есть в seasonRows)
+                if (hasSeasonSheet)
+                {
+                    matchedUser.SeasonRating = 0;
+                }
 
                 if (!string.IsNullOrWhiteSpace(knownCardId))
                 {
@@ -478,7 +532,27 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
             }
         }
 
+        // Если лист сезона загружен и на нем 0 очков или нет игр (seasonRows пуст или у всех 0 очков),
+        // гарантируем, что для ВСЕХ пользователей SeasonRating = 0, сохраняя несгораемый TotalRating
+        bool isSeasonEmptyOrZero = hasSeasonSheet && (seasonRows.Count == 0 || seasonRows.All(r => r.Points == 0));
+        if (isSeasonEmptyOrZero)
+        {
+            foreach (var u in existingUsers)
+            {
+                if (u.SeasonRating != 0)
+                {
+                    u.SeasonRating = 0;
+                    processedUsers.Add(u);
+                    if (!createdUsers.Contains(u))
+                    {
+                        updatedUsers.Add(u);
+                    }
+                }
+            }
+        }
+
         // 2. Обработка Рейтинга сезона (пишет в SeasonRating)
+        var seasonMatchedUsers = new HashSet<User>();
         foreach (var row in seasonRows)
         {
             var normKey = NormalizeNameKey(row.PlayerName);
@@ -495,6 +569,7 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
             if (matchedUser != null)
             {
                 matchedUser.SeasonRating = row.Points;
+                seasonMatchedUsers.Add(matchedUser);
 
                 // Если общий рейтинг не загружался или у пользователя еще не заполнены турниры
                 if (totalRows.Count == 0 || matchedUser.TournamentsPlayed == 0)
@@ -555,6 +630,25 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
                 existingUsers.Add(newUser);
                 processedUsers.Add(newUser);
                 createdUsers.Add(newUser);
+                seasonMatchedUsers.Add(newUser);
+            }
+        }
+
+        // Если лист сезона загружен и содержит ненулевые очки,
+        // все пользователи, не вошедшие в seasonRows, должны иметь SeasonRating = 0 в текущем сезоне
+        if (hasSeasonSheet && !isSeasonEmptyOrZero)
+        {
+            foreach (var u in existingUsers)
+            {
+                if (!seasonMatchedUsers.Contains(u) && u.SeasonRating != 0)
+                {
+                    u.SeasonRating = 0;
+                    processedUsers.Add(u);
+                    if (!createdUsers.Contains(u))
+                    {
+                        updatedUsers.Add(u);
+                    }
+                }
             }
         }
 
@@ -788,6 +882,13 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
     {
         if (string.IsNullOrWhiteSpace(csvContent))
             return DefaultSeasonName;
+
+        if (csvContent.Contains("ОСЕННЕГО СЕЗОНА 2026", StringComparison.OrdinalIgnoreCase) ||
+            csvContent.Contains("Осенний сезон 2026", StringComparison.OrdinalIgnoreCase) ||
+            csvContent.Contains("AUTUMN SEASON 2026", StringComparison.OrdinalIgnoreCase))
+        {
+            return DefaultSeasonName;
+        }
 
         var rows = ParseCsv(csvContent);
         if (rows.Count == 0)

@@ -1,15 +1,16 @@
 /**
  * Скрипт для инспекции структуры листов таблицы "МК РЕЙТИНГ"
- * Spreadsheet ID: 1GRINVjwfqXsG0vccHfFFOaxzTbo5pcxWBGn1YOgzOn0
+ * Spreadsheet ID: 1zxU_LOSjIsjrEHw7eq366BQMLWQ4x8pSDIiMdUxWPOs
  */
 
-const SPREADSHEET_ID = '1GRINVjwfqXsG0vccHfFFOaxzTbo5pcxWBGn1YOgzOn0';
+const SPREADSHEET_ID = process.env.GOOGLE_SHEETS_SPREADSHEET_ID || '1zxU_LOSjIsjrEHw7eq366BQMLWQ4x8pSDIiMdUxWPOs';
 
 const TARGET_SHEETS = [
   'Общий рейтинг',
+  'Осенний сезон 2026',
+  'Сезон открытия',
+  'ТОП-20 турниров',
   'Рейтинг сезона',
-  'ТОП-20',
-  'Данные для витрины',
   'РЕГИСТРАЦИИ',
 ];
 
