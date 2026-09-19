@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using PokerClub.Api.Controllers;
 using PokerClub.Api.DTOs;
+using PokerClub.Api.Services;
 using PokerClub.Domain.Entities;
 using PokerClub.Domain.Interfaces;
 using PokerClub.Infrastructure.Data;
@@ -73,11 +74,233 @@ public class OpponentDossierAndOptimizationTests
         Assert.Equal("https://example.com/avatar.jpg", dto.AvatarUrl);
         Assert.Equal("100500", dto.VkId);
 
-        // Verify that private data (phone, AcceptedTermsAt, ClubCardId) are NOT on the DTO
+        // Verify that for regular player, ClubCardId and PhoneNumber are null
+        Assert.Null(dto.ClubCardId);
+        Assert.Null(dto.PhoneNumber);
+
+        // Verify that AcceptedTermsAt is still absent from DTO, but PhoneNumber and ClubCardId exist on DTO
         var dtoType = typeof(PublicUserProfileDto);
-        Assert.Null(dtoType.GetProperty("PhoneNumber"));
         Assert.Null(dtoType.GetProperty("AcceptedTermsAt"));
-        Assert.Null(dtoType.GetProperty("ClubCardId"));
+        Assert.NotNull(dtoType.GetProperty("PhoneNumber"));
+        Assert.NotNull(dtoType.GetProperty("ClubCardId"));
+    }
+
+    [Fact]
+    public async Task UsersController_GetPublicProfile_WhenAdmin_ReturnsClubCardIdAndPhoneNumber()
+    {
+        using var context = CreateInMemoryDbContext();
+        var user = new User
+        {
+            VkId = "100500",
+            FirstName = "Иван",
+            LastName = "Иванов",
+            Nickname = "PokerKing",
+            ClubCardId = "MC-777",
+            PhoneNumber = "+79991234567",
+            AcceptedTermsAt = DateTime.UtcNow,
+            SeasonRating = 450,
+            TotalRating = 1250,
+            TournamentsPlayed = 15,
+            CreatedAt = DateTime.UtcNow
+        };
+        context.Users.Add(user);
+        await context.SaveChangesAsync();
+
+        var controller = new UsersController(context, NullLogger<UsersController>.Instance);
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Headers["X-Is-Admin"] = "true";
+        controller.ControllerContext = new ControllerContext { HttpContext = httpContext };
+
+        var actionResult = await controller.GetPublicProfile(user.Id.ToString());
+        var okResult = Assert.IsType<OkObjectResult>(actionResult.Result);
+        var dto = Assert.IsType<PublicUserProfileDto>(okResult.Value);
+
+        Assert.Equal("MC-777", dto.ClubCardId);
+        Assert.Equal("+79991234567", dto.PhoneNumber);
+    }
+
+    [Fact]
+    public async Task UsersController_GetPublicProfile_WhenOwner_ReturnsClubCardIdAndPhoneNumber()
+    {
+        using var context = CreateInMemoryDbContext();
+        var user = new User
+        {
+            VkId = "100500",
+            FirstName = "Иван",
+            LastName = "Иванов",
+            Nickname = "PokerKing",
+            ClubCardId = "MC-777",
+            PhoneNumber = "+79991234567",
+            AcceptedTermsAt = DateTime.UtcNow,
+            SeasonRating = 450,
+            TotalRating = 1250,
+            TournamentsPlayed = 15,
+            CreatedAt = DateTime.UtcNow
+        };
+        context.Users.Add(user);
+        await context.SaveChangesAsync();
+
+        var controller = new UsersController(context, NullLogger<UsersController>.Instance);
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Headers["X-Test-Vk-Id"] = "100500";
+        controller.ControllerContext = new ControllerContext { HttpContext = httpContext };
+
+        var actionResult = await controller.GetPublicProfile(user.Id.ToString());
+        var okResult = Assert.IsType<OkObjectResult>(actionResult.Result);
+        var dto = Assert.IsType<PublicUserProfileDto>(okResult.Value);
+
+        Assert.Equal("MC-777", dto.ClubCardId);
+        Assert.Equal("+79991234567", dto.PhoneNumber);
+    }
+
+    [Fact]
+    public async Task UsersController_GetPublicProfile_WhenAnotherRegularUser_ReturnsNullForClubCardIdAndPhoneNumber()
+    {
+        using var context = CreateInMemoryDbContext();
+        var user = new User
+        {
+            VkId = "100500",
+            FirstName = "Иван",
+            LastName = "Иванов",
+            Nickname = "PokerKing",
+            ClubCardId = "MC-777",
+            PhoneNumber = "+79991234567",
+            AcceptedTermsAt = DateTime.UtcNow,
+            SeasonRating = 450,
+            TotalRating = 1250,
+            TournamentsPlayed = 15,
+            CreatedAt = DateTime.UtcNow
+        };
+        context.Users.Add(user);
+        await context.SaveChangesAsync();
+
+        var controller = new UsersController(context, NullLogger<UsersController>.Instance);
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Headers["X-Test-Vk-Id"] = "999999";
+        controller.ControllerContext = new ControllerContext { HttpContext = httpContext };
+
+        var actionResult = await controller.GetPublicProfile(user.Id.ToString());
+        var okResult = Assert.IsType<OkObjectResult>(actionResult.Result);
+        var dto = Assert.IsType<PublicUserProfileDto>(okResult.Value);
+
+        Assert.Null(dto.ClubCardId);
+        Assert.Null(dto.PhoneNumber);
+    }
+
+    [Fact]
+    public async Task UsersController_GetPublicProfile_WhenAdminByConfiguredVkId_ReturnsClubCardIdAndPhoneNumber()
+    {
+        using var context = CreateInMemoryDbContext();
+        var user = new User
+        {
+            VkId = "100500",
+            FirstName = "Иван",
+            LastName = "Иванов",
+            Nickname = "PokerKing",
+            ClubCardId = "MC-777",
+            PhoneNumber = "+79991234567",
+            AcceptedTermsAt = DateTime.UtcNow,
+            SeasonRating = 450,
+            TotalRating = 1250,
+            TournamentsPlayed = 15,
+            CreatedAt = DateTime.UtcNow
+        };
+        context.Users.Add(user);
+        await context.SaveChangesAsync();
+
+        var options = Microsoft.Extensions.Options.Options.Create(new PokerClub.Api.Models.VkOptions
+        {
+            AdminVkIds = new List<string> { "admin_user_42" }
+        });
+        var validator = new VkAuthValidator(options, NullLogger<VkAuthValidator>.Instance);
+        var controller = new UsersController(context, NullLogger<UsersController>.Instance, validator);
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Headers["X-Test-Vk-Id"] = "admin_user_42";
+        controller.ControllerContext = new ControllerContext { HttpContext = httpContext };
+
+        var actionResult = await controller.GetPublicProfile(user.Id.ToString());
+        var okResult = Assert.IsType<OkObjectResult>(actionResult.Result);
+        var dto = Assert.IsType<PublicUserProfileDto>(okResult.Value);
+
+        Assert.Equal("MC-777", dto.ClubCardId);
+        Assert.Equal("+79991234567", dto.PhoneNumber);
+    }
+
+    [Fact]
+    public async Task UsersController_GetPublicProfile_WhenAdminSwitchesToPlayerModeWithXIsAdminFalse_ReturnsNullForOpponentData()
+    {
+        using var context = CreateInMemoryDbContext();
+        var user = new User
+        {
+            VkId = "100500",
+            FirstName = "Иван",
+            LastName = "Иванов",
+            Nickname = "PokerKing",
+            ClubCardId = "MC-777",
+            PhoneNumber = "+79991234567",
+            AcceptedTermsAt = DateTime.UtcNow,
+            SeasonRating = 450,
+            TotalRating = 1250,
+            TournamentsPlayed = 15,
+            CreatedAt = DateTime.UtcNow
+        };
+        context.Users.Add(user);
+        await context.SaveChangesAsync();
+
+        var options = Microsoft.Extensions.Options.Options.Create(new PokerClub.Api.Models.VkOptions
+        {
+            AdminVkIds = new List<string> { "admin_user_42" }
+        });
+        var validator = new VkAuthValidator(options, NullLogger<VkAuthValidator>.Instance);
+        var controller = new UsersController(context, NullLogger<UsersController>.Instance, validator);
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Headers["X-Test-Vk-Id"] = "admin_user_42";
+        httpContext.Request.Headers["X-Is-Admin"] = "false";
+        controller.ControllerContext = new ControllerContext { HttpContext = httpContext };
+
+        var actionResult = await controller.GetPublicProfile(user.Id.ToString());
+        var okResult = Assert.IsType<OkObjectResult>(actionResult.Result);
+        var dto = Assert.IsType<PublicUserProfileDto>(okResult.Value);
+
+        // Switched to player mode -> should not see opponent's sensitive data
+        Assert.Null(dto.ClubCardId);
+        Assert.Null(dto.PhoneNumber);
+    }
+
+    [Fact]
+    public async Task UsersController_GetPublicProfile_WhenOwnerWithXIsAdminFalse_StillReturnsOwnClubCardIdAndPhoneNumber()
+    {
+        using var context = CreateInMemoryDbContext();
+        var user = new User
+        {
+            VkId = "100500",
+            FirstName = "Иван",
+            LastName = "Иванов",
+            Nickname = "PokerKing",
+            ClubCardId = "MC-777",
+            PhoneNumber = "+79991234567",
+            AcceptedTermsAt = DateTime.UtcNow,
+            SeasonRating = 450,
+            TotalRating = 1250,
+            TournamentsPlayed = 15,
+            CreatedAt = DateTime.UtcNow
+        };
+        context.Users.Add(user);
+        await context.SaveChangesAsync();
+
+        var controller = new UsersController(context, NullLogger<UsersController>.Instance);
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Headers["X-Test-Vk-Id"] = "100500";
+        httpContext.Request.Headers["X-Is-Admin"] = "false";
+        controller.ControllerContext = new ControllerContext { HttpContext = httpContext };
+
+        var actionResult = await controller.GetPublicProfile(user.Id.ToString());
+        var okResult = Assert.IsType<OkObjectResult>(actionResult.Result);
+        var dto = Assert.IsType<PublicUserProfileDto>(okResult.Value);
+
+        // Even with X-Is-Admin: false, the user is the owner of this profile
+        Assert.Equal("MC-777", dto.ClubCardId);
+        Assert.Equal("+79991234567", dto.PhoneNumber);
     }
 
     [Fact]

@@ -11,12 +11,17 @@ import {
   Crosshair, 
   Lock, 
   CheckCircle2, 
-  ShieldAlert 
+  ShieldAlert,
+  CreditCard,
+  Phone,
+  MessageCircle,
+  ExternalLink
 } from 'lucide-react';
 import { usersApi } from '../api/usersApi';
 import type { PublicUserProfile, Achievement } from '../types';
 import { getRankProgress } from '../config/ranks.config';
 import { triggerHaptic } from '../utils/vkBridge';
+import { useUserStore } from '../store/useUserStore';
 
 interface PublicPlayerModalProps {
   playerId: number | string;
@@ -25,6 +30,7 @@ interface PublicPlayerModalProps {
 }
 
 export const PublicPlayerModal: React.FC<PublicPlayerModalProps> = ({ playerId, onClose }) => {
+  const { isAdmin } = useUserStore();
   const [player, setPlayer] = useState<PublicUserProfile | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -267,9 +273,17 @@ export const PublicPlayerModal: React.FC<PublicPlayerModalProps> = ({ playerId, 
 
                 {/* Информация об игроке */}
                 <div className="min-w-0 flex-1">
-                  <h3 className="text-lg font-black text-white truncate">
-                    {displayNickname}
-                  </h3>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="text-lg font-black text-white truncate">
+                      {displayNickname}
+                    </h3>
+                    {isAdmin && Boolean(player.clubCardId && player.clubCardId.trim()) && (
+                      <span className="px-2 py-0.5 rounded-lg bg-[#c39a44]/20 border border-[#c39a44]/40 text-[10px] font-black text-[#ffd700] flex items-center gap-1 shrink-0">
+                        <CreditCard className="w-3 h-3 text-[#ffd700]" />
+                        {player.clubCardId!.trim().startsWith('#') ? player.clubCardId!.trim() : `#${player.clubCardId!.trim()}`}
+                      </span>
+                    )}
+                  </div>
                   {displayRealName && (
                     <p className="text-xs text-[#a4c9b7] truncate mt-0.5 font-medium">
                       {displayRealName}
@@ -284,6 +298,49 @@ export const PublicPlayerModal: React.FC<PublicPlayerModalProps> = ({ playerId, 
                 </div>
               </div>
             </div>
+
+            {/* ОПЕРАТИВНАЯ СВЯЗЬ (ТОЛЬКО ДЛЯ АДМИНИСТРАТОРА) */}
+            {isAdmin && (
+              <div className="p-3.5 rounded-3xl bg-black/40 border border-white/10 shadow-xl space-y-2.5">
+                <div className="text-[10px] uppercase font-extrabold text-[#8fa89b] tracking-wider flex items-center gap-1.5">
+                  <MessageCircle className="w-3.5 h-3.5 text-[#2787f5]" />
+                  Оперативная связь
+                </div>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  {player.vkId && player.vkId.trim() && !player.vkId.trim().startsWith('sheet_') ? (
+                    <a
+                      href={`https://vk.com/im?sel=${player.vkId.trim()}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-2xl bg-[#2787f5] hover:bg-[#2275d7] text-white font-bold text-xs shadow-md shadow-[#2787f5]/20 transition-all active:scale-95 cursor-pointer"
+                    >
+                      <MessageCircle className="w-4 h-4 shrink-0" />
+                      <span className="truncate">Написать в VK</span>
+                      <ExternalLink className="w-3.5 h-3.5 opacity-70 shrink-0" />
+                    </a>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled
+                      className="flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-2xl bg-white/5 border border-white/10 text-white/40 font-bold text-xs cursor-not-allowed"
+                    >
+                      <MessageCircle className="w-4 h-4 shrink-0 opacity-40" />
+                      <span className="truncate">VK не привязан</span>
+                    </button>
+                  )}
+
+                  {player.phoneNumber && player.phoneNumber.trim() && (
+                    <a
+                      href={`tel:${player.phoneNumber.replace(/[^\d+]/g, '')}`}
+                      className="flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md shadow-emerald-600/20 transition-all active:scale-95 cursor-pointer"
+                    >
+                      <Phone className="w-4 h-4 shrink-0" />
+                      <span className="truncate">Позвонить: {player.phoneNumber.trim()}</span>
+                    </a>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* 2. КАРТОЧКА РАНГА (1-15 LVL) С ПРОГРЕСС-БАРОМ */}
             <div className="p-4 rounded-3xl bg-gradient-to-b from-[#0e2a20] to-[#071912] border border-[#c39a44]/30 shadow-xl space-y-2.5 relative overflow-hidden">

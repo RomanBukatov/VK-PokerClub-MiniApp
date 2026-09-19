@@ -38,3 +38,17 @@ build/
 # =========================
 .DS_Store
 Thumbs.db
+
+# =========================
+# Test Artifacts & Screenshots (Playwright, E2E)
+# =========================
+/*.png
+/*.jpg
+/*.jpeg
+/*.webp
+/*.pdf
+/*.webm
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/

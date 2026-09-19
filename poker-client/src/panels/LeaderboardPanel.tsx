@@ -5,6 +5,7 @@ import { useUserStore } from '../store/useUserStore';
 import { triggerHaptic } from '../utils/vkBridge';
 import { PublicPlayerModal } from '../components/PublicPlayerModal';
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const getLeaderboardSubtitle = (seasonTab: string, seasonName?: string) => {
   const isAllTime = seasonTab === 'all' || seasonTab === 'all-time';
   const activeSeasonName = seasonName?.trim() || 'Осень 2026';

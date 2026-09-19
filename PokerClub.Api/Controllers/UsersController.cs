@@ -319,6 +319,28 @@ public class UsersController : ControllerBase
             return NotFound(new { Message = "Игрок не найден." });
         }
 
+        var httpContext = HttpContext;
+        var currentVkId = httpContext?.GetVkUserId();
+        bool isAdmin = (httpContext != null && httpContext.IsVkAdmin()) || (!string.IsNullOrWhiteSpace(currentVkId) && CheckIsAdmin(currentVkId));
+
+        if (httpContext?.Request.Headers.TryGetValue("X-Is-Admin", out var adminHeader) == true)
+        {
+            var headerVal = adminHeader.ToString().Trim();
+            if (string.Equals(headerVal, "false", StringComparison.OrdinalIgnoreCase) || headerVal == "0")
+            {
+                isAdmin = false;
+            }
+        }
+
+        bool isOwner = !string.IsNullOrWhiteSpace(currentVkId) && 
+            (!string.IsNullOrWhiteSpace(user.VkId) && (
+                string.Equals(currentVkId, user.VkId, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(VkAuthValidator.NormalizeVkId(currentVkId), VkAuthValidator.NormalizeVkId(user.VkId), StringComparison.OrdinalIgnoreCase)
+            ));
+
+        string? clubCardId = (isAdmin || isOwner) ? user.ClubCardId : null;
+        string? phoneNumber = (isAdmin || isOwner) ? user.PhoneNumber : null;
+
         return Ok(new PublicUserProfileDto(
             user.Id,
             user.Nickname,
@@ -333,7 +355,9 @@ public class UsersController : ControllerBase
             user.KnockoutsCount,
             user.AvgPlace,
             user.AvatarUrl,
-            user.VkId
+            user.VkId,
+            clubCardId,
+            phoneNumber
         ));
     }
 

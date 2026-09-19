@@ -14,5 +14,7 @@ public record PublicUserProfileDto(
     int KnockoutsCount,
     double AvgPlace,
     string? AvatarUrl = null,
-    string? VkId = null
+    string? VkId = null,
+    string? ClubCardId = null,
+    string? PhoneNumber = null
 );

@@ -182,6 +182,8 @@ export interface PublicUserProfile {
   avgPlace: number;
   avatarUrl?: string;
   vkId?: string;
+  clubCardId?: string | null;
+  phoneNumber?: string | null;
 }
 
 
