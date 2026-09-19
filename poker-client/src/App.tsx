@@ -20,18 +20,53 @@ export function App() {
   const [isInitializing, setIsInitializing] = useState(true);
 
   useEffect(() => {
+    let finished = false;
+
+    // Аварийный таймаут на 3 секунды: если VKWebAppInit или запрос профиля
+    // не ответили вовремя на медленном мобильном интернете, принудительно снимаем экран загрузки
+    // и пускаем пользователя в расписание как гостя.
+    const emergencyTimer = setTimeout(() => {
+      if (!finished) {
+        console.warn('Аварийный таймаут 3с сработал: принудительно пускаем в расписание как гостя');
+        finished = true;
+        const state = useUserStore.getState();
+        if (!state.isAuthenticated) {
+          useUserStore.setState({ isAuthenticated: true, activeTab: 'schedule' });
+        }
+        setIsInitializing(false);
+      }
+    }, 3000);
+
     initVkBridge()
       .then((user) => {
         if (user) {
           setUser(user);
+        } else {
+          const state = useUserStore.getState();
+          if (!state.isAuthenticated) {
+            useUserStore.setState({ isAuthenticated: true, activeTab: 'schedule' });
+          }
         }
       })
       .catch((err) => {
         console.warn('Авторизация при старте:', err);
+        const state = useUserStore.getState();
+        if (!state.isAuthenticated) {
+          useUserStore.setState({ isAuthenticated: true, activeTab: 'schedule' });
+        }
       })
       .finally(() => {
-        setIsInitializing(false);
+        if (!finished) {
+          finished = true;
+          clearTimeout(emergencyTimer);
+          setIsInitializing(false);
+        }
       });
+
+    return () => {
+      finished = true;
+      clearTimeout(emergencyTimer);
+    };
   }, [setUser]);
 
   if (isInitializing) {

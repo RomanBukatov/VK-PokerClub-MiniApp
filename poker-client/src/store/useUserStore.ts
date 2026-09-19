@@ -49,11 +49,33 @@ const getInitialState = () => {
   const activeRole: 'admin' | 'player' = hasAdmin ? (savedActiveRole === 'player' || savedRole === 'false' ? 'player' : 'admin') : 'player';
   const isAdmin = hasAdmin && activeRole === 'admin';
 
+  let selectedCityId: number | null = 1;
+  let selectedCityName = 'Пермь';
+  if (typeof window !== 'undefined') {
+    const savedCityId = localStorage.getItem('poker_selected_city_id');
+    const savedCityName = localStorage.getItem('poker_selected_city_name');
+    if (savedCityId === 'all' || savedCityId === '0') {
+      selectedCityId = null;
+      selectedCityName = 'Все города';
+    } else if (savedCityId) {
+      const parsed = Number(savedCityId);
+      if (!isNaN(parsed) && parsed > 0) {
+        selectedCityId = parsed;
+        selectedCityName = savedCityName || 'Пермь';
+      }
+    } else {
+      selectedCityId = 1;
+      selectedCityName = savedCityName || 'Пермь';
+    }
+  }
+
   return {
     hasAdminRole: hasAdmin,
     activeRole,
     isAdmin,
     activeTab: (isAdmin ? 'admin-tournaments' : 'schedule') as AppTab,
+    selectedCityId,
+    selectedCityName,
   };
 };
 
@@ -68,9 +90,9 @@ export const useUserStore = create<UserState>((set, get) => ({
   activeRole: initialState.activeRole,
   isLoading: false,
   isLoadingProfile: false,
-  selectedCityId: null,
-  selectedCity: null,
-  selectedCityName: 'Все города',
+  selectedCityId: initialState.selectedCityId,
+  selectedCity: initialState.selectedCityId,
+  selectedCityName: initialState.selectedCityName,
   selectedClubId: null,
   activeTab: initialState.activeTab,
   isCityModalOpen: false,
@@ -167,7 +189,18 @@ export const useUserStore = create<UserState>((set, get) => ({
     get().setIsAdmin(role === 'admin');
   },
 
-  setSelectedCity: (cityId, cityName) => set({ selectedCityId: cityId, selectedCity: cityId, selectedCityName: cityName, selectedClubId: null }),
+  setSelectedCity: (cityId, cityName) => {
+    if (typeof window !== 'undefined') {
+      if (cityId !== null && cityId !== undefined && Number(cityId) > 0) {
+        localStorage.setItem('poker_selected_city_id', cityId.toString());
+        localStorage.setItem('poker_selected_city_name', cityName);
+      } else {
+        localStorage.setItem('poker_selected_city_id', 'all');
+        localStorage.setItem('poker_selected_city_name', 'Все города');
+      }
+    }
+    set({ selectedCityId: cityId, selectedCity: cityId, selectedCityName: cityName, selectedClubId: null });
+  },
   setSelectedClub: (clubId) => set({ selectedClubId: clubId }),
   setActiveTab: (tab) => set({ activeTab: tab }),
   setIsCityModalOpen: (isOpen) => set({ isCityModalOpen: isOpen }),
@@ -396,9 +429,9 @@ export const useUserStore = create<UserState>((set, get) => ({
       activeRole: 'player',
       isLoading: false,
       isLoadingProfile: false,
-      selectedCityId: null,
-      selectedCity: null,
-      selectedCityName: 'Все города',
+      selectedCityId: 1,
+      selectedCity: 1,
+      selectedCityName: 'Пермь',
       selectedClubId: null,
       activeTab: 'schedule',
       isCityModalOpen: false,

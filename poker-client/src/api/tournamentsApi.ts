@@ -37,7 +37,7 @@ export const tournamentsApi = {
     const response = await apiClient.post<{ message: string }>('/api/tournaments/register', {
       tournamentId,
       ...profile,
-    });
+    }, { timeout: 25000 });
     return response.data;
   },
 
@@ -45,12 +45,22 @@ export const tournamentsApi = {
     const response = await apiClient.post<{ message: string }>('/api/tournaments/unregister', {
       tournamentId,
       vkId,
-    });
+    }, { timeout: 25000 });
     return response.data;
   },
 
   async createTournament(data: CreateTournamentRequest): Promise<Tournament> {
-    const response = await apiClient.post<Tournament>('/api/tournaments', data);
+    const response = await apiClient.post<Tournament>('/api/tournaments', data, { timeout: 25000 });
+    return response.data;
+  },
+
+  async deleteTournament(id: number): Promise<{ message: string }> {
+    const response = await apiClient.delete<{ message: string }>(`/api/tournaments/${id}`);
+    return response.data;
+  },
+
+  async cancelTournament(id: number): Promise<{ message: string }> {
+    const response = await apiClient.post<{ message: string }>(`/api/tournaments/${id}/cancel`, {}, { timeout: 25000 });
     return response.data;
   },
 };

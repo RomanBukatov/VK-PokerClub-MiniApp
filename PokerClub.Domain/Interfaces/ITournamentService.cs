@@ -25,6 +25,9 @@ public interface ITournamentService
     // Отмена записи на турнир
     Task<(bool Success, string Message)> CancelRegistrationAsync(int tournamentId, string vkId);
 
+    // Удаление / отмена турнира (админ)
+    Task<(bool Success, string Message)> DeleteTournamentAsync(int id);
+
     // Создание нового турнира (админ)
     Task<(bool Success, Tournament? Tournament, string Message)> CreateTournamentAsync(
         int? clubId,

@@ -23,6 +23,7 @@ export const LeaderboardPanel: React.FC = () => {
     seasonTab, 
     setSeasonTab,
     seasonName,
+    ratingsError,
   } = useRatingsStore();
   const { fetchSchedule } = useTournamentsStore();
   const { vkUser, profile } = useUserStore();
@@ -183,6 +184,20 @@ export const LeaderboardPanel: React.FC = () => {
       {isLoading ? (
         <div className="py-12 text-center text-xs text-[#8fa89b] animate-pulse">
           Загрузка рейтинга игроков...
+        </div>
+      ) : ratingsError ? (
+        <div className="py-12 text-center text-xs text-red-300 bg-red-950/40 rounded-3xl p-6 border border-red-500/30 space-y-3">
+          <div>{ratingsError}</div>
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic('light');
+              fetchLeaderboard(isAllTime ? 'all' : 'season');
+            }}
+            className="px-4 py-2 rounded-xl bg-[#c39a44] text-black font-bold text-xs hover:bg-[#ffd700] transition-all active:scale-95"
+          >
+            Повторить
+          </button>
         </div>
       ) : leaderboard.length === 0 ? (
         <div className="py-12 text-center text-xs text-[#8fa89b] bg-black/40 rounded-3xl p-6 border border-white/5">

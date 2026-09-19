@@ -51,6 +51,11 @@ export const getVkLaunchParams = (): string => {
 
 // Перехватчик для автоматической отправки параметров запуска VK
 apiClient.interceptors.request.use((config) => {
+  // Увеличиваем таймаут для POST-запросов (например, регистрация на турнир) до 25 секунд
+  if (config.method?.toUpperCase() === 'POST' && (!config.timeout || config.timeout === 10000)) {
+    config.timeout = 25000;
+  }
+
   // 1. Проверяем URL search params от VK (с кэшированием в сессии на случай SPA-навигации)
   const searchParams = getVkLaunchParams();
   if (searchParams && searchParams.length > 1 && (searchParams.includes('vk_user_id') || searchParams.includes('sign='))) {

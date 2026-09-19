@@ -207,7 +207,7 @@ export const AdminAssignPointsModal: React.FC<AdminAssignPointsModalProps> = ({
 
         {/* Заголовки таблицы */}
         <div className="flex items-center justify-between px-3 text-[10px] font-bold text-[#7d9b8c] uppercase tracking-wider mb-2">
-          <span>УЧАСТНИК (РЕЦЕПШЕН)</span>
+          <span>Игрок / Номер карты</span>
           <span>ОЧКИ</span>
         </div>
 

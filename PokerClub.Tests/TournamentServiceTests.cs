@@ -692,5 +692,142 @@ public class TournamentServiceTests
         var objectResult = Assert.IsType<ObjectResult>(actionExecutingContext.Result);
         Assert.Equal(403, objectResult.StatusCode);
     }
+
+    [Fact]
+    public async Task DeleteTournamentAsync_DeletesTournamentAndItsRegistrations()
+    {
+        using var context = CreateInMemoryDbContext();
+        var city = new City { Name = "Пермь", Slug = "perm", IsActive = true };
+        var club = new Club { Name = "Monte Carlo", Address = "Монастырская 59", City = city, IsActive = true };
+        var tour = new Tournament { Club = club, Title = "Tournament to Delete", Status = TournamentStatus.RegistrationOpen, StartTime = DateTime.UtcNow.AddHours(2) };
+        var user = new User { VkId = "12345", FirstName = "Ivan", LastName = "Ivanov" };
+        context.Cities.Add(city);
+        context.Clubs.Add(club);
+        context.Tournaments.Add(tour);
+        context.Users.Add(user);
+        await context.SaveChangesAsync();
+
+        context.Registrations.Add(new Registration { TournamentId = tour.Id, UserId = user.Id, Status = RegStatus.Active });
+        await context.SaveChangesAsync();
+
+        var service = new TournamentService(context);
+        var (success, message) = await service.DeleteTournamentAsync(tour.Id);
+
+        Assert.True(success);
+        Assert.Equal("Турнир успешно удален.", message);
+        Assert.Null(await context.Tournaments.FindAsync(tour.Id));
+        Assert.Empty(await context.Registrations.Where(r => r.TournamentId == tour.Id).ToListAsync());
+    }
+
+    [Fact]
+    public async Task TournamentsController_DeleteTournament_ReturnsOk_WhenSuccessful()
+    {
+        using var context = CreateInMemoryDbContext();
+        var city = new City { Name = "Пермь", Slug = "perm", IsActive = true };
+        var club = new Club { Name = "Monte Carlo", Address = "Монастырская 59", City = city, IsActive = true };
+        var tour = new Tournament { Club = club, Title = "Tour For Controller Delete", Status = TournamentStatus.RegistrationOpen, StartTime = DateTime.UtcNow.AddHours(2) };
+        context.Cities.Add(city);
+        context.Clubs.Add(club);
+        context.Tournaments.Add(tour);
+        await context.SaveChangesAsync();
+
+        var service = new TournamentService(context);
+        var controller = new TournamentsController(service);
+
+        var result = await controller.DeleteTournament(tour.Id);
+        Assert.IsType<OkObjectResult>(result);
+
+        // Deleting non-existing tournament returns NotFound
+        var notFoundResult = await controller.DeleteTournament(999999);
+        Assert.IsType<NotFoundObjectResult>(notFoundResult);
+    }
+
+    [Fact]
+    public async Task GetUserTournamentsAsync_ReturnsOnlyTournamentsWhereUserIsRegisteredAndNotCanceled()
+    {
+        using var context = CreateInMemoryDbContext();
+        var city = new City { Name = "Пермь", Slug = "perm", IsActive = true };
+        var club = new Club { Name = "Monte Carlo", Address = "Монастырская 59", City = city, IsActive = true };
+        var tour1 = new Tournament { Club = club, Title = "Tour Active", Status = TournamentStatus.RegistrationOpen, StartTime = DateTime.UtcNow.AddHours(2) };
+        var tour2 = new Tournament { Club = club, Title = "Tour Canceled", Status = TournamentStatus.RegistrationOpen, StartTime = DateTime.UtcNow.AddHours(3) };
+        var tour3 = new Tournament { Club = club, Title = "Tour Other Player Only", Status = TournamentStatus.RegistrationOpen, StartTime = DateTime.UtcNow.AddHours(4) };
+
+        var user1 = new User { VkId = "user1", FirstName = "User", LastName = "One" };
+        var user2 = new User { VkId = "user2", FirstName = "User", LastName = "Two" };
+
+        context.Cities.Add(city);
+        context.Clubs.Add(club);
+        context.Tournaments.AddRange(tour1, tour2, tour3);
+        context.Users.AddRange(user1, user2);
+        await context.SaveChangesAsync();
+
+        context.Registrations.AddRange(
+            new Registration { TournamentId = tour1.Id, UserId = user1.Id, User = user1, Status = RegStatus.Active },
+            new Registration { TournamentId = tour1.Id, UserId = user2.Id, User = user2, Status = RegStatus.Active },
+            new Registration { TournamentId = tour2.Id, UserId = user1.Id, User = user1, Status = RegStatus.Canceled },
+            new Registration { TournamentId = tour2.Id, UserId = user2.Id, User = user2, Status = RegStatus.Active },
+            new Registration { TournamentId = tour3.Id, UserId = user2.Id, User = user2, Status = RegStatus.Active }
+        );
+        await context.SaveChangesAsync();
+
+        var service = new TournamentService(context);
+        var myTournaments = await service.GetUserTournamentsAsync("user1");
+
+        Assert.Single(myTournaments);
+        Assert.Equal(tour1.Id, myTournaments[0].Id);
+        Assert.Equal("Tour Active", myTournaments[0].Title);
+    }
+
+    [Fact]
+    public async Task TournamentsController_GetMyTournaments_ReturnsCorrectRegistrationStatusAndCount()
+    {
+        using var context = CreateInMemoryDbContext();
+        var city = new City { Name = "Пермь", Slug = "perm", IsActive = true };
+        var club = new Club { Name = "Monte Carlo", Address = "Монастырская 59", City = city, IsActive = true };
+        var tour1 = new Tournament { Club = club, Title = "Tour Active", Status = TournamentStatus.RegistrationOpen, StartTime = DateTime.UtcNow.AddHours(2) };
+        var user1 = new User { VkId = "user1", FirstName = "User", LastName = "One" };
+        var user2 = new User { VkId = "user2", FirstName = "User", LastName = "Two" };
+
+        context.Cities.Add(city);
+        context.Clubs.Add(club);
+        context.Tournaments.Add(tour1);
+        context.Users.AddRange(user1, user2);
+        await context.SaveChangesAsync();
+
+        context.Registrations.AddRange(
+            new Registration { TournamentId = tour1.Id, UserId = user1.Id, User = user1, Status = RegStatus.Active },
+            new Registration { TournamentId = tour1.Id, UserId = user2.Id, User = user2, Status = RegStatus.Played }
+        );
+        await context.SaveChangesAsync();
+
+        var service = new TournamentService(context);
+        var controller = new TournamentsController(service);
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Headers["X-Test-Vk-Id"] = "user1";
+        controller.ControllerContext = new ControllerContext { HttpContext = httpContext };
+
+        var result = await controller.GetMyTournaments();
+        var okResult = Assert.IsType<OkObjectResult>(result.Result);
+        var list = Assert.IsType<List<TournamentScheduleDto>>(okResult.Value);
+
+        Assert.Single(list);
+        Assert.Equal(tour1.Id, list[0].Id);
+        Assert.True(list[0].IsUserRegistered);
+        // Both Active and Played registrations are counted (user1 + user2 = 2)
+        Assert.Equal(2, list[0].RegisteredCount);
+    }
+
+    [Fact]
+    public async Task TournamentsController_GetMyTournaments_WhenUnauthorized_ReturnsUnauthorized()
+    {
+        using var context = CreateInMemoryDbContext();
+        var service = new TournamentService(context);
+        var controller = new TournamentsController(service);
+        var httpContext = new DefaultHttpContext();
+        controller.ControllerContext = new ControllerContext { HttpContext = httpContext };
+
+        var result = await controller.GetMyTournaments();
+        Assert.IsType<UnauthorizedObjectResult>(result.Result);
+    }
 }
 

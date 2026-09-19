@@ -66,7 +66,8 @@ public class TournamentService : ITournamentService
             .Include(t => t.Club)
                 .ThenInclude(c => c!.City)
             .Include(t => t.Registrations)
-            .Where(t => t.Registrations.Any(r => r.User!.VkId == vkId && r.Status != RegStatus.Canceled))
+                .ThenInclude(r => r.User)
+            .Where(t => t.Registrations.Any(r => r.User != null && r.User.VkId == vkId && r.Status != RegStatus.Canceled))
             .OrderByDescending(t => t.StartTime)
             .ToListAsync();
     }
@@ -81,9 +82,21 @@ public class TournamentService : ITournamentService
         using var transaction = await _context.Database.BeginTransactionAsync();
         try
         {
-            // 1. Атомарно лочим строку турнира без подзапросов (исключает ошибку 0A000 в Postgres)
-            await _context.Database.ExecuteSqlInterpolatedAsync(
-                $"SELECT \"Id\" FROM \"Tournaments\" WHERE \"Id\" = {tournamentId} FOR UPDATE");
+            // 1. Атомарно лочим строку турнира с ограничением lock_timeout (защита от вечного ожидания)
+            if (_context.Database.IsRelational())
+            {
+                try
+                {
+                    await _context.Database.ExecuteSqlRawAsync("SET LOCAL lock_timeout = '5000';");
+                }
+                catch
+                {
+                    // Игнорируем, если провайдер БД не поддерживает lock_timeout
+                }
+
+                await _context.Database.ExecuteSqlInterpolatedAsync(
+                    $"SELECT \"Id\" FROM \"Tournaments\" WHERE \"Id\" = {tournamentId} FOR UPDATE");
+            }
 
             // 2. Загружаем турнир со всеми связями стандартным EF Core запросом в той же транзакции
             var tournament = await _context.Tournaments
@@ -353,5 +366,21 @@ public class TournamentService : ITournamentService
         await _context.SaveChangesAsync();
 
         return (true, tournament, "Турнир успешно создан!");
+    }
+
+    public async Task<(bool Success, string Message)> DeleteTournamentAsync(int id)
+    {
+        var tournament = await _context.Tournaments
+            .Include(t => t.Registrations)
+            .FirstOrDefaultAsync(t => t.Id == id);
+
+        if (tournament == null)
+            return (false, "Турнир не найден.");
+
+        _context.Registrations.RemoveRange(tournament.Registrations);
+        _context.Tournaments.Remove(tournament);
+        await _context.SaveChangesAsync();
+
+        return (true, "Турнир успешно удален.");
     }
 }

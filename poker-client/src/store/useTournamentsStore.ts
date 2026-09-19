@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import axios from 'axios';
 import type { Tournament, TournamentDetail } from '../types';
 import { tournamentsApi } from '../api/tournamentsApi';
+import { citiesApi } from '../api/citiesApi';
 import { useUserStore } from './useUserStore';
 
 interface TournamentsState {
@@ -25,6 +26,7 @@ interface TournamentsState {
   setScheduleError: (err: string | null) => void;
   registerToTournament: (tournamentId: number) => Promise<boolean>;
   unregisterFromTournament: (tournamentId: number) => Promise<boolean>;
+  deleteTournament: (tournamentId: number) => Promise<boolean>;
 }
 
 const extractErrorMessage = (err: unknown, defaultMessage: string): string => {
@@ -80,6 +82,28 @@ export const useTournamentsStore = create<TournamentsState>((set, get) => ({
       targetClubId = useUserStore.getState().selectedClubId;
     } else {
       targetCityId = cityIdOrShowLoader;
+    }
+
+    // Если город не выбран и не сохранен в localStorage, по умолчанию ставим «Пермь»
+    if ((targetCityId === undefined || targetCityId === null) && typeof window !== 'undefined') {
+      const savedCityId = localStorage.getItem('poker_selected_city_id');
+      if (savedCityId && savedCityId !== 'all') {
+        const parsed = Number(savedCityId);
+        if (!isNaN(parsed) && parsed > 0) {
+          targetCityId = parsed;
+        }
+      } else if (!savedCityId) {
+        try {
+          const cities = await citiesApi.getCities();
+          const perm = cities.find((c) => c.name.toLowerCase().includes('пермь')) || cities[0];
+          if (perm) {
+            targetCityId = perm.id;
+            useUserStore.getState().setSelectedCity(perm.id, perm.name);
+          }
+        } catch {
+          // ignore
+        }
+      }
     }
 
     if (shouldShowLoader) {
@@ -157,17 +181,51 @@ export const useTournamentsStore = create<TournamentsState>((set, get) => ({
         lastName: vkUser?.last_name,
         avatarUrl: vkUser?.photo_200 || vkUser?.photo_100,
       });
-      const detail = await tournamentsApi.getTournament(tournamentId);
-      set((state) => ({
-        selectedTournament: detail,
-        tournaments: state.tournaments.map((t) =>
+      let detail: TournamentDetail | null = null;
+      try {
+        detail = await tournamentsApi.getTournament(tournamentId);
+      } catch {
+        // Игнорируем сетевой сбой при получении деталей, так как запись в БД уже прошла
+      }
+
+      // Немедленно реактивно обновляем и tournaments, и myTournaments
+      set((state) => {
+        const updatedTournaments = state.tournaments.map((t) =>
           t.id === tournamentId
             ? { ...t, isUserRegistered: true, registeredCount: t.registeredCount + 1 }
             : t
-        ),
-        actionError: null,
-      }));
-      get().fetchMyTournaments();
+        );
+        const registeredTour = updatedTournaments.find((t) => t.id === tournamentId) || (detail ? {
+          ...detail,
+          isUserRegistered: true,
+        } : (state.selectedTournament?.id === tournamentId ? {
+          ...state.selectedTournament,
+          isUserRegistered: true,
+          registeredCount: state.selectedTournament.registeredCount + 1,
+        } : null));
+
+        const existingMyIndex = state.myTournaments.findIndex((t) => t.id === tournamentId);
+        const updatedMyTournaments = existingMyIndex >= 0
+          ? state.myTournaments.map((t, idx) =>
+              idx === existingMyIndex ? { ...t, isUserRegistered: true } : t
+            )
+          : registeredTour
+          ? [...state.myTournaments, { ...registeredTour, isUserRegistered: true }]
+          : state.myTournaments;
+
+        return {
+          selectedTournament: detail || (state.selectedTournament?.id === tournamentId ? {
+            ...state.selectedTournament,
+            isUserRegistered: true,
+            registeredCount: state.selectedTournament.registeredCount + 1,
+          } : state.selectedTournament),
+          tournaments: updatedTournaments,
+          myTournaments: updatedMyTournaments,
+          actionError: null,
+        };
+      });
+
+      await get().fetchMyTournaments();
       return true;
     } catch (err: unknown) {
       console.error('Ошибка записи на турнир:', err);
@@ -182,21 +240,52 @@ export const useTournamentsStore = create<TournamentsState>((set, get) => ({
     set({ isActionLoading: true, actionError: null });
     try {
       await tournamentsApi.unregister(tournamentId);
-      const detail = await tournamentsApi.getTournament(tournamentId);
+      let detail: TournamentDetail | null = null;
+      try {
+        detail = await tournamentsApi.getTournament(tournamentId);
+      } catch {
+        // Игнорируем сетевой сбой при получении деталей, так как отмена в БД уже прошла
+      }
       set((state) => ({
-        selectedTournament: detail,
+        selectedTournament: detail || (state.selectedTournament?.id === tournamentId ? {
+          ...state.selectedTournament,
+          isUserRegistered: false,
+          registeredCount: Math.max(0, state.selectedTournament.registeredCount - 1),
+        } : state.selectedTournament),
         tournaments: state.tournaments.map((t) =>
           t.id === tournamentId
             ? { ...t, isUserRegistered: false, registeredCount: Math.max(0, t.registeredCount - 1) }
             : t
         ),
+        myTournaments: state.myTournaments.filter((t) => t.id !== tournamentId),
         actionError: null,
       }));
-      get().fetchMyTournaments();
+      await get().fetchMyTournaments();
       return true;
     } catch (err: unknown) {
       console.error('Ошибка отмены записи на турнир:', err);
       set({ actionError: extractErrorMessage(err, 'Ошибка отмены записи на турнир') });
+      return false;
+    } finally {
+      set({ isActionLoading: false });
+    }
+  },
+
+  deleteTournament: async (tournamentId: number) => {
+    set({ isActionLoading: true, actionError: null });
+    try {
+      await tournamentsApi.deleteTournament(tournamentId);
+      set((state) => ({
+        tournaments: state.tournaments.filter((t) => t.id !== tournamentId),
+        myTournaments: state.myTournaments.filter((t) => t.id !== tournamentId),
+        selectedTournament: state.selectedTournament?.id === tournamentId ? null : state.selectedTournament,
+        isDetailModalOpen: state.selectedTournament?.id === tournamentId ? false : state.isDetailModalOpen,
+        actionError: null,
+      }));
+      return true;
+    } catch (err: unknown) {
+      console.error('Ошибка удаления турнира:', err);
+      set({ actionError: extractErrorMessage(err, 'Ошибка удаления турнира') });
       return false;
     } finally {
       set({ isActionLoading: false });

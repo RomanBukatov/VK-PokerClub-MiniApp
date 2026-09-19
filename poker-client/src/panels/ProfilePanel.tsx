@@ -155,7 +155,7 @@ export const ProfilePanel: React.FC = () => {
   };
 
   const upcomingTournaments = myTournaments.filter(
-    (t) => t.isUserRegistered && t.status !== TournamentStatus.Finished && t.status !== TournamentStatus.Canceled
+    (t) => (t.isUserRegistered !== false) && t.status !== TournamentStatus.Finished && t.status !== TournamentStatus.Canceled
   );
 
   const finishedTournaments = myTournaments.filter(
@@ -529,6 +529,7 @@ export const ProfilePanel: React.FC = () => {
                     openDetail(t.id);
                   }}
                   className="p-4 rounded-3xl bg-black/50 border border-white/10 hover:border-[#c39a44]/40 shadow-xl space-y-2.5 cursor-pointer active:scale-[0.99] transition-all"
+                  data-testid={`my-tournament-card-${t.id}`}
                 >
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] font-bold text-[#c39a44] uppercase tracking-wider flex items-center gap-1">

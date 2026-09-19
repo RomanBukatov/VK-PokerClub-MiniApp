@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ChevronRight, RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react';
+import { ChevronRight, RefreshCw, CheckCircle2, AlertCircle, Trash2 } from 'lucide-react';
 import { useTournamentsStore } from '../../store/useTournamentsStore';
 import { useUserStore } from '../../store/useUserStore';
 import { useRatingsStore } from '../../store/useRatingsStore';
@@ -9,10 +9,12 @@ import { triggerHaptic } from '../../utils/vkBridge';
 import { TournamentStatus, type Tournament } from '../../types';
 
 export const AdminTournamentsPanel: React.FC = () => {
-  const { tournaments, isLoading, scheduleError, fetchAdminSchedule } = useTournamentsStore();
+  const { tournaments, isLoading, scheduleError, fetchAdminSchedule, deleteTournament, actionError } = useTournamentsStore();
   const { selectedCityId, selectedCity, selectedClubId } = useUserStore();
 
   const [selectedTournamentForPoints, setSelectedTournamentForPoints] = useState<Tournament | null>(null);
+  const [tournamentToCancel, setTournamentToCancel] = useState<Tournament | null>(null);
+  const [isCanceling, setIsCanceling] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncNotification, setSyncNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
@@ -152,7 +154,7 @@ export const AdminTournamentsPanel: React.FC = () => {
                   {formatCardDate(t.startTime)}
                 </span>
 
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2.5">
                   {isFinished ? (
                     <span className="text-xs font-bold text-[#46625b]">
                       Начислено
@@ -162,6 +164,19 @@ export const AdminTournamentsPanel: React.FC = () => {
                       Не начислено
                     </span>
                   )}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      triggerHaptic('medium');
+                      setTournamentToCancel(t);
+                    }}
+                    className="p-1.5 rounded-xl bg-red-950/40 hover:bg-red-950/70 border border-red-500/30 hover:border-red-500/50 text-red-400 transition-all active:scale-95"
+                    title="Удалить / отменить турнир"
+                    data-testid={`delete-tournament-${t.id}`}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                   <ChevronRight className="w-5 h-5 text-white/70" />
                 </div>
               </div>
@@ -192,6 +207,66 @@ export const AdminTournamentsPanel: React.FC = () => {
             fetchAdminSchedule(targetCityId, targetClubId);
           }}
         />
+      )}
+
+      {/* Модальное окно подтверждения удаления/отмены турнира */}
+      {tournamentToCancel && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
+          <div className="w-full max-w-sm bg-[#0d281e] border border-[#1b4d3e] rounded-2xl p-6 shadow-2xl space-y-4">
+            <div className="flex items-center gap-3 text-red-400">
+              <AlertCircle className="w-6 h-6 shrink-0" />
+              <h3 className="text-base font-bold text-white">Отмена турнира</h3>
+            </div>
+            <p className="text-xs text-[#a4c9b7] leading-relaxed">
+              Вы уверены, что хотите отменить турнир <span className="font-bold text-white">«{tournamentToCancel.title}»</span>? Это действие необратимо.
+            </p>
+            {actionError && (
+              <div className="p-2.5 rounded-xl bg-red-950/60 border border-red-500/40 text-red-300 text-xs">
+                {actionError}
+              </div>
+            )}
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="button"
+                disabled={isCanceling}
+                onClick={() => setTournamentToCancel(null)}
+                className="flex-1 py-2.5 px-4 rounded-xl bg-black/40 border border-white/10 text-xs font-bold text-[#8fa89b] hover:text-white transition-all active:scale-95"
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                disabled={isCanceling}
+                onClick={async () => {
+                  setIsCanceling(true);
+                  triggerHaptic('heavy');
+                  try {
+                    const ok = await deleteTournament(tournamentToCancel.id);
+                    if (ok) {
+                      setTournamentToCancel(null);
+                      const targetCityId = activeCityId === null ? null : activeCityId;
+                      const targetClubId = targetCityId === null ? null : selectedClubId;
+                      fetchAdminSchedule(targetCityId, targetClubId);
+                    }
+                  } finally {
+                    setIsCanceling(false);
+                  }
+                }}
+                className="flex-1 py-2.5 px-4 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2"
+                data-testid="confirm-delete-button"
+              >
+                {isCanceling ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Удаление...</span>
+                  </>
+                ) : (
+                  <span>Удалить</span>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

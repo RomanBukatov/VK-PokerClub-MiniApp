@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { MapPin, ChevronDown, Shield, User } from 'lucide-react';
 import { useUserStore } from '../store/useUserStore';
 import { useRatingsStore } from '../store/useRatingsStore';
+import { citiesApi } from '../api/citiesApi';
 import { getLeaderboardSubtitle } from '../panels/LeaderboardPanel';
 import { triggerHaptic } from '../utils/vkBridge';
 import { CURRENT_BRANDING } from '../config/branding';
@@ -12,9 +13,30 @@ interface HeaderProps {
 }
 
 export const Header: React.FC<HeaderProps> = ({ title, subtitle }) => {
-  const { activeTab, isAdmin, setIsAdmin, setIsCityModalOpen, selectedCityName, vkUser, profile, hasAdminRole } = useUserStore();
+  const { activeTab, isAdmin, setIsAdmin, setIsCityModalOpen, selectedCityName, setSelectedCity, vkUser, profile, hasAdminRole } = useUserStore();
   const { seasonTab, seasonName } = useRatingsStore();
   const canSwitchAdmin = hasAdminRole || vkUser?.isAdmin === true || profile?.isAdmin === true;
+
+  useEffect(() => {
+    const initDefaultCity = async () => {
+      try {
+        const savedCityId = localStorage.getItem('poker_selected_city_id');
+        if (!savedCityId) {
+          const cities = await citiesApi.getCities();
+          if (cities && cities.length > 0) {
+            const permCity = cities.find((c) => c.name.toLowerCase().includes('пермь')) || cities[0];
+            if (permCity) {
+              setSelectedCity(permCity.id, permCity.name);
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('Не удалось загрузить список городов для шапки:', e);
+      }
+    };
+
+    initDefaultCity();
+  }, [setSelectedCity]);
 
   const getHeaderInfo = () => {
     if (title && subtitle) return { title, subtitle };

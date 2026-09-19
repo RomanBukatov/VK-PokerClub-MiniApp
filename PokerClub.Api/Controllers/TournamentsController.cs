@@ -115,8 +115,8 @@ public class TournamentsController : ControllerBase
             t.ClubId,
             t.Club?.Name,
             t.Club?.City?.Name,
-            t.Registrations.Count(r => r.Status == RegStatus.Active),
-            t.Registrations.Any(r => r.User?.VkId == vkId && r.Status == RegStatus.Active)
+            t.Registrations.Count(r => r.Status == RegStatus.Active || r.Status == RegStatus.Played),
+            t.Registrations.Any(r => r.User != null && r.User.VkId == vkId && (r.Status == RegStatus.Active || r.Status == RegStatus.Played))
         )).ToList();
 
         return Ok(result);
@@ -210,5 +210,17 @@ public class TournamentsController : ControllerBase
         );
 
         return CreatedAtAction(nameof(GetTournament), new { id = tournament.Id }, result);
+    }
+
+    [HttpDelete("{id:int}")]
+    [HttpPost("{id:int}/cancel")]
+    [VkAuthorize(RequireAdmin = true)]
+    public async Task<IActionResult> DeleteTournament(int id)
+    {
+        var (success, message) = await _tournamentService.DeleteTournamentAsync(id);
+        if (!success)
+            return NotFound(new { Message = message });
+
+        return Ok(new { Message = message });
     }
 }

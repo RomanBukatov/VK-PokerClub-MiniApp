@@ -7,6 +7,7 @@ interface RatingsState {
   totalCount: number;
   isLoading: boolean;
   isLoadingMore: boolean;
+  ratingsError: string | null;
   seasonTab: 'current' | 'all-time' | 'all';
   seasonName: string;
 
@@ -14,6 +15,7 @@ interface RatingsState {
   loadMore: () => Promise<void>;
   setSeasonTab: (tab: 'current' | 'all-time' | 'all') => void;
   setSeasonName: (name: string) => void;
+  setRatingsError: (err: string | null) => void;
 }
 
 export const useRatingsStore = create<RatingsState>((set, get) => ({
@@ -21,6 +23,7 @@ export const useRatingsStore = create<RatingsState>((set, get) => ({
   totalCount: 0,
   isLoading: false,
   isLoadingMore: false,
+  ratingsError: null,
   seasonTab: 'current',
   seasonName: 'Осень 2026',
 
@@ -41,7 +44,7 @@ export const useRatingsStore = create<RatingsState>((set, get) => ({
     const requestedTab = activeType === 'all' ? 'all' : 'current';
 
     if (shouldShowLoader) {
-      set({ isLoading: true });
+      set({ isLoading: true, ratingsError: null });
     }
     try {
       const fetchLimit = Math.max(activeLimit, get().leaderboard.length || 50);
@@ -53,18 +56,17 @@ export const useRatingsStore = create<RatingsState>((set, get) => ({
         return;
       }
       set({
-        leaderboard: data.items,
-        totalCount: data.totalCount,
+        leaderboard: data.items || [],
+        totalCount: data.totalCount || (data.items ? data.items.length : 0),
         seasonName: data.seasonName?.trim() || get().seasonName || 'Осень 2026',
+        ratingsError: null,
       });
     } catch (err) {
       console.error('Ошибка загрузки рейтинга:', err);
+      set({ ratingsError: 'Не удалось загрузить рейтинг игроков.' });
     } finally {
-      const currentIsAll = get().seasonTab === 'all' || get().seasonTab === 'all-time';
-      const requestedIsAll = requestedTab === 'all';
-      if (shouldShowLoader && currentIsAll === requestedIsAll) {
-        set({ isLoading: false });
-      }
+      // Флаг isLoading ОБЯЗАН гарантированно сбрасываться в false!
+      set({ isLoading: false });
     }
   },
 
@@ -104,5 +106,6 @@ export const useRatingsStore = create<RatingsState>((set, get) => ({
 
   setSeasonTab: (tab) => set({ seasonTab: tab, isLoadingMore: false }),
   setSeasonName: (name) => set({ seasonName: name?.trim() || 'Осень 2026' }),
+  setRatingsError: (err) => set({ ratingsError: err }),
 }));
 

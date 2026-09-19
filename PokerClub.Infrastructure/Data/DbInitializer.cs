@@ -68,6 +68,7 @@ public static class DbInitializer
         try
         {
             await context.Database.ExecuteSqlRawAsync("ALTER TABLE \"Users\" ALTER COLUMN \"TotalRating\" SET DEFAULT 0;");
+            await context.Database.ExecuteSqlRawAsync("ALTER TABLE \"Users\" ADD COLUMN IF NOT EXISTS \"AcceptedTermsAt\" timestamp with time zone NULL;");
         }
         catch
         {
