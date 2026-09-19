@@ -88,11 +88,19 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
         }
     }
 
+    private static readonly SemaphoreSlim _syncLock = new SemaphoreSlim(1, 1);
+
     public Task<GoogleSheetsSyncResult> SyncAsync(CancellationToken cancellationToken = default)
         => SyncFromGoogleSheetsAsync(cancellationToken);
 
     public async Task<GoogleSheetsSyncResult> SyncFromGoogleSheetsAsync(CancellationToken cancellationToken = default)
     {
+        if (!await _syncLock.WaitAsync(0))
+        {
+            _logger.LogWarning("Синхронизация уже выполняется в фоновом режиме.");
+            return new SyncResultDto(0, 0, 0, "Синхронизация уже выполняется в фоновом режиме", true);
+        }
+
         try
         {
             _logger.LogInformation("Запуск загрузки данных рейтинга из Google Sheets...");
@@ -128,6 +136,10 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
         {
             _logger.LogError(ex, "Исключение при синхронизации с Google Sheets");
             return new GoogleSheetsSyncResult(false, 0, 0, 0, $"Ошибка при синхронизации: {ex.Message}");
+        }
+        finally
+        {
+            _syncLock.Release();
         }
     }
 

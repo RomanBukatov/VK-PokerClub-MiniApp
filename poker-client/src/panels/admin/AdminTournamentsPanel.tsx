@@ -3,7 +3,7 @@ import { ChevronRight, RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react
 import { useTournamentsStore } from '../../store/useTournamentsStore';
 import { useUserStore } from '../../store/useUserStore';
 import { useRatingsStore } from '../../store/useRatingsStore';
-import { ratingsApi } from '../../api/ratingsApi';
+import { adminApi } from '../../api/adminApi';
 import { AdminAssignPointsModal } from './AdminAssignPointsModal';
 import { triggerHaptic } from '../../utils/vkBridge';
 import { TournamentStatus, type Tournament } from '../../types';
@@ -32,11 +32,14 @@ export const AdminTournamentsPanel: React.FC = () => {
     setSyncNotification(null);
 
     try {
-      const res = await ratingsApi.syncSheets();
+      const res = await adminApi.syncSheets();
       triggerHaptic('light');
+      const message = res.message && res.totalProcessed === 0 && res.updatedCount === 0 && res.createdCount === 0
+        ? res.message
+        : `Синхронизация Google Sheets завершена: обработано ${res.totalProcessed}, обновлено ${res.updatedCount}, создано ${res.createdCount}.`;
       setSyncNotification({
         type: 'success',
-        message: `Синхронизация Google Sheets завершена: обработано ${res.totalProcessed}, обновлено ${res.updatedCount}, создано ${res.createdCount}.`,
+        message,
       });
 
       // Обновляем списки и лидерборд

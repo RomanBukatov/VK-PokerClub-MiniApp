@@ -821,6 +821,27 @@ public class GoogleSheetsSyncServiceTests
     }
 
     [Fact]
+    public async Task AdminController_SyncSheets_WhenSuccessful_ReturnsOk()
+    {
+        using var context = CreateInMemoryDbContext();
+        var handler = new TestHttpMessageHandler(req => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(SampleRatingCsv)
+        });
+
+        using var httpClient = new HttpClient(handler);
+        var syncService = new GoogleSheetsSyncService(context, httpClient, NullLogger<GoogleSheetsSyncService>.Instance);
+        var controller = new AdminController(syncService);
+
+        var actionResult = await controller.SyncSheets();
+
+        var okResult = Assert.IsType<OkObjectResult>(actionResult.Result);
+        var result = Assert.IsType<GoogleSheetsSyncResult>(okResult.Value);
+        Assert.True(result.Success);
+        Assert.Equal(3, result.TotalProcessed);
+    }
+
+    [Fact]
     public async Task AdminController_SyncGoogleSheets_WhenSuccessful_ReturnsOk()
     {
         using var context = CreateInMemoryDbContext();
@@ -860,6 +881,64 @@ public class GoogleSheetsSyncServiceTests
         var result = Assert.IsType<GoogleSheetsSyncResult>(badRequestResult.Value);
         Assert.False(result.Success);
         Assert.Equal("Не удалось загрузить ни лист «Рейтинг сезона», ни «Общий рейтинг».", result.Message);
+    }
+
+    [Fact]
+    public async Task AdminController_SyncGoogleSheets_IgnoresAbortedRequestCancellationToken_AndSucceeds()
+    {
+        using var context = CreateInMemoryDbContext();
+        var handler = new TestHttpMessageHandler(req => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(SampleRatingCsv)
+        });
+
+        using var httpClient = new HttpClient(handler);
+        var syncService = new GoogleSheetsSyncService(context, httpClient, NullLogger<GoogleSheetsSyncService>.Instance);
+        var controller = new AdminController(syncService);
+
+        using var abortedCts = new CancellationTokenSource();
+        abortedCts.Cancel();
+
+        var actionResult = await controller.SyncGoogleSheets(abortedCts.Token);
+
+        var okResult = Assert.IsType<OkObjectResult>(actionResult.Result);
+        var result = Assert.IsType<GoogleSheetsSyncResult>(okResult.Value);
+        Assert.True(result.Success);
+        Assert.Equal(3, result.TotalProcessed);
+    }
+
+    [Fact]
+    public async Task GoogleSheetsSyncService_ConcurrentSyncCalls_ReturnsAlreadySyncingResult()
+    {
+        using var context = CreateInMemoryDbContext();
+        var tcsFirstRequestStarted = new TaskCompletionSource<bool>();
+        var tcsAllowFirstRequestToComplete = new TaskCompletionSource<bool>();
+
+        var handler = new TestHttpMessageHandler(req =>
+        {
+            tcsFirstRequestStarted.TrySetResult(true);
+            tcsAllowFirstRequestToComplete.Task.Wait();
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(SampleRatingCsv)
+            };
+        });
+
+        using var httpClient = new HttpClient(handler);
+        var syncService = new GoogleSheetsSyncService(context, httpClient, NullLogger<GoogleSheetsSyncService>.Instance);
+
+        var firstTask = Task.Run(() => syncService.SyncFromGoogleSheetsAsync());
+        await tcsFirstRequestStarted.Task;
+
+        var secondResult = await syncService.SyncFromGoogleSheetsAsync();
+
+        tcsAllowFirstRequestToComplete.SetResult(true);
+        var firstResult = await firstTask;
+
+        Assert.True(secondResult.Success);
+        Assert.Equal(0, secondResult.TotalProcessed);
+        Assert.Equal("Синхронизация уже выполняется в фоновом режиме", secondResult.Message);
+        Assert.True(firstResult.Success);
     }
 
     [Fact]

@@ -324,7 +324,6 @@ public class UsersController : ControllerBase
             user.Nickname,
             user.FirstName,
             user.LastName,
-            user.ClubCardId,
             user.SeasonRating,
             user.TotalRating,
             user.TournamentsPlayed,

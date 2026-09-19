@@ -171,7 +171,6 @@ export interface PublicUserProfile {
   firstName?: string;
   lastName?: string;
   fullName?: string;
-  clubCardId?: string;
   seasonRating: number;
   totalRating: number;
   tournamentsPlayed: number;

@@ -5,7 +5,25 @@ public record GoogleSheetsSyncResult(
     int TotalProcessed,
     int UpdatedCount,
     int CreatedCount,
-    string Message);
+    string Message)
+{
+    public GoogleSheetsSyncResult(int totalProcessed, int updatedCount, int createdCount, string message, bool success = true)
+        : this(success, totalProcessed, updatedCount, createdCount, message)
+    {
+    }
+
+}
+
+public record SyncResultDto(
+    int TotalProcessed,
+    int UpdatedCount,
+    int CreatedCount,
+    string Message,
+    bool Success = true)
+{
+    public static implicit operator GoogleSheetsSyncResult(SyncResultDto dto)
+        => new GoogleSheetsSyncResult(dto.Success, dto.TotalProcessed, dto.UpdatedCount, dto.CreatedCount, dto.Message);
+}
 
 public interface IGoogleSheetsSyncService
 {

@@ -5,7 +5,6 @@ public record PublicUserProfileDto(
     string? Nickname,
     string? FirstName,
     string? LastName,
-    string? ClubCardId,
     int SeasonRating,
     int TotalRating,
     int TournamentsPlayed,

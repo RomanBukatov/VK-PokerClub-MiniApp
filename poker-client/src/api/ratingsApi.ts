@@ -1,5 +1,6 @@
 import { apiClient } from './apiClient';
 import type { LeaderboardEntry, LeaderboardResponse } from '../types';
+import { adminApi, type SyncSheetsResponse } from './adminApi';
 
 export const ratingsApi = {
   async getLeaderboard(
@@ -45,9 +46,7 @@ export const ratingsApi = {
     return response.data;
   },
 
-  async syncSheets(): Promise<{ success: boolean; message: string; totalProcessed: number; updatedCount: number; createdCount: number }> {
-    const response = await apiClient.post<{ success: boolean; message: string; totalProcessed: number; updatedCount: number; createdCount: number }>('/api/admin/sync-sheets');
-    return response.data;
+  async syncSheets(): Promise<SyncSheetsResponse> {
+    return adminApi.syncSheets();
   },
 };
-

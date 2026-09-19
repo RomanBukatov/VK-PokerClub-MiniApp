@@ -11,8 +11,7 @@ import {
   Crosshair, 
   Lock, 
   CheckCircle2, 
-  ShieldAlert, 
-  CreditCard 
+  ShieldAlert 
 } from 'lucide-react';
 import { usersApi } from '../api/usersApi';
 import type { PublicUserProfile, Achievement } from '../types';
@@ -278,17 +277,6 @@ export const PublicPlayerModal: React.FC<PublicPlayerModalProps> = ({ playerId, 
                   )}
 
                   <div className="flex items-center gap-2 mt-2">
-                    {player.clubCardId ? (
-                      <span className="px-2.5 py-0.5 rounded-lg bg-black/60 border border-[#c39a44]/40 text-[10px] font-extrabold text-[#ffd700] flex items-center gap-1">
-                        <CreditCard className="w-3 h-3 text-[#c39a44]" />
-                        #{player.clubCardId}
-                      </span>
-                    ) : (
-                      <span className="px-2 py-0.5 rounded-lg bg-white/5 border border-white/10 text-[10px] text-[#8fa89b]">
-                        Карта не привязана
-                      </span>
-                    )}
-
                     <span className="text-[11px] font-extrabold text-[#d8af56]">
                       {currentRating.toLocaleString('ru-RU')} RPS
                     </span>

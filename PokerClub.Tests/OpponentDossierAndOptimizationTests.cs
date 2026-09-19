@@ -62,7 +62,6 @@ public class OpponentDossierAndOptimizationTests
         Assert.Equal("PokerKing", dto.Nickname);
         Assert.Equal("Иван", dto.FirstName);
         Assert.Equal("Иванов", dto.LastName);
-        Assert.Equal("MC-777", dto.ClubCardId);
         Assert.Equal(450, dto.SeasonRating);
         Assert.Equal(1250, dto.TotalRating);
         Assert.Equal(15, dto.TournamentsPlayed);
@@ -74,10 +73,11 @@ public class OpponentDossierAndOptimizationTests
         Assert.Equal("https://example.com/avatar.jpg", dto.AvatarUrl);
         Assert.Equal("100500", dto.VkId);
 
-        // Verify that private data (phone and AcceptedTermsAt) are NOT on the DTO
+        // Verify that private data (phone, AcceptedTermsAt, ClubCardId) are NOT on the DTO
         var dtoType = typeof(PublicUserProfileDto);
         Assert.Null(dtoType.GetProperty("PhoneNumber"));
         Assert.Null(dtoType.GetProperty("AcceptedTermsAt"));
+        Assert.Null(dtoType.GetProperty("ClubCardId"));
     }
 
     [Fact]

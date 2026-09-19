@@ -26,9 +26,10 @@ public class AdminController : ControllerBase
 
     [HttpPost("sync-sheets")]
     [VkAuthorize(RequireAdmin = true)]
-    public async Task<ActionResult<GoogleSheetsSyncResult>> SyncGoogleSheets(CancellationToken cancellationToken)
+    public async Task<ActionResult<GoogleSheetsSyncResult>> SyncSheets()
     {
-        var result = await _syncService.SyncFromGoogleSheetsAsync(cancellationToken);
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+        var result = await _syncService.SyncFromGoogleSheetsAsync(cts.Token);
         if (!result.Success)
         {
             return BadRequest(result);
@@ -49,4 +50,8 @@ public class AdminController : ControllerBase
 
         return Ok(result);
     }
+
+    [NonAction]
+    public Task<ActionResult<GoogleSheetsSyncResult>> SyncGoogleSheets(CancellationToken cancellationToken = default)
+        => SyncSheets();
 }
