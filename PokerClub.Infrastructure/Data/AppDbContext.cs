@@ -46,6 +46,7 @@ public class AppDbContext : DbContext
             entity.Property(e => e.Title).HasMaxLength(200).IsRequired();
             entity.Property(e => e.Format).HasMaxLength(50);
             entity.Property(e => e.BuyIn).HasColumnType("numeric(18,2)"); // Формат денег для Postgre
+            entity.Property(e => e.RegistrationEnd).IsRequired(false);
 
             entity.HasOne(e => e.Club)
                   .WithMany(c => c.Tournaments)

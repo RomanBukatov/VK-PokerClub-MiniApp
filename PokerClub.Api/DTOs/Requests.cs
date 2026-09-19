@@ -29,7 +29,8 @@ public record CreateTournamentRequest(
     DateTime StartTime = default,
     string? Description = null,
     int? StartingChips = null,
-    int? BlindLevelMinutes = null
+    int? BlindLevelMinutes = null,
+    DateTime? RegistrationEnd = null
 );
 
 public record UpdateProfileRequest(

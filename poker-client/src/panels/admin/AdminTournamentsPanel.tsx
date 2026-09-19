@@ -88,9 +88,9 @@ export const AdminTournamentsPanel: React.FC = () => {
           type="button"
           disabled={isSyncing}
           onClick={handleSyncSheets}
-          className="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-[#173e2f] to-[#0c241b] hover:from-[#1e4d3b] hover:to-[#113125] border border-[#c39a44]/30 text-white font-extrabold text-xs flex items-center justify-center gap-2.5 shadow-lg active:scale-[0.99] transition-all disabled:opacity-60"
+          className="w-full py-3.5 px-4 rounded-2xl bg-[#c39a44] hover:bg-[#d8af56] text-white font-extrabold text-xs flex items-center justify-center gap-2.5 shadow-lg shadow-black/40 active:scale-[0.98] transition-all disabled:opacity-60 cursor-pointer"
         >
-          <RefreshCw className={`w-4 h-4 text-[#c39a44] ${isSyncing ? 'animate-spin' : ''}`} />
+          <RefreshCw className={`w-4 h-4 text-white ${isSyncing ? 'animate-spin' : ''}`} />
           <span>{isSyncing ? 'Синхронизация с таблицей "МК РЕЙТИНГ"...' : 'Синхронизировать Google Sheets'}</span>
         </button>
       </div>

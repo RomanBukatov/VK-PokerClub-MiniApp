@@ -50,6 +50,7 @@ export interface Tournament {
   description?: string;
   maxSeats: number;
   startTime: string;
+  registrationEnd?: string | null;
   status: TournamentStatus;
   clubId: number;
   clubName?: string;
@@ -106,6 +107,7 @@ export interface CreateTournamentRequest {
   buyIn: number;
   maxSeats: number;
   startTime: string;
+  registrationEnd?: string | null;
   description?: string;
   startingChips?: number;
   blindLevelMinutes?: number;

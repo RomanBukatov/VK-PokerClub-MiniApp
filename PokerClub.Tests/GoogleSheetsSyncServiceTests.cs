@@ -1324,4 +1324,323 @@ public class GoogleSheetsSyncServiceTests
         Assert.Equal(593, user.TotalRating);
         Assert.Equal("Осень 2026", GoogleSheetsSyncService.CurrentSeasonName);
     }
+
+    [Fact]
+    public void ParseRatingSheet_LukashenkoVasiliyRow_ParsesTournamentsWinsAndRatingCorrectly()
+    {
+        const string csvRow = "1,Лукашенко Василий,25,3,6,12,52,593,\"7,06\"";
+        var rows = GoogleSheetsSyncService.ParseRatingSheet(csvRow);
+
+        Assert.Single(rows);
+        var stats = rows[0];
+        Assert.Equal(1, stats.Place);
+        Assert.Equal("Лукашенко Василий", stats.PlayerName);
+        Assert.Equal(25, stats.TournamentsPlayed);
+        Assert.Equal(3, stats.WinsCount);
+        Assert.Equal(6, stats.Top3Count);
+        Assert.Equal(12, stats.Top10Count);
+        Assert.Equal(52, stats.KnockoutsCount);
+        Assert.Equal(593, stats.Points);
+        Assert.Equal(7.06, stats.AvgPlace);
+    }
+
+    [Fact]
+    public async Task SyncFromCsv_LukashenkoVasiliyRow_ParsesTournamentsWinsAndRatingCorrectly_AndClubCardIsNot25()
+    {
+        using var context = CreateInMemoryDbContext();
+        using var httpClient = new HttpClient();
+        var service = new GoogleSheetsSyncService(context, httpClient, NullLogger<GoogleSheetsSyncService>.Instance);
+
+        const string totalRatingCsv =
+            "\"ОБЩИЙ РЕЙТИНГ MONTE CARLO\",,,,,,,,\r\n" +
+            "\"Место\",\"Игрок\",\"Турниров\",\"Побед\",\"ТОП‑3\",\"ТОП‑10\",\"Нокаутов\",\"Сумма очков\",\"Среднее место\"\r\n" +
+            "1,Лукашенко Василий,25,3,6,12,52,593,\"7,06\"\r\n" +
+            "2,Гуляев Игорь,28,1,6,10,28,495,\"5,62\"\r\n" +
+            "3,Заббаров Марат,24,2,7,11,35,463,\"6,10\"\r\n";
+
+        var result = await service.SyncFromCsvAsync(totalRatingCsv);
+
+        Assert.True(result.Success);
+
+        var lukashenko = await context.Users.FirstOrDefaultAsync(u => u.LastName == "Лукашенко" && u.FirstName == "Василий");
+        Assert.NotNull(lukashenko);
+        Assert.Equal(25, lukashenko.TournamentsPlayed);
+        Assert.Equal(3, lukashenko.WinsCount);
+        Assert.Equal(6, lukashenko.Top3Count);
+        Assert.Equal(12, lukashenko.Top10Count);
+        Assert.Equal(52, lukashenko.KnockoutsCount);
+        Assert.Equal(593, lukashenko.TotalRating);
+        Assert.Equal(7.06, lukashenko.AvgPlace);
+        Assert.NotEqual("25", lukashenko.ClubCardId);
+        Assert.Null(lukashenko.ClubCardId);
+        Assert.NotEqual("3", lukashenko.PhoneNumber);
+        Assert.Null(lukashenko.PhoneNumber);
+
+        var gulyaev = await context.Users.FirstOrDefaultAsync(u => u.LastName == "Гуляев" && u.FirstName == "Игорь");
+        Assert.NotNull(gulyaev);
+        Assert.Equal(495, gulyaev.TotalRating);
+
+        var zabbarov = await context.Users.FirstOrDefaultAsync(u => u.LastName == "Заббаров");
+        Assert.NotNull(zabbarov);
+        Assert.Equal(463, zabbarov.TotalRating);
+    }
+
+    [Fact]
+    public async Task SyncFromCsv_LukashenkoWithRegistrations_AssignsRealCardAndDoesNotOverwriteWith25()
+    {
+        using var context = CreateInMemoryDbContext();
+        using var httpClient = new HttpClient();
+        var service = new GoogleSheetsSyncService(context, httpClient, NullLogger<GoogleSheetsSyncService>.Instance);
+
+        const string totalRatingCsv =
+            "\"Место\",\"Игрок\",\"Турниров\",\"Побед\",\"ТОП‑3\",\"ТОП‑10\",\"Нокаутов\",\"Сумма очков\",\"Среднее место\"\r\n" +
+            "1,Лукашенко Василий,25,3,6,12,52,593,\"7,06\"\r\n";
+
+        const string registrationsCsv =
+            "\"ДАТА / ТУРНИР\",\"ИМЯ\",\"ID\",\"ТЕЛЕФОН\",\"Комментарий\"\r\n" +
+            "\"16 сентября | 19:00 FREEROLL\",\"Лукашенко Василий\",\"1060\",\"89027909924\",\"\"\r\n";
+
+        var result = await service.SyncFromCsvAsync(null, totalRatingCsv, registrationsCsv);
+
+        Assert.True(result.Success);
+        var lukashenko = await context.Users.FirstOrDefaultAsync(u => u.LastName == "Лукашенко" && u.FirstName == "Василий");
+        Assert.NotNull(lukashenko);
+        Assert.Equal(25, lukashenko.TournamentsPlayed);
+        Assert.Equal(3, lukashenko.WinsCount);
+        Assert.Equal(593, lukashenko.TotalRating);
+        Assert.NotEqual("25", lukashenko.ClubCardId);
+        Assert.Equal("1060", lukashenko.ClubCardId);
+        Assert.Equal("89027909924", lukashenko.PhoneNumber);
+    }
+
+    [Fact]
+    public async Task SyncFromCsv_WhenAnotherUserHasCard25And73Points_DoesNotOverwriteLukashenko()
+    {
+        using var context = CreateInMemoryDbContext();
+        var player25 = new User
+        {
+            VkId = "vk_player_25",
+            FirstName = "Иван",
+            LastName = "Двадцатьпятый",
+            ClubCardId = "25",
+            TotalRating = 73
+        };
+        var lukashenko = new User
+        {
+            VkId = "vk_lukashenko",
+            FirstName = "Василий",
+            LastName = "Лукашенко",
+            ClubCardId = "1060",
+            TotalRating = 0
+        };
+        context.Users.AddRange(player25, lukashenko);
+        await context.SaveChangesAsync();
+
+        using var httpClient = new HttpClient();
+        var service = new GoogleSheetsSyncService(context, httpClient, NullLogger<GoogleSheetsSyncService>.Instance);
+
+        const string totalRatingCsv =
+            "\"Место\",\"Игрок\",\"Турниров\",\"Побед\",\"ТОП‑3\",\"ТОП‑10\",\"Нокаутов\",\"Сумма очков\",\"Среднее место\"\r\n" +
+            "1,Лукашенко Василий,25,3,6,12,52,593,\"7,06\"\r\n";
+
+        var result = await service.SyncFromCsvAsync(totalRatingCsv);
+
+        Assert.True(result.Success);
+
+        var refreshedLukashenko = await context.Users.FirstAsync(u => u.VkId == "vk_lukashenko");
+        Assert.Equal(593, refreshedLukashenko.TotalRating);
+        Assert.Equal(25, refreshedLukashenko.TournamentsPlayed);
+        Assert.Equal(3, refreshedLukashenko.WinsCount);
+        Assert.Equal("1060", refreshedLukashenko.ClubCardId);
+
+        var refreshedPlayer25 = await context.Users.FirstAsync(u => u.VkId == "vk_player_25");
+        Assert.Equal(73, refreshedPlayer25.TotalRating);
+        Assert.Equal("25", refreshedPlayer25.ClubCardId);
+    }
+
+    [Fact]
+    public void ParseRegistrationsMapping_WhenGivenRatingSheetRow_DoesNotParseTournamentsAndWinsAsCardAndPhone()
+    {
+        const string ratingRowAsCsv =
+            "\"Место\",\"Игрок\",\"Турниров\",\"Побед\",\"ТОП-3\",\"ТОП-10\",\"Нокаутов\",\"Сумма очков\",\"Среднее место\"\r\n" +
+            "1,Лукашенко Василий,25,3,6,12,52,593,\"7,06\"\r\n";
+
+        var mapping = GoogleSheetsSyncService.ParseRegistrationsMapping(ratingRowAsCsv);
+
+        Assert.Empty(mapping);
+    }
+
+    [Fact]
+    public async Task SyncFromCsv_WhenLukashenkoHadCorruptedCard25AndPhone3InDb_ClearsCorruptedCardAndPhoneAndSets593Points()
+    {
+        using var context = CreateInMemoryDbContext();
+        var corruptedLukashenko = new User
+        {
+            VkId = "vk_lukashenko",
+            FirstName = "Василий",
+            LastName = "Лукашенко",
+            ClubCardId = "25", // Falsely set from TournamentsPlayed in old sync
+            PhoneNumber = "3", // Falsely set from WinsCount in old sync
+            TotalRating = 73,  // Falsely overwritten in old sync
+            TournamentsPlayed = 25,
+            WinsCount = 3
+        };
+        context.Users.Add(corruptedLukashenko);
+        await context.SaveChangesAsync();
+
+        using var httpClient = new HttpClient();
+        var service = new GoogleSheetsSyncService(context, httpClient, NullLogger<GoogleSheetsSyncService>.Instance);
+
+        const string totalRatingCsv =
+            "\"ОБЩИЙ РЕЙТИНГ MONTE CARLO\",,,,,,,,\r\n" +
+            "\"Место\",\"Игрок\",\"Турниров\",\"Побед\",\"ТОП‑3\",\"ТОП‑10\",\"Нокаутов\",\"Сумма очков\",\"Среднее место\"\r\n" +
+            "1,Лукашенко Василий,25,3,6,12,52,593,\"7,06\"\r\n";
+
+        var result = await service.SyncFromCsvAsync(totalRatingCsv);
+
+        Assert.True(result.Success);
+
+        var refreshed = await context.Users.FirstAsync(u => u.VkId == "vk_lukashenko");
+        Assert.Equal(593, refreshed.TotalRating);
+        Assert.Equal(25, refreshed.TournamentsPlayed);
+        Assert.Equal(3, refreshed.WinsCount);
+        Assert.NotEqual("25", refreshed.ClubCardId);
+        Assert.Null(refreshed.ClubCardId);
+        Assert.NotEqual("3", refreshed.PhoneNumber);
+        Assert.Null(refreshed.PhoneNumber);
+    }
+
+    [Fact]
+    public async Task SyncFromCsv_WhenLukashenkoHadCorruptedCard25AndPhone3InDb_WithRegistrations_SetsRealCard1060AndRealPhone()
+    {
+        using var context = CreateInMemoryDbContext();
+        var corruptedLukashenko = new User
+        {
+            VkId = "vk_lukashenko",
+            FirstName = "Василий",
+            LastName = "Лукашенко",
+            ClubCardId = "25",
+            PhoneNumber = "3",
+            TotalRating = 73,
+            TournamentsPlayed = 25,
+            WinsCount = 3
+        };
+        context.Users.Add(corruptedLukashenko);
+        await context.SaveChangesAsync();
+
+        using var httpClient = new HttpClient();
+        var service = new GoogleSheetsSyncService(context, httpClient, NullLogger<GoogleSheetsSyncService>.Instance);
+
+        const string totalRatingCsv =
+            "\"ОБЩИЙ РЕЙТИНГ MONTE CARLO\",,,,,,,,\r\n" +
+            "\"Место\",\"Игрок\",\"Турниров\",\"Побед\",\"ТОП‑3\",\"ТОП‑10\",\"Нокаутов\",\"Сумма очков\",\"Среднее место\"\r\n" +
+            "1,Лукашенко Василий,25,3,6,12,52,593,\"7,06\"\r\n";
+
+        const string registrationsCsv =
+            "\"ДАТА / ТУРНИР\",\"ИМЯ\",\"ID\",\"ТЕЛЕФОН\",\"Комментарий\"\r\n" +
+            "\"16 сентября | 19:00 FREEROLL\",\"Лукашенко Василий\",\"1060\",\"89027909924\",\"\"\r\n";
+
+        var result = await service.SyncFromCsvAsync(null, totalRatingCsv, registrationsCsv);
+
+        Assert.True(result.Success);
+
+        var refreshed = await context.Users.FirstAsync(u => u.VkId == "vk_lukashenko");
+        Assert.Equal(593, refreshed.TotalRating);
+        Assert.Equal(25, refreshed.TournamentsPlayed);
+        Assert.Equal(3, refreshed.WinsCount);
+        Assert.NotEqual("25", refreshed.ClubCardId);
+        Assert.Equal("1060", refreshed.ClubCardId);
+        Assert.NotEqual("3", refreshed.PhoneNumber);
+        Assert.Equal("89027909924", refreshed.PhoneNumber);
+    }
+
+    [Fact]
+    public async Task SyncFromCsv_WhenPlayer25ExistsInRegistrationsAndRating_AndLukashenkoHadCard25InDb_DoesNotOverwriteLukashenko()
+    {
+        using var context = CreateInMemoryDbContext();
+        var corruptedLukashenko = new User
+        {
+            VkId = "vk_lukashenko",
+            FirstName = "Василий",
+            LastName = "Лукашенко",
+            ClubCardId = "25", // Corrupted card matching player 25
+            PhoneNumber = "3",
+            TotalRating = 73,
+            TournamentsPlayed = 25,
+            WinsCount = 3
+        };
+        context.Users.Add(corruptedLukashenko);
+        await context.SaveChangesAsync();
+
+        using var httpClient = new HttpClient();
+        var service = new GoogleSheetsSyncService(context, httpClient, NullLogger<GoogleSheetsSyncService>.Instance);
+
+        const string totalRatingCsv =
+            "\"ОБЩИЙ РЕЙТИНГ MONTE CARLO\",,,,,,,,\r\n" +
+            "\"Место\",\"Игрок\",\"Турниров\",\"Побед\",\"ТОП‑3\",\"ТОП‑10\",\"Нокаутов\",\"Сумма очков\",\"Среднее место\"\r\n" +
+            "1,Лукашенко Василий,25,3,6,12,52,593,\"7,06\"\r\n" +
+            "25,Иванов Иван,10,1,2,5,12,73,\"15,50\"\r\n";
+
+        const string registrationsCsv =
+            "\"ДАТА / ТУРНИР\",\"ИМЯ\",\"ID\",\"ТЕЛЕФОН\",\"Комментарий\"\r\n" +
+            "\"16 сентября | 19:00 FREEROLL\",\"Лукашенко Василий\",\"1060\",\"89027909924\",\"\"\r\n" +
+            "\"16 сентября | 19:00 FREEROLL\",\"Иванов Иван\",\"25\",\"89001234567\",\"\"\r\n";
+
+        var result = await service.SyncFromCsvAsync(null, totalRatingCsv, registrationsCsv);
+
+        Assert.True(result.Success);
+
+        var refreshedLukashenko = await context.Users.FirstAsync(u => u.VkId == "vk_lukashenko");
+        Assert.Equal(593, refreshedLukashenko.TotalRating);
+        Assert.Equal(25, refreshedLukashenko.TournamentsPlayed);
+        Assert.Equal(3, refreshedLukashenko.WinsCount);
+        Assert.Equal("1060", refreshedLukashenko.ClubCardId);
+        Assert.Equal("89027909924", refreshedLukashenko.PhoneNumber);
+
+        var ivanov = await context.Users.FirstAsync(u => u.LastName == "Иванов" && u.FirstName == "Иван");
+        Assert.Equal(73, ivanov.TotalRating);
+        Assert.Equal("25", ivanov.ClubCardId);
+        Assert.Equal("89001234567", ivanov.PhoneNumber);
+    }
+
+    [Fact]
+    public void ParseRegistrationsMapping_WithDuplicateRowsForSamePlayer_MergesCardAndPhone()
+    {
+        const string registrationsCsv =
+            "\"ДАТА / ТУРНИР\",\"ИМЯ\",\"ID\",\"ТЕЛЕФОН\",\"Комментарий\"\r\n" +
+            "\"15 сентября\",\"Лукашенко Василий\",\"1060\",\"\",\"\"\r\n" +
+            "\"16 сентября\",\"Лукашенко Василий\",\"\",\"89027909924\",\"\"\r\n";
+
+        var mapping = GoogleSheetsSyncService.ParseRegistrationsMapping(registrationsCsv);
+
+        Assert.True(mapping.TryGetValue("василий_лукашенко", out var info));
+        Assert.Equal("1060", info.ClubCardId);
+        Assert.Equal("89027909924", info.PhoneNumber);
+    }
+
+    [Fact]
+    public void ParseRegistrationsMapping_WithDummyCardValues_IgnoresDummyCards()
+    {
+        const string registrationsCsvWithPhones =
+            "\"ДАТА / ТУРНИР\",\"ИМЯ\",\"ID\",\"ТЕЛЕФОН\",\"Комментарий\"\r\n" +
+            "\"15 сентября\",\"Сидоров Петр\",\"-\",\"89001112233\",\"\"\r\n" +
+            "\"16 сентября\",\"Петров Сидор\",\"нет\",\"89002223344\",\"\"\r\n" +
+            "\"17 сентября\",\"Иванов Сидор\",\"б/н\",\"89003334455\",\"\"\r\n";
+
+        var mapping = GoogleSheetsSyncService.ParseRegistrationsMapping(registrationsCsvWithPhones);
+
+        Assert.Equal(3, mapping.Count);
+        Assert.All(mapping.Values, info => Assert.Null(info.ClubCardId));
+        Assert.Equal("89001112233", mapping["петр_сидоров"].PhoneNumber);
+
+        const string registrationsCsvWithoutPhones =
+            "\"ДАТА / ТУРНИР\",\"ИМЯ\",\"ID\",\"ТЕЛЕФОН\",\"Комментарий\"\r\n" +
+            "\"15 сентября\",\"Сидоров Петр\",\"-\",\"\",\"\"\r\n" +
+            "\"16 сентября\",\"Петров Сидор\",\"нет\",\"\",\"\"\r\n" +
+            "\"17 сентября\",\"Иванов Сидор\",\"б/н\",\"\",\"\"\r\n";
+
+        var emptyMapping = GoogleSheetsSyncService.ParseRegistrationsMapping(registrationsCsvWithoutPhones);
+        Assert.Empty(emptyMapping);
+    }
 }
+

@@ -64,9 +64,24 @@ export const TournamentDetailModal: React.FC = () => {
     }
   };
 
-  const getRegEndString = (dateStr: string) => {
+  const getRegEndString = (startTimeStr: string, regEndStr?: string | null) => {
     try {
-      const date = new Date(dateStr);
+      if (regEndStr) {
+        const regEndDate = new Date(regEndStr);
+        if (!isNaN(regEndDate.getTime())) {
+          const startDate = new Date(startTimeStr);
+          const isSameDay = !isNaN(startDate.getTime()) && 
+            regEndDate.toDateString() === startDate.toDateString();
+          const time = regEndDate.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+          if (isSameDay) {
+            return `в ${time}`;
+          }
+          const day = regEndDate.getDate();
+          const month = regEndDate.toLocaleDateString('ru-RU', { month: 'short' });
+          return `${day} ${month} в ${time}`;
+        }
+      }
+      const date = new Date(startTimeStr);
       date.setMinutes(date.getMinutes() - 15);
       return `в ${date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`;
     } catch {
@@ -249,7 +264,7 @@ export const TournamentDetailModal: React.FC = () => {
               <span>КОНЕЦ РЕГИСТРАЦИИ</span>
             </div>
             <div className="text-sm font-semibold text-white">
-              {getRegEndString(t.startTime)}
+              {getRegEndString(t.startTime, t.registrationEnd)}
             </div>
           </div>
 

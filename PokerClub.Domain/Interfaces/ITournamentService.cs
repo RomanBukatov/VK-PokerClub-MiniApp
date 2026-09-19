@@ -38,6 +38,7 @@ public interface ITournamentService
         DateTime startTime,
         string? description,
         int? cityId = null,
-        string? address = null
+        string? address = null,
+        DateTime? registrationEnd = null
     );
 }

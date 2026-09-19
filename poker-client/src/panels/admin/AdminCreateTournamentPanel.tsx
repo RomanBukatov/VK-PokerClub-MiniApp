@@ -107,7 +107,7 @@ export const AdminCreateTournamentPanel: React.FC = () => {
     return parsed;
   };
 
-  const validateForm = (): { isValid: boolean; parsedDate: Date | null } => {
+  const validateForm = (): { isValid: boolean; parsedDate: Date | null; parsedRegEnd: Date | null } => {
     const errors: Record<string, string> = {};
 
     if (!title.trim() || title.trim().length < 3) {
@@ -118,6 +118,25 @@ export const AdminCreateTournamentPanel: React.FC = () => {
     if (!parsedDate) {
       errors.date = 'Укажите дату в формате ДД.ММ.ГГГГ или ДД.ММ (например, 15.09)';
       errors.time = 'Укажите время в формате ЧЧ:ММ (например, 19:00)';
+    }
+
+    let parsedRegEnd: Date | null = null;
+    if (regEnd.trim()) {
+      const parts = regEnd.trim().split(/\s+/);
+      if (parts.length >= 2) {
+        parsedRegEnd = parseTournamentDateTime(parts[0], parts[1]);
+      }
+      if (!parsedRegEnd) {
+        parsedRegEnd = parseTournamentDateTime(date, regEnd.trim());
+      }
+      if (!parsedRegEnd) {
+        errors.regEnd = 'Укажите время окончания регистрации в формате ЧЧ:ММ (например, 18:45)';
+      } else if (parsedDate && parsedRegEnd < parsedDate) {
+        const diffMs = parsedDate.getTime() - parsedRegEnd.getTime();
+        if (diffMs > 6 * 3600 * 1000) {
+          parsedRegEnd.setDate(parsedRegEnd.getDate() + 1);
+        }
+      }
     }
 
     const parsedSeats = parseInt(maxSeats, 10);
@@ -139,10 +158,10 @@ export const AdminCreateTournamentPanel: React.FC = () => {
 
     if (Object.keys(errors).length > 0) {
       setErrorMsg('Пожалуйста, исправьте ошибки в форме перед созданием.');
-      return { isValid: false, parsedDate: null };
+      return { isValid: false, parsedDate: null, parsedRegEnd: null };
     }
 
-    return { isValid: true, parsedDate };
+    return { isValid: true, parsedDate, parsedRegEnd };
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -150,7 +169,7 @@ export const AdminCreateTournamentPanel: React.FC = () => {
     setErrorMsg(null);
     setFieldErrors({});
 
-    const { isValid, parsedDate } = validateForm();
+    const { isValid, parsedDate, parsedRegEnd } = validateForm();
     if (!isValid || !parsedDate) {
       triggerHaptic('medium');
       return;
@@ -166,6 +185,7 @@ export const AdminCreateTournamentPanel: React.FC = () => {
         cityId: selectedCityId || undefined,
         address: address.trim() || undefined,
         startTime: parsedDate.toISOString(),
+        registrationEnd: parsedRegEnd ? parsedRegEnd.toISOString() : undefined,
         buyIn: parseFloat(buyIn) || 0,
         maxSeats: parseInt(maxSeats, 10) || 30,
         description: description.trim(),
@@ -392,10 +412,16 @@ export const AdminCreateTournamentPanel: React.FC = () => {
             <input
               type="text"
               value={regEnd}
-              onChange={(e) => setRegEnd(e.target.value)}
+              onChange={(e) => {
+                setRegEnd(e.target.value);
+                if (fieldErrors.regEnd) setFieldErrors(prev => ({ ...prev, regEnd: '' }));
+              }}
               placeholder="18:45"
-              className="w-full py-3 px-4 rounded-2xl bg-black/60 border border-white/10 text-sm font-semibold text-white focus:outline-none focus:border-[#c39a44]"
+              className={`w-full py-3 px-4 rounded-2xl bg-black/60 border text-sm font-semibold text-white focus:outline-none transition-all ${
+                fieldErrors.regEnd ? 'border-red-500 bg-red-950/20' : 'border-white/10 focus:border-[#c39a44]'
+              }`}
             />
+            {fieldErrors.regEnd && <p className="text-[10px] text-red-400 mt-1">{fieldErrors.regEnd}</p>}
           </div>
         </div>
 

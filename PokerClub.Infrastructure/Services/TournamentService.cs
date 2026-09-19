@@ -239,7 +239,8 @@ public class TournamentService : ITournamentService
         DateTime startTime,
         string? description,
         int? cityId = null,
-        string? address = null)
+        string? address = null,
+        DateTime? registrationEnd = null)
     {
         if (string.IsNullOrWhiteSpace(title))
             return (false, null, "Название турнира не может быть пустым.");
@@ -348,6 +349,14 @@ public class TournamentService : ITournamentService
             ? DateTime.SpecifyKind(startTime, DateTimeKind.Utc) 
             : startTime.ToUniversalTime();
 
+        DateTime? utcRegistrationEnd = null;
+        if (registrationEnd.HasValue)
+        {
+            utcRegistrationEnd = registrationEnd.Value.Kind == DateTimeKind.Unspecified
+                ? DateTime.SpecifyKind(registrationEnd.Value, DateTimeKind.Utc)
+                : registrationEnd.Value.ToUniversalTime();
+        }
+
         var tournament = new Tournament
         {
             ClubId = club.Id,
@@ -356,6 +365,7 @@ public class TournamentService : ITournamentService
             BuyIn = Math.Max(0, buyIn),
             MaxSeats = maxSeats > 0 ? maxSeats : 30,
             StartTime = utcStartTime,
+            RegistrationEnd = utcRegistrationEnd,
             Description = description?.Trim(),
             Status = TournamentStatus.RegistrationOpen,
             CreatedAt = DateTime.UtcNow,

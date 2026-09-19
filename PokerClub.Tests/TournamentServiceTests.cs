@@ -829,5 +829,73 @@ public class TournamentServiceTests
         var result = await controller.GetMyTournaments();
         Assert.IsType<UnauthorizedObjectResult>(result.Result);
     }
+
+    [Fact]
+    public async Task CreateTournament_WithRegistrationEnd_PersistsUtcRegistrationEnd()
+    {
+        using var context = CreateInMemoryDbContext();
+        var service = new TournamentService(context);
+        var startTime = new DateTime(2026, 9, 20, 19, 0, 0, DateTimeKind.Utc);
+        var regEnd = new DateTime(2026, 9, 20, 18, 30, 0, DateTimeKind.Utc);
+
+        var (success, tournament, message) = await service.CreateTournamentAsync(
+            clubId: null,
+            title: "Sunday Special",
+            format: "NL Holdem",
+            buyIn: 2000,
+            maxSeats: 30,
+            startTime: startTime,
+            description: "Sunday event",
+            registrationEnd: regEnd
+        );
+
+        Assert.True(success);
+        Assert.NotNull(tournament);
+        Assert.NotNull(tournament.RegistrationEnd);
+        Assert.Equal(regEnd, tournament.RegistrationEnd.Value);
+        Assert.Equal(DateTimeKind.Utc, tournament.RegistrationEnd.Value.Kind);
+
+        // Verify in DB
+        var saved = await context.Tournaments.FindAsync(tournament.Id);
+        Assert.NotNull(saved?.RegistrationEnd);
+        Assert.Equal(regEnd, saved.RegistrationEnd.Value);
+    }
+
+    [Fact]
+    public async Task TournamentsController_CreateTournament_WithRegistrationEnd_ReturnsScheduleDtoWithRegistrationEnd()
+    {
+        using var context = CreateInMemoryDbContext();
+        var service = new TournamentService(context);
+        var controller = new TournamentsController(service)
+        {
+            ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
+        };
+
+        var startTime = new DateTime(2026, 9, 25, 20, 0, 0, DateTimeKind.Utc);
+        var regEnd = new DateTime(2026, 9, 25, 19, 45, 0, DateTimeKind.Utc);
+
+        var request = new CreateTournamentRequest(
+            Title: "Friday Knockout",
+            Format: "Bounty",
+            BuyIn: 3000,
+            MaxSeats: 40,
+            StartTime: startTime,
+            RegistrationEnd: regEnd
+        );
+
+        var actionResult = await controller.CreateTournament(request);
+        var createdResult = Assert.IsType<CreatedAtActionResult>(actionResult.Result);
+        var dto = Assert.IsType<TournamentScheduleDto>(createdResult.Value);
+
+        Assert.NotNull(dto.RegistrationEnd);
+        Assert.Equal(regEnd, dto.RegistrationEnd.Value);
+
+        // Verify GetTournament also returns registrationEnd
+        var getResult = await controller.GetTournament(dto.Id);
+        var okResult = Assert.IsType<OkObjectResult>(getResult.Result);
+        var detailDto = Assert.IsType<TournamentDetailDto>(okResult.Value);
+        Assert.NotNull(detailDto.RegistrationEnd);
+        Assert.Equal(regEnd, detailDto.RegistrationEnd.Value);
+    }
 }
 

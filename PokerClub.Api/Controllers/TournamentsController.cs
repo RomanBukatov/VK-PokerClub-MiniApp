@@ -41,7 +41,8 @@ public class TournamentsController : ControllerBase
             t.Club?.City?.Name,
             t.Registrations.Count(r => r.Status == RegStatus.Active || r.Status == RegStatus.Played),
             !string.IsNullOrWhiteSpace(currentVkId) && 
-            t.Registrations.Any(r => r.User?.VkId == currentVkId && (r.Status == RegStatus.Active || r.Status == RegStatus.Played))
+            t.Registrations.Any(r => r.User?.VkId == currentVkId && (r.Status == RegStatus.Active || r.Status == RegStatus.Played)),
+            t.RegistrationEnd
         )).ToList();
 
         return Ok(result);
@@ -87,7 +88,8 @@ public class TournamentsController : ControllerBase
             relevantRegistrations.Count,
             !string.IsNullOrWhiteSpace(currentVkId) && 
             relevantRegistrations.Any(r => r.User?.VkId == currentVkId),
-            participants
+            participants,
+            t.RegistrationEnd
         );
 
         return Ok(result);
@@ -116,7 +118,8 @@ public class TournamentsController : ControllerBase
             t.Club?.Name,
             t.Club?.City?.Name,
             t.Registrations.Count(r => r.Status == RegStatus.Active || r.Status == RegStatus.Played),
-            t.Registrations.Any(r => r.User != null && r.User.VkId == vkId && (r.Status == RegStatus.Active || r.Status == RegStatus.Played))
+            t.Registrations.Any(r => r.User != null && r.User.VkId == vkId && (r.Status == RegStatus.Active || r.Status == RegStatus.Played)),
+            t.RegistrationEnd
         )).ToList();
 
         return Ok(result);
@@ -187,7 +190,8 @@ public class TournamentsController : ControllerBase
             request.StartTime,
             request.Description,
             request.CityId,
-            request.Address
+            request.Address,
+            request.RegistrationEnd
         );
 
         if (!success || tournament == null)
@@ -206,7 +210,8 @@ public class TournamentsController : ControllerBase
             tournament.Club?.Name,
             tournament.Club?.City?.Name,
             0,
-            false
+            false,
+            tournament.RegistrationEnd
         );
 
         return CreatedAtAction(nameof(GetTournament), new { id = tournament.Id }, result);

@@ -12,6 +12,7 @@ public class Tournament
     public string? Description { get; set; }
     public int MaxSeats { get; set; }
     public DateTime StartTime { get; set; }
+    public DateTime? RegistrationEnd { get; set; }
     public TournamentStatus Status { get; set; } = TournamentStatus.Announced;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
