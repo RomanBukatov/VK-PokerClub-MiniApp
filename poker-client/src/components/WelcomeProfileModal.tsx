@@ -25,11 +25,11 @@ const ProfileModalContent: React.FC = () => {
 
   const [fullName, setFullName] = useState(() => {
     if (profile?.fullName) return profile.fullName;
-    if (profile?.firstName || profile?.lastName) {
-      return `${profile.firstName || ''} ${profile.lastName || ''}`.trim();
+    if (profile?.lastName || profile?.firstName) {
+      return `${profile.lastName || ''} ${profile.firstName || ''}`.trim();
     }
-    if (vkUser?.first_name || vkUser?.last_name) {
-      return `${vkUser.first_name || ''} ${vkUser.last_name || ''}`.trim();
+    if (vkUser?.last_name || vkUser?.first_name) {
+      return `${vkUser.last_name || ''} ${vkUser.first_name || ''}`.trim();
     }
     return '';
   });

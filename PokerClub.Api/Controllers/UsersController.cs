@@ -143,80 +143,18 @@ public class UsersController : ControllerBase
             user.PhoneNumber = requestedPhone;
         }
 
-        if (!string.IsNullOrEmpty(requestedCardId))
+        string? inputFullName = request.FullName?.Trim();
+        if (string.IsNullOrWhiteSpace(inputFullName))
         {
-            // Если пользователь уже привязал эту карту ранее — повторная проверка не требуется
-            bool alreadyOwnsCard = !string.IsNullOrWhiteSpace(user.ClubCardId) &&
-                                   string.Equals(user.ClubCardId.Trim(), requestedCardId, StringComparison.OrdinalIgnoreCase);
-
-            if (!alreadyOwnsCard)
+            if (!string.IsNullOrWhiteSpace(request.LastName) || !string.IsNullOrWhiteSpace(request.FirstName))
             {
-                // Правило 2: Защита от дубликатов (1 карта = 1 аккаунт)
-                var isCardTakenByRealUser = await _context.Users.AnyAsync(u => 
-                    u.ClubCardId != null &&
-                    u.ClubCardId.ToLower() == requestedCardId.ToLower() &&
-                    u.Id != user.Id &&
-                    !u.VkId.StartsWith("sheet_"));
-
-                if (isCardTakenByRealUser)
-                {
-                    return BadRequest(new { Message = "Эта клубная карта уже привязана к другому профилю. Обратитесь к администратору клуба." });
-                }
-
-                // Правило 3: Защита от угона чужого рейтинга (Сверка телефона)
-                var sheetUser = await _context.Users.FirstOrDefaultAsync(u => 
-                    u.ClubCardId != null &&
-                    u.ClubCardId.ToLower() == requestedCardId.ToLower() &&
-                    u.Id != user.Id &&
-                    u.VkId.StartsWith("sheet_"));
-
-                if (sheetUser != null)
-                {
-                    // Сверка телефона владельца карты в базе
-                    if (!string.IsNullOrWhiteSpace(sheetUser.PhoneNumber))
-                    {
-                        var cardPhone10 = NormalizePhone(sheetUser.PhoneNumber);
-                        var userPhone10 = NormalizePhone(requestedPhone ?? user.PhoneNumber);
-
-                        if (string.IsNullOrEmpty(userPhone10) || cardPhone10 != userPhone10)
-                        {
-                            return BadRequest(new { Message = "Указанный номер телефона не совпадает с телефоном владельца карты в базе клуба. Если это ваша карта — обратитесь к администратору." });
-                        }
-                    }
-
-                    // Успешная верификация: перенос накопленных очков и статистики
-                    user.TotalRating = sheetUser.TotalRating;
-                    user.SeasonRating = sheetUser.SeasonRating;
-                    user.TournamentsPlayed = sheetUser.TournamentsPlayed;
-                    user.WinsCount = sheetUser.WinsCount;
-                    user.Top3Count = sheetUser.Top3Count;
-                    user.Top10Count = sheetUser.Top10Count;
-                    user.KnockoutsCount = sheetUser.KnockoutsCount;
-                    user.AvgPlace = sheetUser.AvgPlace;
-
-                    // Перепривязываем регистрации в турнирах
-                    var sheetRegs = await _context.Registrations.Where(r => r.UserId == sheetUser.Id).ToListAsync();
-                    foreach (var reg in sheetRegs)
-                    {
-                        reg.UserId = user.Id;
-                    }
-
-                    _context.Users.Remove(sheetUser);
-                    _logger.LogInformation("Успешно привязана клубная карта {CardId} к пользователю {VkId}: перенесено {Points} очков", requestedCardId, user.VkId, user.TotalRating);
-                }
-
-                user.ClubCardId = requestedCardId;
+                inputFullName = $"{request.LastName} {request.FirstName}".Trim();
             }
         }
-        else if (request.ClubCardId != null)
-        {
-            // Правило 1: Пользователь явно очистил поле карты
-            user.ClubCardId = null;
-        }
 
-        if (!string.IsNullOrWhiteSpace(request.FullName))
+        if (!string.IsNullOrWhiteSpace(inputFullName))
         {
-            var parts = request.FullName.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            var parts = inputFullName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
             if (parts.Length == 1)
             {
                 user.FirstName = parts[0];
@@ -228,15 +166,116 @@ public class UsersController : ControllerBase
                 user.FirstName = string.Join(" ", parts.Skip(1));
             }
         }
-
-        if (!string.IsNullOrWhiteSpace(request.FirstName))
+        else
         {
-            user.FirstName = request.FirstName.Trim();
+            if (!string.IsNullOrWhiteSpace(request.FirstName))
+            {
+                user.FirstName = request.FirstName.Trim();
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.LastName))
+            {
+                user.LastName = request.LastName.Trim();
+            }
         }
 
-        if (!string.IsNullOrWhiteSpace(request.LastName))
+        // Поиск связанного профиля sheet_* из Google Sheets
+        User? sheetUser = null;
+        string? searchName = inputFullName ?? $"{user.LastName} {user.FirstName}".Trim();
+
+        // 1. Поиск по Smart Token Matching имени среди sheet_* игроков
+        if (!string.IsNullOrWhiteSpace(searchName))
         {
-            user.LastName = request.LastName.Trim();
+            var candidateSheetUsers = await _context.Users
+                .Where(u => u.VkId.StartsWith("sheet_") && u.Id != user.Id)
+                .ToListAsync();
+
+            sheetUser = candidateSheetUsers
+                .Where(u => (u.ClubCardId == null || string.Equals(u.ClubCardId, requestedCardId, StringComparison.OrdinalIgnoreCase)) &&
+                            IsSmartTokenMatch(searchName, u.FirstName, u.LastName))
+                .OrderByDescending(u => ExtractTokens($"{u.LastName} {u.FirstName}").SetEquals(ExtractTokens(searchName)))
+                .ThenByDescending(u => u.TotalRating)
+                .FirstOrDefault();
+        }
+
+        // 2. Если по имени не найден, но введена карта — ищем по ClubCardId
+        bool matchedByName = sheetUser != null;
+        if (sheetUser == null && !string.IsNullOrEmpty(requestedCardId))
+        {
+            sheetUser = await _context.Users.FirstOrDefaultAsync(u =>
+                u.ClubCardId != null &&
+                u.ClubCardId.ToLower() == requestedCardId.ToLower() &&
+                u.Id != user.Id &&
+                u.VkId.StartsWith("sheet_"));
+        }
+
+        if (!string.IsNullOrEmpty(requestedCardId))
+        {
+            // Проверка на дубликаты среди РЕАЛЬНЫХ пользователей (1 карта = 1 аккаунт)
+            bool alreadyOwnsCard = !string.IsNullOrWhiteSpace(user.ClubCardId) &&
+                                   string.Equals(user.ClubCardId.Trim(), requestedCardId, StringComparison.OrdinalIgnoreCase);
+
+            if (!alreadyOwnsCard)
+            {
+                var isCardTakenByRealUser = await _context.Users.AnyAsync(u => 
+                    u.ClubCardId != null &&
+                    u.ClubCardId.ToLower() == requestedCardId.ToLower() &&
+                    u.Id != user.Id &&
+                    !u.VkId.StartsWith("sheet_"));
+
+                if (isCardTakenByRealUser)
+                {
+                    return BadRequest(new { Message = "Эта клубная карта уже привязана к другому профилю. Обратитесь к администратору клуба." });
+                }
+            }
+        }
+
+        if (sheetUser != null)
+        {
+            // Если игрок был найден ИСКЛЮЧИТЕЛЬНО по карте (а не по имени), проверяем телефон для защиты от угона
+            if (!matchedByName && !string.IsNullOrWhiteSpace(sheetUser.PhoneNumber))
+            {
+                var cardPhone10 = NormalizePhone(sheetUser.PhoneNumber);
+                var userPhone10 = NormalizePhone(requestedPhone ?? user.PhoneNumber);
+
+                if (string.IsNullOrEmpty(userPhone10) || cardPhone10 != userPhone10)
+                {
+                    return BadRequest(new { Message = "Указанный номер телефона не совпадает с телефоном владельца карты в базе клуба. Если это ваша карта — обратитесь к администратору." });
+                }
+            }
+
+            // Перенос накопленных очков и статистики из таблицы
+            user.TotalRating = sheetUser.TotalRating;
+            user.SeasonRating = sheetUser.SeasonRating;
+            user.TournamentsPlayed = sheetUser.TournamentsPlayed;
+            user.WinsCount = sheetUser.WinsCount;
+            user.Top3Count = sheetUser.Top3Count;
+            user.Top10Count = sheetUser.Top10Count;
+            user.KnockoutsCount = sheetUser.KnockoutsCount;
+            user.AvgPlace = sheetUser.AvgPlace;
+
+            // Перепривязываем регистрации в турнирах
+            var sheetRegs = await _context.Registrations.Where(r => r.UserId == sheetUser.Id).ToListAsync();
+            foreach (var reg in sheetRegs)
+            {
+                reg.UserId = user.Id;
+            }
+
+            _context.Users.Remove(sheetUser);
+            _logger.LogInformation("Успешно привязан профиль {SheetVkId} к пользователю {VkId}: перенесено {Points} очков (поиск по имени={MatchedByName})", sheetUser.VkId, user.VkId, user.TotalRating, matchedByName);
+        }
+
+        if (!string.IsNullOrEmpty(requestedCardId))
+        {
+            user.ClubCardId = requestedCardId;
+        }
+        else if (request.ClubCardId != null)
+        {
+            user.ClubCardId = null;
+        }
+        else if (sheetUser != null && !string.IsNullOrEmpty(sheetUser.ClubCardId) && string.IsNullOrEmpty(user.ClubCardId))
+        {
+            user.ClubCardId = sheetUser.ClubCardId;
         }
 
         if (!string.IsNullOrWhiteSpace(request.AvatarUrl))
@@ -389,8 +428,23 @@ public class UsersController : ControllerBase
 
     private static UserProfileDto ToProfileDto(User user, bool isAdmin = false)
     {
-        var fullName = $"{user.FirstName} {user.LastName}".Trim();
-        if (string.IsNullOrWhiteSpace(fullName)) fullName = user.Nickname ?? "Игрок";
+        string fullName;
+        if (!string.IsNullOrWhiteSpace(user.LastName) && !string.IsNullOrWhiteSpace(user.FirstName))
+        {
+            fullName = $"{user.LastName} {user.FirstName}".Trim();
+        }
+        else if (!string.IsNullOrWhiteSpace(user.LastName))
+        {
+            fullName = user.LastName.Trim();
+        }
+        else if (!string.IsNullOrWhiteSpace(user.FirstName))
+        {
+            fullName = user.FirstName.Trim();
+        }
+        else
+        {
+            fullName = user.Nickname ?? "Игрок";
+        }
 
         var status = CalculateClubStatus(user.TotalRating);
 
@@ -417,6 +471,40 @@ public class UsersController : ControllerBase
             user.SeasonRating,
             isAdmin
         );
+    }
+
+    public static HashSet<string> ExtractTokens(string? input)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+            return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        var cleaned = Regex.Replace(input.ToLowerInvariant(), @"[^a-zа-яё0-9\s]", " ");
+        var tokens = cleaned.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return new HashSet<string>(tokens, StringComparer.OrdinalIgnoreCase);
+    }
+
+    public static bool IsSmartTokenMatch(string inputName, string? targetFirstName, string? targetLastName)
+    {
+        var inputTokens = ExtractTokens(inputName);
+        var targetTokens = ExtractTokens($"{targetLastName} {targetFirstName}");
+
+        if (inputTokens.Count == 0 || targetTokens.Count == 0)
+            return false;
+
+        // Точное совпадение наборов токенов
+        if (inputTokens.SetEquals(targetTokens))
+            return true;
+
+        // Если одно является подмножеством другого (например, "Логинов Дмитрий" входит в "Логинов Дмитрий Васильевич")
+        var intersection = new HashSet<string>(inputTokens, StringComparer.OrdinalIgnoreCase);
+        intersection.IntersectWith(targetTokens);
+
+        if (intersection.Count >= 2 && (inputTokens.IsSubsetOf(targetTokens) || targetTokens.IsSubsetOf(inputTokens)))
+        {
+            return true;
+        }
+
+        return false;
     }
 
     public static string CalculateClubStatus(int rating) => RankService.CalculateClubStatus(rating);

@@ -539,4 +539,89 @@ public class UsersControllerTests
         Assert.Equal("308885723", profile.VkId);
         Assert.True(profile.IsAdmin);
     }
+
+    [Fact]
+    public async Task UpdateProfile_WithThreeWordFio_MatchesTwoWordSheetPlayer_Transfers406Points()
+    {
+        using var context = CreateInMemoryDbContext();
+
+        // 1. Создаем игрока sheet_* из таблицы Google Sheets с 406 очками и именем "Логинов Дмитрий" (без карты)
+        var sheetUser = new User
+        {
+            VkId = "sheet_12_abc123",
+            FirstName = "Дмитрий",
+            LastName = "Логинов",
+            TotalRating = 406,
+            SeasonRating = 0,
+            TournamentsPlayed = 19,
+            WinsCount = 1,
+            Top3Count = 4,
+            Top10Count = 10,
+            KnockoutsCount = 27,
+            AvgPlace = 6.0,
+            ClubCardId = null,
+            PhoneNumber = null
+        };
+        context.Users.Add(sheetUser);
+
+        // 2. Создаем реального пользователя VK (например, с 0 очков)
+        var realUser = new User
+        {
+            VkId = "vk_loginov_dmitry",
+            FirstName = "Дмитрий",
+            LastName = "Логинов",
+            TotalRating = 0
+        };
+        context.Users.Add(realUser);
+        await context.SaveChangesAsync();
+
+        var controller = new UsersController(context, NullLogger<UsersController>.Instance);
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Headers["X-Test-Vk-Id"] = "vk_loginov_dmitry";
+        controller.ControllerContext = new ControllerContext { HttpContext = httpContext };
+
+        // 3. Пользователь вводит трехсловное ФИО "Логинов Дмитрий Васильевич" и номер карты "1518"
+        var request = new UpdateProfileRequest(
+            FullName: "Логинов Дмитрий Васильевич",
+            Nickname: "DimaLoginov",
+            PhoneNumber: "+7 (999) 111-22-33",
+            ClubCardId: "1518",
+            AcceptedTerms: true
+        );
+
+        var actionResult = await controller.UpdateProfile(request);
+        var okResult = Assert.IsType<OkObjectResult>(actionResult.Result);
+        var profile = Assert.IsType<UserProfileDto>(okResult.Value);
+
+        // Проверяем правильный парсинг ФИО
+        Assert.Equal("Логинов", profile.LastName);
+        Assert.Equal("Дмитрий Васильевич", profile.FirstName);
+        Assert.Equal("Логинов Дмитрий Васильевич", profile.FullName);
+
+        // Проверяем перенос очков и статистики
+        Assert.Equal(406, profile.TotalRating);
+        Assert.Equal(19, profile.TournamentsPlayed);
+        Assert.Equal(1, profile.WinsCount);
+        Assert.Equal(4, profile.Top3Count);
+        Assert.Equal(27, profile.KnockoutsCount);
+        Assert.Equal(6.0, profile.AvgPlace);
+        Assert.Equal("1518", profile.ClubCardId);
+
+        // Проверяем, что временный sheetUser удален
+        var deletedSheetUser = await context.Users.FirstOrDefaultAsync(u => u.VkId == "sheet_12_abc123");
+        Assert.Null(deletedSheetUser);
+    }
+
+    [Theory]
+    [InlineData("Логинов Дмитрий Васильевич", "Дмитрий", "Логинов", true)]
+    [InlineData("Логинов Дмитрий", "Дмитрий Васильевич", "Логинов", true)]
+    [InlineData("Дмитрий Логинов", "Дмитрий", "Логинов", true)]
+    [InlineData("Иванов Иван Иванович", "Петр", "Иванов", false)]
+    [InlineData("Дмитрий", "Дмитрий", "Логинов", false)]
+    [InlineData("Логинов", "Дмитрий", "Логинов", false)]
+    public void IsSmartTokenMatch_VariousCombinations_BehavesCorrectly(string inputName, string targetFirst, string targetLast, bool expected)
+    {
+        var result = UsersController.IsSmartTokenMatch(inputName, targetFirst, targetLast);
+        Assert.Equal(expected, result);
+    }
 }

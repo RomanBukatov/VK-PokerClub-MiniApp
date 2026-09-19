@@ -122,7 +122,7 @@ export const ProfilePanel: React.FC = () => {
     return name.slice(0, 2).toUpperCase();
   };
 
-  const displayName = profile?.fullName || `${vkUser?.first_name || ''} ${vkUser?.last_name || ''}`.trim() || 'Игрок Monte Carlo';
+  const displayName = profile?.fullName || `${vkUser?.last_name || ''} ${vkUser?.first_name || ''}`.trim() || 'Игрок Monte Carlo';
   const displayNickname = profile?.nickname || (vkUser ? (vkUser.id ? `Player_${vkUser.id}` : 'Гость') : 'Player');
   const displayPhone = profile?.phoneNumber || 'Телефон не указан';
   const displayCardId = profile?.clubCardId ? `#${profile.clubCardId}` : null;
