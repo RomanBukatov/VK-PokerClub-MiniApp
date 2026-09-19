@@ -1,9 +1,14 @@
 import { apiClient } from './apiClient';
-import type { UserProfile, UpdateProfilePayload } from '../types';
+import type { UserProfile, UpdateProfilePayload, PublicUserProfile } from '../types';
 
 export const usersApi = {
   async getMe(): Promise<UserProfile> {
     const response = await apiClient.get<UserProfile>('/api/users/me');
+    return response.data;
+  },
+
+  async getPublicProfile(id: number | string): Promise<PublicUserProfile> {
+    const response = await apiClient.get<PublicUserProfile>(`/api/users/${id}/public-profile`);
     return response.data;
   },
 
@@ -17,3 +22,4 @@ export const usersApi = {
     return response.data;
   },
 };
+

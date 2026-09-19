@@ -58,6 +58,11 @@ builder.Services.AddHttpClient<IGoogleSheetsSyncService, GoogleSheetsSyncService
     MaxAutomaticRedirections = 5
 });
 
+// In-Memory кэширование и фоновые воркеры
+builder.Services.AddMemoryCache();
+builder.Services.AddSingleton<ILeaderboardCacheResetToken, LeaderboardCacheResetToken>();
+builder.Services.AddHostedService<GoogleSheetsBackgroundSyncService>();
+
 // Настройка CORS политики для локальной разработки и доменов ВКонтакте
 builder.Services.AddCors(options =>
 {

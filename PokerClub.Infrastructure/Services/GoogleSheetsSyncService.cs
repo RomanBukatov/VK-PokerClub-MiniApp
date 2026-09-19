@@ -29,6 +29,7 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
     private readonly ILogger<GoogleSheetsSyncService> _logger;
     private readonly string _spreadsheetId;
     private readonly string? _registrationsGid;
+    private readonly ILeaderboardCacheResetToken? _cacheResetToken;
 
     public GoogleSheetsSyncService(
         AppDbContext context,
@@ -43,7 +44,8 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
         AppDbContext context,
         HttpClient httpClient,
         ILogger<GoogleSheetsSyncService> logger,
-        IConfiguration? configuration)
+        IConfiguration? configuration,
+        ILeaderboardCacheResetToken? cacheResetToken = null)
         : this(
             context,
             httpClient,
@@ -53,7 +55,8 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
                 ?? configuration?["SpreadsheetId"]
                 ?? DefaultSpreadsheetId,
             configuration?["GoogleSheets:RegistrationsGid"]
-                ?? configuration?["REGISTRATIONS_GID"])
+                ?? configuration?["REGISTRATIONS_GID"],
+            cacheResetToken)
     {
     }
 
@@ -62,13 +65,15 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
         HttpClient httpClient,
         ILogger<GoogleSheetsSyncService> logger,
         string spreadsheetId,
-        string? registrationsGid = null)
+        string? registrationsGid = null,
+        ILeaderboardCacheResetToken? cacheResetToken = null)
     {
         _context = context;
         _httpClient = httpClient;
         _logger = logger;
         _spreadsheetId = string.IsNullOrWhiteSpace(spreadsheetId) ? DefaultSpreadsheetId : spreadsheetId;
         _registrationsGid = registrationsGid;
+        _cacheResetToken = cacheResetToken;
 
         try
         {
@@ -82,6 +87,9 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
             // Ignore if headers are read-only or locked
         }
     }
+
+    public Task<GoogleSheetsSyncResult> SyncAsync(CancellationToken cancellationToken = default)
+        => SyncFromGoogleSheetsAsync(cancellationToken);
 
     public async Task<GoogleSheetsSyncResult> SyncFromGoogleSheetsAsync(CancellationToken cancellationToken = default)
     {
@@ -514,6 +522,15 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
         }
 
         await _context.SaveChangesAsync(cancellationToken);
+
+        try
+        {
+            _cacheResetToken?.Reset();
+        }
+        catch
+        {
+            // Игнорируем ошибки при сбросе кэша
+        }
 
         int totalProcessed = processedUsers.Count;
         int createdCount = createdUsers.Count;

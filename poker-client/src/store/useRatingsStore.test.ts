@@ -204,4 +204,32 @@ describe('useRatingsStore pagination', () => {
       ratingsApi.getLeaderboard = originalGetLeaderboard;
     }
   });
+
+  it('fetchLeaderboard(false) performs silent refresh without setting isLoading', async () => {
+    const originalGetLeaderboard = ratingsApi.getLeaderboard;
+    let wasLoadingDuringFetch = false;
+
+    ratingsApi.getLeaderboard = mock(async () => {
+      wasLoadingDuringFetch = useRatingsStore.getState().isLoading;
+      return {
+        items: [{ rank: 1, id: 1, vkId: 'vk_1', firstName: 'SilentPlayer', totalRating: 1000 }],
+        totalCount: 1,
+        limit: 50,
+        offset: 0,
+      };
+    });
+
+    try {
+      await useRatingsStore.getState().fetchLeaderboard(false);
+
+      expect(wasLoadingDuringFetch).toBe(false);
+      const state = useRatingsStore.getState();
+      expect(state.isLoading).toBe(false);
+      expect(state.leaderboard.length).toBe(1);
+      expect(state.leaderboard[0].firstName).toBe('SilentPlayer');
+    } finally {
+      ratingsApi.getLeaderboard = originalGetLeaderboard;
+    }
+  });
 });
+

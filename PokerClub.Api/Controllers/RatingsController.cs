@@ -1,7 +1,9 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Caching.Memory;
 using PokerClub.Api.DTOs;
 using PokerClub.Api.Filters;
 using PokerClub.Domain.Interfaces;
+using PokerClub.Infrastructure.Services;
 
 namespace PokerClub.Api.Controllers;
 
@@ -9,11 +11,19 @@ namespace PokerClub.Api.Controllers;
 [Route("api/[controller]")]
 public class RatingsController : ControllerBase
 {
+    public const int LeaderboardCacheDurationSeconds = 60;
     private readonly IRatingService _ratingService;
+    private readonly IMemoryCache? _memoryCache;
+    private readonly ILeaderboardCacheResetToken? _cacheResetToken;
 
-    public RatingsController(IRatingService ratingService)
+    public RatingsController(
+        IRatingService ratingService,
+        IMemoryCache? memoryCache = null,
+        ILeaderboardCacheResetToken? cacheResetToken = null)
     {
         _ratingService = ratingService;
+        _memoryCache = memoryCache;
+        _cacheResetToken = cacheResetToken;
     }
 
     [HttpGet("leaderboard")]
@@ -28,8 +38,16 @@ public class RatingsController : ControllerBase
 
         var isSeason = !string.Equals(type, "all", StringComparison.OrdinalIgnoreCase) && 
                        !string.Equals(type, "all-time", StringComparison.OrdinalIgnoreCase);
+        var normType = isSeason ? "season" : "all";
 
-        var (users, totalCount) = await _ratingService.GetLeaderboardAsync(limit, offset, isSeason ? "season" : "all");
+        var cacheKey = $"leaderboard_{normType}_{limit}_{offset}";
+
+        if (_memoryCache != null && _memoryCache.TryGetValue(cacheKey, out LeaderboardResponseDto? cached) && cached != null)
+        {
+            return Ok(cached);
+        }
+
+        var (users, totalCount) = await _ratingService.GetLeaderboardAsync(limit, offset, normType);
         
         var items = users.Select((u, index) => {
             var activePoints = isSeason ? u.SeasonRating : u.TotalRating;
@@ -46,7 +64,22 @@ public class RatingsController : ControllerBase
             );
         }).ToList();
 
-        return Ok(new LeaderboardResponseDto(items, totalCount, limit, offset));
+        var response = new LeaderboardResponseDto(items, totalCount, limit, offset);
+
+        if (_memoryCache != null)
+        {
+            var cacheOptions = new MemoryCacheEntryOptions()
+                .SetAbsoluteExpiration(TimeSpan.FromSeconds(LeaderboardCacheDurationSeconds));
+
+            if (_cacheResetToken != null)
+            {
+                cacheOptions.AddExpirationToken(_cacheResetToken.GetExpirationToken());
+            }
+
+            _memoryCache.Set(cacheKey, response, cacheOptions);
+        }
+
+        return Ok(response);
     }
 
     [HttpPost("admin/assign-points")]
@@ -65,6 +98,19 @@ public class RatingsController : ControllerBase
 
         if (!success)
             return BadRequest(new { Message = message });
+
+        try
+        {
+            _cacheResetToken?.Reset();
+            if (_memoryCache is MemoryCache memCache)
+            {
+                memCache.Clear();
+            }
+        }
+        catch
+        {
+            // Не ломаем ответ при ошибке сброса кэша
+        }
 
         return Ok(new { Message = message });
     }

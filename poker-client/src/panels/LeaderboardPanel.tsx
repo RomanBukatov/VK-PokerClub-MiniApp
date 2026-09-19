@@ -1,24 +1,39 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useRatingsStore } from '../store/useRatingsStore';
+import { useTournamentsStore } from '../store/useTournamentsStore';
 import { useUserStore } from '../store/useUserStore';
 import { triggerHaptic } from '../utils/vkBridge';
+import { PublicPlayerModal } from '../components/PublicPlayerModal';
 
 export const LeaderboardPanel: React.FC = () => {
   const { 
     leaderboard, 
     totalCount, 
     isLoading, 
-    isLoadingMore, 
     fetchLeaderboard, 
     loadMore, 
+    isLoadingMore, 
     seasonTab, 
     setSeasonTab 
   } = useRatingsStore();
+  const { fetchSchedule } = useTournamentsStore();
   const { vkUser, profile } = useUserStore();
+
+  const [selectedPlayerId, setSelectedPlayerId] = useState<number | string | null>(null);
 
   useEffect(() => {
     fetchLeaderboard(seasonTab === 'all-time' ? 'all' : 'season');
   }, [seasonTab, fetchLeaderboard]);
+
+  useEffect(() => {
+    // Фоновое тихое обновление данных каждые 5 минут
+    const interval = setInterval(() => {
+      fetchLeaderboard(false); // без показа блокирующего лоадера
+      fetchSchedule(false);
+    }, 5 * 60 * 1000);
+
+    return () => clearInterval(interval);
+  }, [fetchLeaderboard, fetchSchedule]);
 
   const currentUserEntry = vkUser 
     ? leaderboard.find((u) => u.vkId === vkUser.id.toString())
@@ -166,7 +181,11 @@ export const LeaderboardPanel: React.FC = () => {
             return (
               <div
                 key={player.id}
-                className={`p-3 px-4 rounded-2xl border flex items-center justify-between shadow-md transition-all ${zone.cardBg}`}
+                onClick={() => {
+                  triggerHaptic('light');
+                  setSelectedPlayerId(player.id);
+                }}
+                className={`p-3 px-4 rounded-2xl border flex items-center justify-between shadow-md transition-all cursor-pointer hover:border-emerald-500/40 active:scale-[0.99] ${zone.cardBg}`}
               >
                 <div className="flex items-center gap-3.5">
                   <span className={`w-5 text-sm text-center ${zone.rankColor}`}>
@@ -223,6 +242,16 @@ export const LeaderboardPanel: React.FC = () => {
             </div>
           )}
         </div>
+      )}
+
+      {selectedPlayerId !== null && (
+        <PublicPlayerModal
+          key={selectedPlayerId}
+          playerId={selectedPlayerId}
+          onClose={() => {
+            setSelectedPlayerId(null);
+          }}
+        />
       )}
     </div>
   );

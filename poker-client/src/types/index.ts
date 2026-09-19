@@ -165,3 +165,23 @@ export interface Achievement {
   progressPercent: number;
 }
 
+export interface PublicUserProfile {
+  id: number;
+  nickname?: string;
+  firstName?: string;
+  lastName?: string;
+  fullName?: string;
+  clubCardId?: string;
+  seasonRating: number;
+  totalRating: number;
+  tournamentsPlayed: number;
+  winsCount: number;
+  top3Count: number;
+  top10Count: number;
+  knockoutsCount: number;
+  avgPlace: number;
+  avatarUrl?: string;
+  vkId?: string;
+}
+
+

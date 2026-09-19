@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { useTournamentsStore } from '../store/useTournamentsStore';
+import { useRatingsStore } from '../store/useRatingsStore';
 import { useUserStore } from '../store/useUserStore';
 import { formatCurrency, formatChips } from '../utils/formatters';
 import { triggerHaptic } from '../utils/vkBridge';
@@ -8,11 +9,22 @@ import type { Tournament } from '../types';
 
 export const SchedulePanel: React.FC = () => {
   const { tournaments, isLoading, fetchSchedule, openDetail } = useTournamentsStore();
+  const { fetchLeaderboard } = useRatingsStore();
   const { selectedCityId, selectedClubId } = useUserStore();
 
   useEffect(() => {
     fetchSchedule(selectedCityId, selectedClubId);
   }, [selectedCityId, selectedClubId, fetchSchedule]);
+
+  useEffect(() => {
+    // Фоновое тихое обновление данных каждые 5 минут
+    const interval = setInterval(() => {
+      fetchLeaderboard(false); // без показа блокирующего лоадера
+      fetchSchedule(false);
+    }, 5 * 60 * 1000);
+
+    return () => clearInterval(interval);
+  }, [fetchLeaderboard, fetchSchedule]);
 
   const handleCardClick = (id: number) => {
     triggerHaptic('light');

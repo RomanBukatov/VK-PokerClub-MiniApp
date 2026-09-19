@@ -15,7 +15,7 @@ interface TournamentsState {
   actionError: string | null;
   scheduleError: string | null;
 
-  fetchSchedule: (cityId?: number | null, clubId?: number | null) => Promise<void>;
+  fetchSchedule: (cityId?: number | null | boolean, clubId?: number | null, showLoader?: boolean) => Promise<void>;
   fetchAdminSchedule: (cityId?: number | null, clubId?: number | null) => Promise<void>;
   fetchMyTournaments: () => Promise<void>;
   openDetail: (id: number) => Promise<void>;
@@ -60,18 +60,45 @@ export const useTournamentsStore = create<TournamentsState>((set, get) => ({
   actionError: null,
   scheduleError: null,
 
-  fetchSchedule: async (cityId, clubId) => {
-    set({ isLoading: true, scheduleError: null });
+  fetchSchedule: async (cityIdOrShowLoader, clubId, showLoader) => {
+    let targetCityId: number | null | undefined;
+    let targetClubId: number | null | undefined = clubId;
+    let shouldShowLoader: boolean;
+
+    if (typeof showLoader === 'boolean') {
+      shouldShowLoader = showLoader;
+    } else if (typeof cityIdOrShowLoader === 'boolean') {
+      shouldShowLoader = cityIdOrShowLoader;
+    } else if (cityIdOrShowLoader === undefined) {
+      shouldShowLoader = false;
+    } else {
+      shouldShowLoader = true;
+    }
+
+    if (typeof cityIdOrShowLoader === 'boolean' || cityIdOrShowLoader === undefined) {
+      targetCityId = useUserStore.getState().selectedCityId;
+      targetClubId = useUserStore.getState().selectedClubId;
+    } else {
+      targetCityId = cityIdOrShowLoader;
+    }
+
+    if (shouldShowLoader) {
+      set({ isLoading: true, scheduleError: null });
+    }
     try {
-      const effectiveCityId = cityId && cityId > 0 ? cityId : undefined;
-      const effectiveClubId = effectiveCityId ? (clubId && clubId > 0 ? clubId : undefined) : undefined;
+      const effectiveCityId = targetCityId && targetCityId > 0 ? targetCityId : undefined;
+      const effectiveClubId = effectiveCityId ? (targetClubId && targetClubId > 0 ? targetClubId : undefined) : undefined;
       const data = await tournamentsApi.getSchedule(effectiveCityId, effectiveClubId, false);
       set({ tournaments: data, scheduleError: null });
     } catch (err) {
       console.error('Ошибка загрузки расписания турниров:', err);
-      set({ scheduleError: extractErrorMessage(err, 'Не удалось загрузить расписание') });
+      if (shouldShowLoader) {
+        set({ scheduleError: extractErrorMessage(err, 'Не удалось загрузить расписание') });
+      }
     } finally {
-      set({ isLoading: false });
+      if (shouldShowLoader) {
+        set({ isLoading: false });
+      }
     }
   },
 

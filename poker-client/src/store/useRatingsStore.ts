@@ -9,7 +9,7 @@ interface RatingsState {
   isLoadingMore: boolean;
   seasonTab: 'current' | 'all-time';
 
-  fetchLeaderboard: (typeOrLimit?: 'season' | 'all' | number, limit?: number) => Promise<void>;
+  fetchLeaderboard: (typeOrLimit?: 'season' | 'all' | number | boolean, limit?: number, showLoader?: boolean) => Promise<void>;
   loadMore: () => Promise<void>;
   setSeasonTab: (tab: 'current' | 'all-time') => void;
 }
@@ -21,11 +21,14 @@ export const useRatingsStore = create<RatingsState>((set, get) => ({
   isLoadingMore: false,
   seasonTab: 'current',
 
-  fetchLeaderboard: async (typeOrLimit?: 'season' | 'all' | number, limit = 50) => {
+  fetchLeaderboard: async (typeOrLimit?: 'season' | 'all' | number | boolean, limit = 50, showLoader = true) => {
     let activeType: 'season' | 'all' = get().seasonTab === 'all-time' ? 'all' : 'season';
     let activeLimit = limit;
+    let shouldShowLoader = showLoader;
 
-    if (typeof typeOrLimit === 'number') {
+    if (typeof typeOrLimit === 'boolean') {
+      shouldShowLoader = typeOrLimit;
+    } else if (typeof typeOrLimit === 'number') {
       activeLimit = typeOrLimit;
     } else if (typeOrLimit === 'season' || typeOrLimit === 'all') {
       activeType = typeOrLimit;
@@ -34,9 +37,12 @@ export const useRatingsStore = create<RatingsState>((set, get) => ({
 
     const requestedTab = activeType === 'all' ? 'all-time' : 'current';
 
-    set({ isLoading: true });
+    if (shouldShowLoader) {
+      set({ isLoading: true });
+    }
     try {
-      const data = await ratingsApi.getLeaderboard(activeType, activeLimit, 0);
+      const fetchLimit = Math.max(activeLimit, get().leaderboard.length || 50);
+      const data = await ratingsApi.getLeaderboard(activeType, fetchLimit, 0);
       // Guard against race conditions: ignore stale responses if active tab switched
       if (get().seasonTab !== requestedTab) {
         return;
@@ -48,7 +54,7 @@ export const useRatingsStore = create<RatingsState>((set, get) => ({
     } catch (err) {
       console.error('Ошибка загрузки рейтинга:', err);
     } finally {
-      if (get().seasonTab === requestedTab) {
+      if (shouldShowLoader && get().seasonTab === requestedTab) {
         set({ isLoading: false });
       }
     }

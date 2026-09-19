@@ -58,6 +58,12 @@ public class AppDbContext : DbContext
         {
             entity.HasKey(e => e.Id);
             entity.HasIndex(e => e.VkId).IsUnique(); // Строго по ТЗ
+            entity.HasIndex(u => u.SeasonRating)
+                .HasDatabaseName("IX_Users_SeasonRating_Desc")
+                .IsDescending();
+            entity.HasIndex(u => u.TotalRating)
+                .HasDatabaseName("IX_Users_TotalRating_Desc")
+                .IsDescending();
             entity.Property(e => e.VkId).HasMaxLength(50).IsRequired();
             entity.Property(e => e.FirstName).HasMaxLength(100);
             entity.Property(e => e.LastName).HasMaxLength(100);

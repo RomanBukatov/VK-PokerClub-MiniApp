@@ -29,6 +29,7 @@ public class UsersController : ControllerBase
     }
 
     [HttpGet("me")]
+    [HttpGet("profile")]
     [VkAuthorize]
     public async Task<ActionResult<UserProfileDto>> GetMe()
     {
@@ -38,7 +39,7 @@ public class UsersController : ControllerBase
             return Unauthorized(new { Message = "Пользователь не авторизован." });
         }
 
-        var user = await _context.Users.FirstOrDefaultAsync(u => u.VkId == currentVkId);
+        var user = await _context.Users.AsNoTracking().FirstOrDefaultAsync(u => u.VkId == currentVkId);
         if (user == null)
         {
             string firstName = "Игрок";
@@ -293,6 +294,48 @@ public class UsersController : ControllerBase
             AcceptedTermsAt = user.AcceptedTermsAt,
             Message = "Условия оферты и согласие 152-ФЗ успешно приняты." 
         });
+    }
+
+    [HttpGet("{id}/public-profile")]
+    public async Task<ActionResult<PublicUserProfileDto>> GetPublicProfile(string id)
+    {
+        User? user = null;
+        if (int.TryParse(id, out var intId))
+        {
+            user = await _context.Users
+                .AsNoTracking()
+                .FirstOrDefaultAsync(u => u.Id == intId);
+        }
+
+        if (user == null)
+        {
+            user = await _context.Users
+                .AsNoTracking()
+                .FirstOrDefaultAsync(u => u.VkId == id);
+        }
+
+        if (user == null)
+        {
+            return NotFound(new { Message = "Игрок не найден." });
+        }
+
+        return Ok(new PublicUserProfileDto(
+            user.Id,
+            user.Nickname,
+            user.FirstName,
+            user.LastName,
+            user.ClubCardId,
+            user.SeasonRating,
+            user.TotalRating,
+            user.TournamentsPlayed,
+            user.WinsCount,
+            user.Top3Count,
+            user.Top10Count,
+            user.KnockoutsCount,
+            user.AvgPlace,
+            user.AvatarUrl,
+            user.VkId
+        ));
     }
 
     private bool CheckIsAdmin(string vkId)
