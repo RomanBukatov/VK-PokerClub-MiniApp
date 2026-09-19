@@ -71,7 +71,7 @@ export function App() {
 
   if (isInitializing) {
     return (
-      <div className="max-w-md mx-auto min-h-screen bg-[#01201a] flex flex-col items-center justify-center p-6 text-center select-none">
+      <div className="w-full min-h-screen bg-[#01201a] flex flex-col items-center justify-center p-6 text-center select-none">
         <img src={CURRENT_BRANDING.assets.logoSvg} alt={CURRENT_BRANDING.clubName} className="h-14 object-contain animate-pulse mb-3" />
         <div className="text-xs text-[#8fa89b]">Загрузка приложения...</div>
       </div>
@@ -79,7 +79,7 @@ export function App() {
   }
 
   return (
-    <div className="max-w-md mx-auto min-h-screen bg-[#01201a] text-white shadow-2xl relative flex flex-col selection:bg-[#c39a44] selection:text-white">
+    <div className="w-full min-h-screen bg-[#01201a] text-white shadow-2xl relative flex flex-col selection:bg-[#c39a44] selection:text-white">
       {!isAuthenticated ? (
         <WelcomePanel />
       ) : (

@@ -15,11 +15,17 @@ import {
   CreditCard,
   Phone,
   MessageCircle,
-  ExternalLink
+  ExternalLink,
+  Ticket,
+  Skull,
+  Swords,
+  Gem,
+  Anchor
 } from 'lucide-react';
 import { usersApi } from '../api/usersApi';
 import type { PublicUserProfile, Achievement } from '../types';
 import { getRankProgress } from '../config/ranks.config';
+import { getAchievements } from '../config/achievements.config';
 import { triggerHaptic } from '../utils/vkBridge';
 import { useUserStore } from '../store/useUserStore';
 
@@ -88,20 +94,30 @@ export const PublicPlayerModal: React.FC<PublicPlayerModalProps> = ({ playerId, 
   const renderAchievementIcon = (id: string, isUnlocked: boolean) => {
     const iconClass = isUnlocked ? 'w-5 h-5 text-[#ffd700]' : 'w-5 h-5 text-[#c39a44]';
     switch (id) {
+      case 'first_step':
+        return <Ticket className={iconClass} />;
       case 'first_win':
         return <Trophy className={iconClass} />;
-      case 'veteran':
-        return <Medal className={iconClass} />;
-      case 'champion':
-        return <Crown className={iconClass} />;
       case 'on_fire':
         return <Flame className={iconClass} />;
-      case 'grinder':
-        return <Target className={iconClass} />;
-      case 'shark':
-        return <Fish className={iconClass} />;
+      case 'veteran':
+        return <Medal className={iconClass} />;
       case 'bounty_hunter':
         return <Crosshair className={iconClass} />;
+      case 'shark':
+        return <Fish className={iconClass} />;
+      case 'champion':
+        return <Crown className={iconClass} />;
+      case 'grinder':
+        return <Target className={iconClass} />;
+      case 'executioner':
+        return <Skull className={iconClass} />;
+      case 'table_terror':
+        return <Swords className={iconClass} />;
+      case 'high_roller':
+        return <Gem className={iconClass} />;
+      case 'legend':
+        return <Anchor className={iconClass} />;
       default:
         return <Award className={iconClass} />;
     }
@@ -119,78 +135,13 @@ export const PublicPlayerModal: React.FC<PublicPlayerModalProps> = ({ playerId, 
     ? `${((winsCount / tournamentsPlayed) * 100).toFixed(1)}%` 
     : '0.0%';
 
-  const achievements: Achievement[] = [
-    {
-      id: 'first_win',
-      icon: '🏆',
-      title: 'Первая победа',
-      description: 'Выиграть 1 турнир клуба',
-      current: Math.min(winsCount, 1),
-      target: 1,
-      isUnlocked: winsCount >= 1,
-      progressPercent: Math.min(100, Math.round((winsCount / 1) * 100)),
-    },
-    {
-      id: 'veteran',
-      icon: '🎖️',
-      title: 'Ветеран',
-      description: 'Сыграть 10 турниров',
-      current: Math.min(tournamentsPlayed, 10),
-      target: 10,
-      isUnlocked: tournamentsPlayed >= 10,
-      progressPercent: Math.min(100, Math.round((tournamentsPlayed / 10) * 100)),
-    },
-    {
-      id: 'champion',
-      icon: '👑',
-      title: 'Чемпион',
-      description: 'Одержать 3 победы',
-      current: Math.min(winsCount, 3),
-      target: 3,
-      isUnlocked: winsCount >= 3,
-      progressPercent: Math.min(100, Math.round((winsCount / 3) * 100)),
-    },
-    {
-      id: 'on_fire',
-      icon: '⚡',
-      title: 'В ударе',
-      description: '3 финиша в Топ-3',
-      current: Math.min(top3Count, 3),
-      target: 3,
-      isUnlocked: top3Count >= 3,
-      progressPercent: Math.min(100, Math.round((top3Count / 3) * 100)),
-    },
-    {
-      id: 'grinder',
-      icon: '🎯',
-      title: 'Гриндер',
-      description: 'Сыграть 20 турниров',
-      current: Math.min(tournamentsPlayed, 20),
-      target: 20,
-      isUnlocked: tournamentsPlayed >= 20,
-      progressPercent: Math.min(100, Math.round((tournamentsPlayed / 20) * 100)),
-    },
-    {
-      id: 'shark',
-      icon: '🦈',
-      title: 'Акула стола',
-      description: 'Набрать более 300 очков',
-      current: Math.min(currentRating, 300),
-      target: 300,
-      isUnlocked: currentRating >= 300,
-      progressPercent: Math.min(100, Math.round((currentRating / 300) * 100)),
-    },
-    {
-      id: 'bounty_hunter',
-      icon: '🥊',
-      title: 'Охотник за головами',
-      description: 'Сделать 20 нокаутов',
-      current: Math.min(knockoutsCount, 20),
-      target: 20,
-      isUnlocked: knockoutsCount >= 20,
-      progressPercent: Math.min(100, Math.round((knockoutsCount / 20) * 100)),
-    },
-  ];
+  const achievements: Achievement[] = getAchievements({
+    tournamentsPlayed,
+    winsCount,
+    top3Count,
+    knockoutsCount,
+    totalRating: currentRating,
+  });
 
   const unlockedCount = achievements.filter((a) => a.isUnlocked).length;
   const displayNickname = player?.nickname || (player?.firstName ? `${player.firstName} ${player.lastName || ''}`.trim() : 'Игрок Monte Carlo');
@@ -477,7 +428,7 @@ export const PublicPlayerModal: React.FC<PublicPlayerModalProps> = ({ playerId, 
               </div>
             </div>
 
-            {/* 4. БЛОК «ДОСТИЖЕНИЯ ИГРОКА» (7 АЧИВОК) */}
+            {/* 4. БЛОК «ДОСТИЖЕНИЯ ИГРОКА» (12 АЧИВОК) */}
             <div className="space-y-2 pt-1">
               <div className="flex items-center justify-between">
                 <h4 className="text-xs font-extrabold uppercase tracking-wider text-[#8fa89b] flex items-center gap-2">

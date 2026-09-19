@@ -7,7 +7,7 @@ export const apiClient = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  timeout: 10000,
+  timeout: 35000,
 });
 
 // Получение и кэширование параметров запуска VK (для надежной работы внутри iframe VK)
@@ -51,9 +51,9 @@ export const getVkLaunchParams = (): string => {
 
 // Перехватчик для автоматической отправки параметров запуска VK
 apiClient.interceptors.request.use((config) => {
-  // Увеличиваем таймаут для POST-запросов (например, регистрация на турнир) до 25 секунд
-  if (config.method?.toUpperCase() === 'POST' && (!config.timeout || config.timeout === 10000)) {
-    config.timeout = 25000;
+  // Увеличиваем таймаут для тяжелых POST-запросов (например, регистрация на турнир) до 45 секунд
+  if (config.method?.toUpperCase() === 'POST' && (!config.timeout || config.timeout < 35000)) {
+    config.timeout = 45000;
   }
 
   // 1. Проверяем URL search params от VK (с кэшированием в сессии на случай SPA-навигации)

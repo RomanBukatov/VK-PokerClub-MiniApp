@@ -1,4 +1,9 @@
+using System.Net.Http;
+using System.Text;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using PokerClub.Domain.Entities;
 using PokerClub.Domain.Enums;
 using PokerClub.Domain.Interfaces;
@@ -9,10 +14,39 @@ namespace PokerClub.Infrastructure.Services;
 public class TournamentService : ITournamentService
 {
     private readonly AppDbContext _context;
+    private readonly IConfiguration? _configuration;
+    private readonly ILogger<TournamentService>? _logger;
+    private readonly HttpClient? _httpClient;
 
     public TournamentService(AppDbContext context)
+        : this(context, null, null, null)
+    {
+    }
+
+    public TournamentService(
+        AppDbContext context,
+        IConfiguration? configuration = null,
+        ILogger<TournamentService>? logger = null,
+        HttpClient? httpClient = null)
     {
         _context = context;
+        _configuration = configuration;
+        _logger = logger;
+        _httpClient = httpClient;
+    }
+
+    private static readonly HttpClient _defaultHttpClient = new(new SocketsHttpHandler
+    {
+        AllowAutoRedirect = true,
+        MaxAutomaticRedirections = 5
+    })
+    {
+        Timeout = TimeSpan.FromSeconds(15)
+    };
+
+    private HttpClient GetHttpClient()
+    {
+        return _httpClient ?? _defaultHttpClient;
     }
 
     public async Task<List<Tournament>> GetScheduleAsync(int? cityId, int? clubId, bool includeFinished = false)
@@ -175,6 +209,9 @@ public class TournamentService : ITournamentService
                 existingReg.Status = RegStatus.Active;
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
+
+                await SendRegistrationWebhookAsync(tournament, user);
+
                 return (true, "Запись успешно восстановлена! Ждем вас за столом.");
             }
 
@@ -195,12 +232,95 @@ public class TournamentService : ITournamentService
             await _context.SaveChangesAsync();
             await transaction.CommitAsync();
 
+            await SendRegistrationWebhookAsync(tournament, user);
+
             return (true, "Вы успешно записаны на турнир! Ждем вас за столом.");
         }
         catch (Exception ex)
         {
             await transaction.RollbackAsync();
             return (false, $"Ошибка при регистрации на турнир: {ex.Message}");
+        }
+    }
+
+    private async Task SendRegistrationWebhookAsync(Tournament tournament, User user)
+    {
+        var rawWebhookUrl = _configuration?["GoogleSheets:RegistrationWebhookUrl"]
+            ?? _configuration?["GOOGLE_SHEETS_REGISTRATION_WEBHOOK_URL"]
+            ?? Environment.GetEnvironmentVariable("GOOGLE_SHEETS_REGISTRATION_WEBHOOK_URL");
+
+        if (string.IsNullOrWhiteSpace(rawWebhookUrl))
+        {
+            return;
+        }
+
+        var webhookUrl = rawWebhookUrl.Trim();
+
+        try
+        {
+            var rawTitle = !string.IsNullOrWhiteSpace(tournament.Title) ? tournament.Title.Trim() : "Турнир";
+            var formattedDate = tournament.StartTime.TimeOfDay == TimeSpan.Zero
+                ? tournament.StartTime.ToString("dd.MM.yyyy")
+                : tournament.StartTime.ToString("dd.MM.yyyy HH:mm");
+            var tournamentTitle = $"{rawTitle} ({formattedDate})";
+
+            var fullName = $"{user.FirstName} {user.LastName}".Trim();
+            string playerName;
+            if (!string.IsNullOrWhiteSpace(fullName) && !string.Equals(fullName, "Игрок VK", StringComparison.OrdinalIgnoreCase))
+            {
+                playerName = fullName;
+            }
+            else if (!string.IsNullOrWhiteSpace(user.Nickname))
+            {
+                playerName = user.Nickname.Trim();
+            }
+            else if (!string.IsNullOrWhiteSpace(fullName))
+            {
+                playerName = fullName;
+            }
+            else
+            {
+                playerName = !string.IsNullOrWhiteSpace(user.VkId) ? $"Игрок {user.VkId}" : "Игрок";
+            }
+
+            var payload = new
+            {
+                tournamentTitle,
+                playerName,
+                clubCardId = user.ClubCardId?.Trim() ?? "",
+                phoneNumber = user.PhoneNumber?.Trim() ?? "",
+                source = "VK Mini App"
+            };
+
+            var client = GetHttpClient();
+            var json = JsonSerializer.Serialize(payload);
+            using var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            using var request = new HttpRequestMessage(HttpMethod.Post, webhookUrl)
+            {
+                Content = content
+            };
+            if (!request.Headers.UserAgent.Any())
+            {
+                request.Headers.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) PokerClubApp/1.0");
+            }
+
+            var response = await client.SendAsync(request, cts.Token);
+            if (!response.IsSuccessStatusCode &&
+                response.StatusCode != System.Net.HttpStatusCode.Redirect &&
+                response.StatusCode != System.Net.HttpStatusCode.Found)
+            {
+                _logger?.LogWarning(
+                    "Вебхук Google Sheets вернул статус {StatusCode} для турнира {TournamentId}, пользователя {VkId}",
+                    response.StatusCode, tournament.Id, user.VkId);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex,
+                "Ошибка отправки вебхука регистрации Google Sheets для турнира {TournamentId}, пользователя {VkId}",
+                tournament.Id, user.VkId);
         }
     }
 

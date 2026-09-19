@@ -24,7 +24,8 @@ export const ratingsApi = {
     }
 
     const response = await apiClient.get<LeaderboardResponse | LeaderboardEntry[]>(
-      `/api/ratings/leaderboard?type=${type}&limit=${limit}&offset=${offset}`
+      `/api/ratings/leaderboard?type=${type}&limit=${limit}&offset=${offset}`,
+      { timeout: 35000 }
     );
     const data = response.data;
     if (Array.isArray(data)) {
@@ -42,7 +43,7 @@ export const ratingsApi = {
     const response = await apiClient.post<{ message: string }>('/api/ratings/admin/assign-points', {
       tournamentId,
       userPoints,
-    });
+    }, { timeout: 45000 });
     return response.data;
   },
 

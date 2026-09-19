@@ -16,17 +16,17 @@ export const tournamentsApi = {
 
     const queryString = params.toString();
     const url = queryString ? `/api/tournaments/schedule?${queryString}` : '/api/tournaments/schedule';
-    const response = await apiClient.get<Tournament[]>(url);
+    const response = await apiClient.get<Tournament[]>(url, { timeout: 35000 });
     return response.data;
   },
 
   async getTournament(id: number): Promise<TournamentDetail> {
-    const response = await apiClient.get<TournamentDetail>(`/api/tournaments/${id}`);
+    const response = await apiClient.get<TournamentDetail>(`/api/tournaments/${id}`, { timeout: 35000 });
     return response.data;
   },
 
   async getMyTournaments(): Promise<Tournament[]> {
-    const response = await apiClient.get<Tournament[]>('/api/tournaments/my');
+    const response = await apiClient.get<Tournament[]>('/api/tournaments/my', { timeout: 35000 });
     return response.data;
   },
 
@@ -37,7 +37,7 @@ export const tournamentsApi = {
     const response = await apiClient.post<{ message: string }>('/api/tournaments/register', {
       tournamentId,
       ...profile,
-    }, { timeout: 25000 });
+    }, { timeout: 45000 });
     return response.data;
   },
 
@@ -45,22 +45,22 @@ export const tournamentsApi = {
     const response = await apiClient.post<{ message: string }>('/api/tournaments/unregister', {
       tournamentId,
       vkId,
-    }, { timeout: 25000 });
+    }, { timeout: 45000 });
     return response.data;
   },
 
   async createTournament(data: CreateTournamentRequest): Promise<Tournament> {
-    const response = await apiClient.post<Tournament>('/api/tournaments', data, { timeout: 25000 });
+    const response = await apiClient.post<Tournament>('/api/tournaments', data, { timeout: 45000 });
     return response.data;
   },
 
   async deleteTournament(id: number): Promise<{ message: string }> {
-    const response = await apiClient.delete<{ message: string }>(`/api/tournaments/${id}`);
+    const response = await apiClient.delete<{ message: string }>(`/api/tournaments/${id}`, { timeout: 35000 });
     return response.data;
   },
 
   async cancelTournament(id: number): Promise<{ message: string }> {
-    const response = await apiClient.post<{ message: string }>(`/api/tournaments/${id}/cancel`, {}, { timeout: 25000 });
+    const response = await apiClient.post<{ message: string }>(`/api/tournaments/${id}/cancel`, {}, { timeout: 45000 });
     return response.data;
   },
 };

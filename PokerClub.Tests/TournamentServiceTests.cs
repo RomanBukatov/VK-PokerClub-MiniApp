@@ -4,6 +4,8 @@ using Microsoft.AspNetCore.Mvc.Abstractions;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -26,6 +28,7 @@ public class TournamentServiceTests
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .ConfigureWarnings(w => w.Ignore(InMemoryEventId.TransactionIgnoredWarning))
             .Options;
 
         return new AppDbContext(options);
@@ -897,5 +900,268 @@ public class TournamentServiceTests
         Assert.NotNull(detailDto.RegistrationEnd);
         Assert.Equal(regEnd, detailDto.RegistrationEnd.Value);
     }
+
+    [Fact]
+    public async Task RegisterPlayerAsync_WhenWebhookUrlConfigured_SendsWebhookWithCorrectPayload()
+    {
+        using var context = CreateInMemoryDbContext();
+        var club = new Club { Name = "Monte Carlo", Address = "Монастырская 59", City = new City { Name = "Пермь", Slug = "perm" }, IsActive = true };
+        var startTime = new DateTime(2026, 9, 25, 19, 0, 0, DateTimeKind.Utc);
+        var tournament = new Tournament
+        {
+            Title = "Friday Deepstack",
+            Club = club,
+            StartTime = startTime,
+            Status = TournamentStatus.RegistrationOpen,
+            MaxSeats = 30
+        };
+        var user = new User
+        {
+            VkId = "12345",
+            FirstName = "Иван",
+            LastName = "Иванов",
+            Nickname = "PokerPro",
+            ClubCardId = "1266",
+            PhoneNumber = "+79991234567"
+        };
+        context.Clubs.Add(club);
+        context.Tournaments.Add(tournament);
+        context.Users.Add(user);
+        await context.SaveChangesAsync();
+
+        HttpRequestMessage? capturedRequest = null;
+        string? capturedBody = null;
+
+        var mockHandler = new TestHttpMessageHandler(req =>
+        {
+            capturedRequest = req;
+            capturedBody = req.Content?.ReadAsStringAsync().GetAwaiter().GetResult();
+            return new HttpResponseMessage(System.Net.HttpStatusCode.OK);
+        });
+        var httpClient = new HttpClient(mockHandler);
+
+        var config = new Microsoft.Extensions.Configuration.ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["GoogleSheets:RegistrationWebhookUrl"] = "https://script.google.com/macros/s/test/exec"
+            })
+            .Build();
+
+        var service = new TournamentService(context, config, null, httpClient);
+
+        var (success, message) = await service.RegisterPlayerAsync(tournament.Id, "12345");
+
+        Assert.True(success);
+        Assert.NotNull(capturedRequest);
+        Assert.Equal("https://script.google.com/macros/s/test/exec", capturedRequest.RequestUri?.ToString());
+        Assert.NotNull(capturedBody);
+
+        using var doc = System.Text.Json.JsonDocument.Parse(capturedBody);
+        var root = doc.RootElement;
+        Assert.Equal("Friday Deepstack (25.09.2026 19:00)", root.GetProperty("tournamentTitle").GetString());
+        Assert.Equal("Иван Иванов", root.GetProperty("playerName").GetString());
+        Assert.Equal("1266", root.GetProperty("clubCardId").GetString());
+        Assert.Equal("+79991234567", root.GetProperty("phoneNumber").GetString());
+        Assert.Equal("VK Mini App", root.GetProperty("source").GetString());
+        Assert.Contains("PokerClubApp/1.0", capturedRequest.Headers.UserAgent.ToString());
+    }
+
+    [Fact]
+    public async Task RegisterPlayerAsync_WhenWebhookUrlHasWhitespaceAndReturnsRedirect_Succeeds()
+    {
+        using var context = CreateInMemoryDbContext();
+        var club = new Club { Name = "Monte Carlo", Address = "Монастырская 59", City = new City { Name = "Пермь", Slug = "perm" }, IsActive = true };
+        var tournament = new Tournament
+        {
+            Title = "   ",
+            Club = club,
+            StartTime = new DateTime(2026, 9, 25, 0, 0, 0, DateTimeKind.Utc),
+            Status = TournamentStatus.RegistrationOpen,
+            MaxSeats = 30
+        };
+        var user = new User
+        {
+            VkId = "55555",
+            FirstName = "Игрок",
+            LastName = "VK",
+            Nickname = "  LuckyGuy  ",
+            ClubCardId = " 999 ",
+            PhoneNumber = " +79001234567 "
+        };
+        context.Clubs.Add(club);
+        context.Tournaments.Add(tournament);
+        context.Users.Add(user);
+        await context.SaveChangesAsync();
+
+        HttpRequestMessage? capturedRequest = null;
+        string? capturedBody = null;
+
+        var mockHandler = new TestHttpMessageHandler(req =>
+        {
+            capturedRequest = req;
+            capturedBody = req.Content?.ReadAsStringAsync().GetAwaiter().GetResult();
+            var resp = new HttpResponseMessage(System.Net.HttpStatusCode.Redirect);
+            resp.Headers.Location = new Uri("https://script.googleusercontent.com/macros/echo?user_content_key=123");
+            return resp;
+        });
+        var httpClient = new HttpClient(mockHandler);
+
+        var config = new Microsoft.Extensions.Configuration.ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["GoogleSheets:RegistrationWebhookUrl"] = "   https://script.google.com/macros/s/redirect/exec \n  "
+            })
+            .Build();
+
+        var service = new TournamentService(context, config, null, httpClient);
+
+        var (success, message) = await service.RegisterPlayerAsync(tournament.Id, "55555");
+
+        Assert.True(success);
+        Assert.NotNull(capturedRequest);
+        Assert.Equal("https://script.google.com/macros/s/redirect/exec", capturedRequest.RequestUri?.ToString());
+        Assert.NotNull(capturedBody);
+
+        using var doc = System.Text.Json.JsonDocument.Parse(capturedBody);
+        var root = doc.RootElement;
+        Assert.Equal("Турнир (25.09.2026)", root.GetProperty("tournamentTitle").GetString());
+        Assert.Equal("LuckyGuy", root.GetProperty("playerName").GetString());
+        Assert.Equal("999", root.GetProperty("clubCardId").GetString());
+        Assert.Equal("+79001234567", root.GetProperty("phoneNumber").GetString());
+        Assert.Equal("VK Mini App", root.GetProperty("source").GetString());
+    }
+
+    [Fact]
+    public async Task RegisterPlayerAsync_WhenWebhookFails_StillSuccessfullyRegistersPlayer()
+    {
+        using var context = CreateInMemoryDbContext();
+        var club = new Club { Name = "Monte Carlo", Address = "Монастырская 59", City = new City { Name = "Пермь", Slug = "perm" }, IsActive = true };
+        var tournament = new Tournament
+        {
+            Title = "Saturday Bounty",
+            Club = club,
+            StartTime = DateTime.UtcNow.AddDays(1),
+            Status = TournamentStatus.RegistrationOpen,
+            MaxSeats = 30
+        };
+        var user = new User
+        {
+            VkId = "99999",
+            FirstName = "Петр",
+            LastName = "Петров"
+        };
+        context.Clubs.Add(club);
+        context.Tournaments.Add(tournament);
+        context.Users.Add(user);
+        await context.SaveChangesAsync();
+
+        var mockHandler = new TestHttpMessageHandler(req =>
+        {
+            throw new HttpRequestException("Network failure to Google Sheets");
+        });
+        var httpClient = new HttpClient(mockHandler);
+
+        var config = new Microsoft.Extensions.Configuration.ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["GoogleSheets:RegistrationWebhookUrl"] = "https://script.google.com/macros/s/failing/exec"
+            })
+            .Build();
+
+        var service = new TournamentService(context, config, null, httpClient);
+
+        var (success, message) = await service.RegisterPlayerAsync(tournament.Id, "99999");
+
+        // Registration MUST succeed despite webhook failure
+        Assert.True(success);
+        Assert.Contains("Вы успешно записаны на турнир", message);
+
+        var reg = await context.Registrations.FirstOrDefaultAsync(r => r.TournamentId == tournament.Id && r.UserId == user.Id);
+        Assert.NotNull(reg);
+        Assert.Equal(RegStatus.Active, reg.Status);
+    }
+
+    [Fact]
+    public async Task RegisterPlayerAsync_WhenReactivatingCanceledRegistration_SendsWebhook()
+    {
+        using var context = CreateInMemoryDbContext();
+        var club = new Club { Name = "Monte Carlo", Address = "Монастырская 59", City = new City { Name = "Пермь", Slug = "perm" }, IsActive = true };
+        var tournament = new Tournament
+        {
+            Title = "Sunday Cup",
+            Club = club,
+            StartTime = new DateTime(2026, 9, 27, 18, 0, 0, DateTimeKind.Utc),
+            Status = TournamentStatus.RegistrationOpen,
+            MaxSeats = 30
+        };
+        var user = new User
+        {
+            VkId = "88888",
+            FirstName = "Сергей",
+            LastName = "Сергеев",
+            ClubCardId = "777"
+        };
+        context.Clubs.Add(club);
+        context.Tournaments.Add(tournament);
+        context.Users.Add(user);
+        await context.SaveChangesAsync();
+
+        context.Registrations.Add(new Registration
+        {
+            TournamentId = tournament.Id,
+            UserId = user.Id,
+            Status = RegStatus.Canceled
+        });
+        await context.SaveChangesAsync();
+
+        HttpRequestMessage? capturedRequest = null;
+        string? capturedBody = null;
+
+        var mockHandler = new TestHttpMessageHandler(req =>
+        {
+            capturedRequest = req;
+            capturedBody = req.Content?.ReadAsStringAsync().GetAwaiter().GetResult();
+            return new HttpResponseMessage(System.Net.HttpStatusCode.OK);
+        });
+        var httpClient = new HttpClient(mockHandler);
+
+        var config = new Microsoft.Extensions.Configuration.ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["GoogleSheets:RegistrationWebhookUrl"] = "https://script.google.com/macros/s/test/exec"
+            })
+            .Build();
+
+        var service = new TournamentService(context, config, null, httpClient);
+
+        var (success, message) = await service.RegisterPlayerAsync(tournament.Id, "88888");
+
+        Assert.True(success);
+        Assert.Contains("Запись успешно восстановлена", message);
+        Assert.NotNull(capturedRequest);
+        Assert.NotNull(capturedBody);
+
+        using var doc = System.Text.Json.JsonDocument.Parse(capturedBody);
+        var root = doc.RootElement;
+        Assert.Equal("Sunday Cup (27.09.2026 18:00)", root.GetProperty("tournamentTitle").GetString());
+        Assert.Equal("Сергей Сергеев", root.GetProperty("playerName").GetString());
+        Assert.Equal("777", root.GetProperty("clubCardId").GetString());
+    }
+
+    private class TestHttpMessageHandler : HttpMessageHandler
+    {
+        private readonly Func<HttpRequestMessage, HttpResponseMessage> _handler;
+
+        public TestHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> handler)
+        {
+            _handler = handler;
+        }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            return Task.FromResult(_handler(request));
+        }
+    }
 }
+
 
