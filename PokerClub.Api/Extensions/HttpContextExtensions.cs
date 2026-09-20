@@ -5,8 +5,13 @@ public static class HttpContextExtensions
     public const string VkUserIdItemKey = "VkUserId";
     public const string IsAdminItemKey = "IsAdmin";
 
-    public static string? GetVkUserId(this HttpContext context)
+    public static string? GetVkUserId(this HttpContext? context)
     {
+        if (context == null)
+        {
+            return null;
+        }
+
         if (context.Items.TryGetValue(VkUserIdItemKey, out var val) && val is string vkId)
         {
             return vkId;
@@ -60,8 +65,13 @@ public static class HttpContextExtensions
         return null;
     }
 
-    public static bool IsVkAdmin(this HttpContext context)
+    public static bool IsVkAdmin(this HttpContext? context)
     {
+        if (context == null)
+        {
+            return false;
+        }
+
         if (context.Items.TryGetValue(IsAdminItemKey, out var val) && val is bool isAdmin)
         {
             return isAdmin;

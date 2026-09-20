@@ -1,4 +1,5 @@
 using PokerClub.Domain.Entities;
+using PokerClub.Domain.Enums;
 
 namespace PokerClub.Domain.Interfaces;
 
@@ -40,5 +41,22 @@ public interface ITournamentService
         int? cityId = null,
         string? address = null,
         DateTime? registrationEnd = null
+    );
+
+    // Обновление существующего турнира (админ)
+    Task<(bool Success, Tournament? Tournament, string Message)> UpdateTournamentAsync(
+        int id,
+        int? clubId = null,
+        string? title = null,
+        string? format = null,
+        decimal? buyIn = null,
+        int? maxSeats = null,
+        DateTime? startTime = null,
+        string? description = null,
+        int? cityId = null,
+        string? address = null,
+        DateTime? registrationEnd = null,
+        TournamentStatus? status = null,
+        bool clearRegistrationEnd = false
     );
 }

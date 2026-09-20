@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { MapPin, ChevronDown, Shield, User } from 'lucide-react';
 import { useUserStore } from '../store/useUserStore';
 import { useRatingsStore } from '../store/useRatingsStore';
+import { useTournamentsStore } from '../store/useTournamentsStore';
 import { citiesApi } from '../api/citiesApi';
 import { getLeaderboardSubtitle } from '../panels/LeaderboardPanel';
 import { triggerHaptic } from '../utils/vkBridge';
@@ -15,6 +16,7 @@ interface HeaderProps {
 export const Header: React.FC<HeaderProps> = ({ title, subtitle }) => {
   const { activeTab, isAdmin, setIsAdmin, setIsCityModalOpen, selectedCityName, setSelectedCity, vkUser, profile, hasAdminRole } = useUserStore();
   const { seasonTab, seasonName } = useRatingsStore();
+  const { editingTournament } = useTournamentsStore();
   const canSwitchAdmin = hasAdminRole || vkUser?.isAdmin === true || profile?.isAdmin === true;
 
   useEffect(() => {
@@ -51,7 +53,9 @@ export const Header: React.FC<HeaderProps> = ({ title, subtitle }) => {
       case 'admin-tournaments':
         return { title: 'Управление', subtitle: 'Прошедшие игры' };
       case 'admin-create':
-        return { title: 'Создание турнира', subtitle: 'Новое событие в расписании' };
+        return editingTournament
+          ? { title: 'Редактирование турнира', subtitle: `Турнир #${editingTournament.id}: «${editingTournament.title}»` }
+          : { title: 'Создание турнира', subtitle: 'Новое событие в расписании' };
       default:
         return { title: 'Турниры', subtitle: 'Ближайшие игры в нашем клубе' };
     }

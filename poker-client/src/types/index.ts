@@ -113,6 +113,23 @@ export interface CreateTournamentRequest {
   blindLevelMinutes?: number;
 }
 
+export interface UpdateTournamentRequest {
+  title?: string;
+  clubId?: number;
+  cityId?: number | null;
+  address?: string;
+  format?: string;
+  buyIn?: number;
+  maxSeats?: number;
+  startTime?: string;
+  registrationEnd?: string | null;
+  description?: string;
+  startingChips?: number;
+  blindLevelMinutes?: number;
+  status?: TournamentStatus;
+  clearRegistrationEnd?: boolean;
+}
+
 export interface RegisterPlayerPayload {
   tournamentId: number;
   vkId?: string;

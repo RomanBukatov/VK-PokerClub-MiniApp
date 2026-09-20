@@ -16,7 +16,8 @@ public record TournamentScheduleDto(
     string? CityName,
     int RegisteredCount,
     bool IsUserRegistered = false,
-    DateTime? RegistrationEnd = null
+    DateTime? RegistrationEnd = null,
+    string? ClubAddress = null
 );
 
 public record TournamentDetailDto(

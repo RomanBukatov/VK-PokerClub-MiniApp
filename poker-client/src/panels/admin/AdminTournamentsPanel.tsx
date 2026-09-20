@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ChevronRight, RefreshCw, CheckCircle2, AlertCircle, Trash2 } from 'lucide-react';
+import { ChevronRight, RefreshCw, CheckCircle2, AlertCircle, Trash2, Pencil } from 'lucide-react';
 import { useTournamentsStore } from '../../store/useTournamentsStore';
 import { useUserStore } from '../../store/useUserStore';
 import { useRatingsStore } from '../../store/useRatingsStore';
@@ -9,8 +9,8 @@ import { triggerHaptic } from '../../utils/vkBridge';
 import { TournamentStatus, type Tournament } from '../../types';
 
 export const AdminTournamentsPanel: React.FC = () => {
-  const { tournaments, isLoading, scheduleError, fetchAdminSchedule, deleteTournament, actionError } = useTournamentsStore();
-  const { selectedCityId, selectedCity, selectedClubId } = useUserStore();
+  const { tournaments, isLoading, scheduleError, fetchAdminSchedule, deleteTournament, setEditingTournament, actionError } = useTournamentsStore();
+  const { selectedCityId, selectedCity, selectedClubId, setActiveTab } = useUserStore();
 
   const [selectedTournamentForPoints, setSelectedTournamentForPoints] = useState<Tournament | null>(null);
   const [tournamentToCancel, setTournamentToCancel] = useState<Tournament | null>(null);
@@ -80,6 +80,13 @@ export const AdminTournamentsPanel: React.FC = () => {
     }
   };
 
+  // Строгая сортировка турниров по возрастанию даты проведения (ближайшие всегда первыми)
+  const sortedTournaments = [...tournaments].sort((a, b) => {
+    const timeA = new Date(a.startTime).getTime() || 0;
+    const timeB = new Date(b.startTime).getTime() || 0;
+    return timeA - timeB;
+  });
+
   return (
     <div className="px-5 pb-24 animate-fade-in space-y-4">
       {/* Кнопка синхронизации Google Sheets */}
@@ -139,7 +146,7 @@ export const AdminTournamentsPanel: React.FC = () => {
           Нет доступных турниров для управления.
         </div>
       ) : (
-        tournaments.map((t) => {
+        sortedTournaments.map((t) => {
           const isFinished = t.status === TournamentStatus.Finished;
 
           return (
@@ -164,6 +171,20 @@ export const AdminTournamentsPanel: React.FC = () => {
                       Не начислено
                     </span>
                   )}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      triggerHaptic('medium');
+                      setEditingTournament(t);
+                      setActiveTab('admin-create');
+                    }}
+                    className="p-1.5 rounded-xl bg-amber-950/40 hover:bg-amber-950/70 border border-amber-500/30 hover:border-amber-500/50 text-[#c39a44] transition-all active:scale-95"
+                    title="Редактировать турнир"
+                    data-testid={`edit-tournament-${t.id}`}
+                  >
+                    <Pencil className="w-4 h-4" />
+                  </button>
                   <button
                     type="button"
                     onClick={(e) => {

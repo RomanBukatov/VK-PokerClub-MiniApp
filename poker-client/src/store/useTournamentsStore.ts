@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import axios from 'axios';
-import type { Tournament, TournamentDetail } from '../types';
+import type { Tournament, TournamentDetail, UpdateTournamentRequest } from '../types';
 import { tournamentsApi } from '../api/tournamentsApi';
 import { citiesApi } from '../api/citiesApi';
 import { useUserStore } from './useUserStore';
@@ -9,6 +9,7 @@ interface TournamentsState {
   tournaments: Tournament[];
   myTournaments: Tournament[];
   selectedTournament: TournamentDetail | null;
+  editingTournament: Tournament | TournamentDetail | null;
   isLoading: boolean;
   isActionLoading: boolean;
   isDetailModalOpen: boolean;
@@ -27,6 +28,8 @@ interface TournamentsState {
   registerToTournament: (tournamentId: number) => Promise<boolean>;
   unregisterFromTournament: (tournamentId: number) => Promise<boolean>;
   deleteTournament: (tournamentId: number) => Promise<boolean>;
+  setEditingTournament: (tournament: Tournament | TournamentDetail | null) => void;
+  updateTournament: (id: number, data: UpdateTournamentRequest) => Promise<boolean>;
 }
 
 const extractErrorMessage = (err: unknown, defaultMessage: string): string => {
@@ -55,6 +58,7 @@ export const useTournamentsStore = create<TournamentsState>((set, get) => ({
   tournaments: [],
   myTournaments: [],
   selectedTournament: null,
+  editingTournament: null,
   isLoading: false,
   isActionLoading: false,
   isDetailModalOpen: false,
@@ -286,6 +290,35 @@ export const useTournamentsStore = create<TournamentsState>((set, get) => ({
     } catch (err: unknown) {
       console.error('Ошибка удаления турнира:', err);
       set({ actionError: extractErrorMessage(err, 'Ошибка удаления турнира') });
+      return false;
+    } finally {
+      set({ isActionLoading: false });
+    }
+  },
+
+  setEditingTournament: (tournament) => set({ editingTournament: tournament }),
+
+  updateTournament: async (id: number, data: UpdateTournamentRequest) => {
+    set({ isActionLoading: true, actionError: null });
+    try {
+      const updated = await tournamentsApi.updateTournament(id, data);
+      set((state) => ({
+        tournaments: state.tournaments.map((t) => (t.id === id ? { ...t, ...updated } : t)),
+        myTournaments: state.myTournaments.map((t) => (t.id === id ? { ...t, ...updated } : t)),
+        selectedTournament:
+          state.selectedTournament?.id === id
+            ? { ...state.selectedTournament, ...updated }
+            : state.selectedTournament,
+        editingTournament:
+          state.editingTournament?.id === id
+            ? { ...state.editingTournament, ...updated }
+            : state.editingTournament,
+        actionError: null,
+      }));
+      return true;
+    } catch (err: unknown) {
+      console.error('Ошибка обновления турнира:', err);
+      set({ actionError: extractErrorMessage(err, 'Ошибка обновления турнира') });
       return false;
     } finally {
       set({ isActionLoading: false });

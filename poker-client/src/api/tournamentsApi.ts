@@ -1,5 +1,5 @@
 import { apiClient } from './apiClient';
-import type { Tournament, TournamentDetail, CreateTournamentRequest } from '../types';
+import type { Tournament, TournamentDetail, CreateTournamentRequest, UpdateTournamentRequest } from '../types';
 
 export const tournamentsApi = {
   async getSchedule(cityId?: number | null, clubId?: number | null, includeFinished?: boolean): Promise<Tournament[]> {
@@ -51,6 +51,11 @@ export const tournamentsApi = {
 
   async createTournament(data: CreateTournamentRequest): Promise<Tournament> {
     const response = await apiClient.post<Tournament>('/api/tournaments', data, { timeout: 45000 });
+    return response.data;
+  },
+
+  async updateTournament(id: number, data: UpdateTournamentRequest): Promise<TournamentDetail> {
+    const response = await apiClient.put<TournamentDetail>(`/api/tournaments/${id}`, data, { timeout: 45000 });
     return response.data;
   },
 

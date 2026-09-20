@@ -1,3 +1,5 @@
+using PokerClub.Domain.Enums;
+
 namespace PokerClub.Api.DTOs;
 
 public record RegisterPlayerRequest(
@@ -31,6 +33,23 @@ public record CreateTournamentRequest(
     int? StartingChips = null,
     int? BlindLevelMinutes = null,
     DateTime? RegistrationEnd = null
+);
+
+public record UpdateTournamentRequest(
+    string? Title = null,
+    int? ClubId = null,
+    int? CityId = null,
+    string? Address = null,
+    string? Format = null,
+    decimal? BuyIn = null,
+    int? MaxSeats = null,
+    DateTime? StartTime = null,
+    string? Description = null,
+    int? StartingChips = null,
+    int? BlindLevelMinutes = null,
+    DateTime? RegistrationEnd = null,
+    TournamentStatus? Status = null,
+    bool ClearRegistrationEnd = false
 );
 
 public record UpdateProfileRequest(

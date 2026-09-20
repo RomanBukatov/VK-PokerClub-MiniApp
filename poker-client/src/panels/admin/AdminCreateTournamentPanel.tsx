@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { AlertCircle, CheckCircle2, Calendar, Clock, MapPin, Trophy, Users } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Calendar, Clock, MapPin, Trophy, Users, Pencil, ArrowLeft } from 'lucide-react';
 import axios from 'axios';
 import { tournamentsApi } from '../../api/tournamentsApi';
 import { useTournamentsStore } from '../../store/useTournamentsStore';
@@ -8,8 +8,13 @@ import { triggerHaptic } from '../../utils/vkBridge';
 import { CURRENT_BRANDING } from '../../config/branding';
 
 export const AdminCreateTournamentPanel: React.FC = () => {
-  const { fetchAdminSchedule } = useTournamentsStore();
-  const { selectedCityId, selectedClubId, setActiveTab } = useUserStore();
+  const { editingTournament } = useTournamentsStore();
+  return <AdminCreateTournamentForm key={editingTournament ? `edit-${editingTournament.id}` : 'create'} />;
+};
+
+const AdminCreateTournamentForm: React.FC = () => {
+  const { fetchAdminSchedule, editingTournament, setEditingTournament, updateTournament } = useTournamentsStore();
+  const { selectedCityId, selectedCity, selectedClubId, setActiveTab } = useUserStore();
 
   // Инициализируем сегодняшнюю дату в формате DD.MM.YYYY
   const getInitialDate = () => {
@@ -20,17 +25,50 @@ export const AdminCreateTournamentPanel: React.FC = () => {
     return `${day}.${month}.${year}`;
   };
 
-  const [title, setTitle] = useState('Deepstack Tournament');
-  const [address, setAddress] = useState(CURRENT_BRANDING.defaultAddress);
-  const [date, setDate] = useState(getInitialDate());
-  const [time, setTime] = useState('19:00');
-  const [format, setFormat] = useState('NL Holdem');
-  const [chips, setChips] = useState('15000');
-  const [buyIn, setBuyIn] = useState('1500');
-  const [maxSeats, setMaxSeats] = useState('30');
-  const [regEnd, setRegEnd] = useState('18:45');
+  const [title, setTitle] = useState(() => editingTournament?.title || 'Deepstack Tournament');
+  const [address, setAddress] = useState(() => editingTournament?.clubAddress || CURRENT_BRANDING.defaultAddress);
+  const [date, setDate] = useState(() => {
+    if (editingTournament?.startTime) {
+      const d = new Date(editingTournament.startTime);
+      if (!isNaN(d.getTime())) {
+        const day = String(d.getDate()).padStart(2, '0');
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const year = d.getFullYear();
+        return `${day}.${month}.${year}`;
+      }
+    }
+    return getInitialDate();
+  });
+  const [time, setTime] = useState(() => {
+    if (editingTournament?.startTime) {
+      const d = new Date(editingTournament.startTime);
+      if (!isNaN(d.getTime())) {
+        const hours = String(d.getHours()).padStart(2, '0');
+        const minutes = String(d.getMinutes()).padStart(2, '0');
+        return `${hours}:${minutes}`;
+      }
+    }
+    return '19:00';
+  });
+  const [format, setFormat] = useState(() => editingTournament?.format || 'NL Holdem');
+  const [chips, setChips] = useState(() => editingTournament?.startingChips ? String(editingTournament.startingChips) : '15000');
+  const [buyIn, setBuyIn] = useState(() => editingTournament?.buyIn !== undefined ? String(editingTournament.buyIn) : '1500');
+  const [maxSeats, setMaxSeats] = useState(() => editingTournament?.maxSeats ? String(editingTournament.maxSeats) : '30');
+  const [regEnd, setRegEnd] = useState(() => {
+    if (editingTournament?.registrationEnd) {
+      const rd = new Date(editingTournament.registrationEnd);
+      if (!isNaN(rd.getTime())) {
+        const hours = String(rd.getHours()).padStart(2, '0');
+        const minutes = String(rd.getMinutes()).padStart(2, '0');
+        return `${hours}:${minutes}`;
+      }
+    }
+    return editingTournament ? '' : '18:45';
+  });
   const [description, setDescription] = useState(
-    'Регулярный клубный турнир для участников и гостей клуба.\n\n• Стартовый стек — 15 000 фишек\n• Блайнд-апы — 15 минут\n• Поздняя регистрация — 3 часа\n\nRe-Buy\n• 15 000 — 1 500 ₽\n• Premium 30 000 — 2 500 ₽\n\nAdd-on\n• 30 000 — 1 500 ₽'
+    () => editingTournament
+      ? (editingTournament.description ?? '')
+      : 'Регулярный клубный турнир для участников и гостей клуба.\n\n• Стартовый стек — 15 000 фишек\n• Блайнд-апы — 15 минут\n• Поздняя регистрация — 3 часа\n\nRe-Buy\n• 15 000 — 1 500 ₽\n• Premium 30 000 — 2 500 ₽\n\nAdd-on\n• 30 000 — 1 500 ₽'
   );
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -142,6 +180,8 @@ export const AdminCreateTournamentPanel: React.FC = () => {
     const parsedSeats = parseInt(maxSeats, 10);
     if (isNaN(parsedSeats) || parsedSeats < 2 || parsedSeats > 500) {
       errors.maxSeats = 'Количество мест должно быть от 2 до 500';
+    } else if (editingTournament && (editingTournament.registeredCount || 0) > parsedSeats) {
+      errors.maxSeats = `Количество мест (${parsedSeats}) не может быть меньше числа уже записанных игроков (${editingTournament.registeredCount})`;
     }
 
     const parsedBuyIn = parseFloat(buyIn);
@@ -157,7 +197,7 @@ export const AdminCreateTournamentPanel: React.FC = () => {
     setFieldErrors(errors);
 
     if (Object.keys(errors).length > 0) {
-      setErrorMsg('Пожалуйста, исправьте ошибки в форме перед созданием.');
+      setErrorMsg(editingTournament ? 'Пожалуйста, исправьте ошибки в форме перед сохранением.' : 'Пожалуйста, исправьте ошибки в форме перед созданием.');
       return { isValid: false, parsedDate: null, parsedRegEnd: null };
     }
 
@@ -179,32 +219,60 @@ export const AdminCreateTournamentPanel: React.FC = () => {
     setLoading(true);
 
     try {
-      await tournamentsApi.createTournament({
-        title: title.trim(),
-        clubId: selectedClubId || undefined,
-        cityId: selectedCityId || undefined,
-        address: address.trim() || undefined,
-        startTime: parsedDate.toISOString(),
-        registrationEnd: parsedRegEnd ? parsedRegEnd.toISOString() : undefined,
-        buyIn: parseFloat(buyIn) || 0,
-        maxSeats: parseInt(maxSeats, 10) || 30,
-        description: description.trim(),
-        format: format.trim() || 'NL Holdem',
-        startingChips: parseInt(chips, 10) || 15000,
-        blindLevelMinutes: 15,
-      });
+      if (editingTournament) {
+        const ok = await updateTournament(editingTournament.id, {
+          title: title.trim(),
+          clubId: editingTournament.clubId,
+          address: address.trim() || undefined,
+          startTime: parsedDate.toISOString(),
+          registrationEnd: parsedRegEnd ? parsedRegEnd.toISOString() : null,
+          clearRegistrationEnd: !parsedRegEnd,
+          buyIn: parseFloat(buyIn) || 0,
+          maxSeats: parseInt(maxSeats, 10) || 30,
+          description: description.trim(),
+          format: format.trim() || 'NL Holdem',
+          startingChips: parseInt(chips, 10) || 15000,
+          blindLevelMinutes: 15,
+        });
+
+        if (!ok) {
+          const err = useTournamentsStore.getState().actionError;
+          setErrorMsg(err || 'Не удалось сохранить изменения турнира.');
+          setLoading(false);
+          return;
+        }
+      } else {
+        await tournamentsApi.createTournament({
+          title: title.trim(),
+          clubId: selectedClubId || undefined,
+          cityId: selectedCityId || undefined,
+          address: address.trim() || undefined,
+          startTime: parsedDate.toISOString(),
+          registrationEnd: parsedRegEnd ? parsedRegEnd.toISOString() : undefined,
+          buyIn: parseFloat(buyIn) || 0,
+          maxSeats: parseInt(maxSeats, 10) || 30,
+          description: description.trim(),
+          format: format.trim() || 'NL Holdem',
+          startingChips: parseInt(chips, 10) || 15000,
+          blindLevelMinutes: 15,
+        });
+      }
 
       triggerHaptic('medium');
       setIsSuccess(true);
 
       // Обновляем список турниров в админке
-      await fetchAdminSchedule(selectedCityId, selectedClubId);
+      const activeCityId = selectedCity !== undefined ? selectedCity : selectedCityId;
+      const targetCityId = activeCityId === null ? null : activeCityId;
+      const targetClubId = targetCityId === null ? null : selectedClubId;
+      await fetchAdminSchedule(targetCityId, targetClubId);
 
       setTimeout(() => {
+        setEditingTournament(null);
         setActiveTab('admin-tournaments');
       }, 700);
     } catch (err: unknown) {
-      console.error('Ошибка создания турнира:', err);
+      console.error(editingTournament ? 'Ошибка обновления турнира:' : 'Ошибка создания турнира:', err);
       triggerHaptic('heavy');
       if (axios.isAxiosError(err)) {
         const data = err.response?.data as { message?: string; title?: string; errors?: Record<string, string[] | string> } | undefined;
@@ -219,11 +287,11 @@ export const AdminCreateTournamentPanel: React.FC = () => {
         if (!serverMessage && typeof err.response?.data === 'string' && !err.response.data.trim().startsWith('<')) {
           serverMessage = err.response.data;
         }
-        setErrorMsg(serverMessage || err.message || 'Ошибка сервера при создании турнира.');
+        setErrorMsg(serverMessage || err.message || (editingTournament ? 'Ошибка сервера при обновлении турнира.' : 'Ошибка сервера при создании турнира.'));
       } else if (err instanceof Error) {
         setErrorMsg(err.message);
       } else {
-        setErrorMsg('Не удалось создать турнир. Проверьте соединение с сервером.');
+        setErrorMsg(editingTournament ? 'Не удалось обновить турнир. Проверьте соединение с сервером.' : 'Не удалось создать турнир. Проверьте соединение с сервером.');
       }
       setLoading(false);
     }
@@ -231,12 +299,38 @@ export const AdminCreateTournamentPanel: React.FC = () => {
 
   return (
     <div className="px-5 pb-28 animate-fade-in space-y-4">
-      {/* Баннер успешного создания */}
+      {/* Баннер режима редактирования */}
+      {editingTournament && (
+        <div className="p-3.5 rounded-2xl bg-amber-950/40 border border-amber-500/40 flex items-center justify-between gap-3 animate-fade-in shadow-lg">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <Pencil className="w-4 h-4 text-[#c39a44] shrink-0" />
+            <div className="min-w-0">
+              <div className="text-xs font-bold text-amber-200">Режим редактирования</div>
+              <div className="text-[11px] text-[#8fa89b] truncate">Турнир #{editingTournament.id}: «{editingTournament.title}»</div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setEditingTournament(null);
+              setActiveTab('admin-tournaments');
+            }}
+            className="px-3 py-1.5 rounded-xl bg-black/50 hover:bg-black/80 border border-white/10 text-xs font-semibold text-white/80 hover:text-white shrink-0 active:scale-95 transition-all flex items-center gap-1.5"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            <span>Отмена</span>
+          </button>
+        </div>
+      )}
+
+      {/* Баннер успешного создания/обновления */}
       {isSuccess && (
         <div className="p-4 rounded-2xl bg-[#0d2a1f] border border-[#34d399] text-[#a4c9b7] text-xs flex items-center gap-3 animate-fade-in">
           <CheckCircle2 className="w-5 h-5 text-[#34d399] shrink-0" />
           <div>
-            <div className="font-bold text-white">Турнир успешно создан!</div>
+            <div className="font-bold text-white">
+              {editingTournament ? 'Турнир успешно обновлен!' : 'Турнир успешно создан!'}
+            </div>
             <div className="text-[11px] text-[#8fa89b]">Перенаправление в панель управления...</div>
           </div>
         </div>
@@ -445,7 +539,11 @@ export const AdminCreateTournamentPanel: React.FC = () => {
             disabled={loading || isSuccess}
             className="w-full py-4 px-6 rounded-full bg-[#c39a44] text-white font-bold text-sm shadow-xl shadow-black/60 hover:brightness-105 active:scale-[0.98] transition-all disabled:opacity-50 flex items-center justify-center gap-2"
           >
-            {loading ? 'Создание турнира...' : isSuccess ? 'Успешно создано!' : 'Опубликовать турнир'}
+            {loading
+              ? (editingTournament ? 'Сохранение изменений...' : 'Создание турнира...')
+              : isSuccess
+              ? (editingTournament ? 'Успешно обновлено!' : 'Успешно создано!')
+              : (editingTournament ? 'Сохранить изменения' : 'Опубликовать турнир')}
           </button>
         </div>
       </form>

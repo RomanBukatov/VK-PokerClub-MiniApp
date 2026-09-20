@@ -1,5 +1,6 @@
 import React from 'react';
 import { useUserStore } from '../store/useUserStore';
+import { useTournamentsStore } from '../store/useTournamentsStore';
 import { triggerHaptic } from '../utils/vkBridge';
 import type { TabType } from '../types';
 
@@ -8,6 +9,9 @@ export const TabBar: React.FC = () => {
 
   const handleTabClick = (tab: TabType) => {
     triggerHaptic('light');
+    if (tab === 'admin-create') {
+      useTournamentsStore.getState().setEditingTournament(null);
+    }
     setActiveTab(tab);
   };
 

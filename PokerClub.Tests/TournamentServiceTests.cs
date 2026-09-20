@@ -201,6 +201,59 @@ public class TournamentServiceTests
     }
 
     [Fact]
+    public async Task GetScheduleAsync_AlwaysSortsTournamentsByStartTimeAscending()
+    {
+        using var context = CreateInMemoryDbContext();
+        var city = new City { Name = "Пермь", Slug = "perm", IsActive = true };
+        var club = new Club { Name = "Monte Carlo Perm", City = city, IsActive = true };
+        context.Cities.Add(city);
+        context.Clubs.Add(club);
+
+        var now = DateTime.UtcNow;
+
+        var tourLater = new Tournament
+        {
+            Club = club,
+            Title = "Турнир 22 сентября",
+            Status = TournamentStatus.RegistrationOpen,
+            StartTime = now.AddDays(2)
+        };
+        var tourEarlier = new Tournament
+        {
+            Club = club,
+            Title = "Турнир 21 сентября",
+            Status = TournamentStatus.RegistrationOpen,
+            StartTime = now.AddDays(1)
+        };
+        var tourPast = new Tournament
+        {
+            Club = club,
+            Title = "Турнир 20 сентября (прошедший)",
+            Status = TournamentStatus.Finished,
+            StartTime = now.AddDays(-1)
+        };
+
+        // Добавляем в хаотичном порядке
+        context.Tournaments.AddRange(tourLater, tourPast, tourEarlier);
+        await context.SaveChangesAsync();
+
+        var service = new TournamentService(context);
+
+        // 1. includeFinished = false: турнир 21 сентября идет первым, затем 22 сентября
+        var schedule = await service.GetScheduleAsync(null, null, includeFinished: false);
+        Assert.Equal(2, schedule.Count);
+        Assert.Equal("Турнир 21 сентября", schedule[0].Title);
+        Assert.Equal("Турнир 22 сентября", schedule[1].Title);
+
+        // 2. includeFinished = true: прошедший 20 сентября идет первым, затем 21 сентября, затем 22 сентября
+        var adminSchedule = await service.GetScheduleAsync(null, null, includeFinished: true);
+        Assert.Equal(3, adminSchedule.Count);
+        Assert.Equal("Турнир 20 сентября (прошедший)", adminSchedule[0].Title);
+        Assert.Equal("Турнир 21 сентября", adminSchedule[1].Title);
+        Assert.Equal("Турнир 22 сентября", adminSchedule[2].Title);
+    }
+
+    [Fact]
     public void VkAuthValidator_InDemoMode_OnlyGrantsAdminToTrustedIds()
     {
         var options = Options.Create(new VkOptions
@@ -1250,6 +1303,360 @@ public class TournamentServiceTests
 
         Assert.True(success);
         Assert.Contains("Вы успешно записаны на турнир", message);
+    }
+
+    [Fact]
+    public async Task UpdateTournamentAsync_UpdatesAllFieldsSuccessfully()
+    {
+        using var context = CreateInMemoryDbContext();
+        var city = new City { Name = "Пермь", Slug = "perm", IsActive = true };
+        var club = new Club { Name = "Monte Carlo", Address = "Монастырская 59", City = city, IsActive = true };
+        var tour = new Tournament
+        {
+            Club = club,
+            Title = "Old Title",
+            Format = "NL Holdem",
+            BuyIn = 1000,
+            MaxSeats = 30,
+            StartTime = DateTime.UtcNow.AddDays(1),
+            RegistrationEnd = DateTime.UtcNow.AddDays(1).AddHours(-1),
+            Description = "Old description",
+            Status = TournamentStatus.RegistrationOpen
+        };
+        context.Cities.Add(city);
+        context.Clubs.Add(club);
+        context.Tournaments.Add(tour);
+        await context.SaveChangesAsync();
+
+        var service = new TournamentService(context);
+        var newStartTime = DateTime.SpecifyKind(new DateTime(2026, 10, 5, 20, 0, 0), DateTimeKind.Utc);
+        var newRegEnd = DateTime.SpecifyKind(new DateTime(2026, 10, 5, 19, 30, 0), DateTimeKind.Utc);
+
+        var (success, updated, message) = await service.UpdateTournamentAsync(
+            id: tour.Id,
+            title: "New Championship",
+            format: "Omaha PLO",
+            buyIn: 5000,
+            maxSeats: 60,
+            startTime: newStartTime,
+            description: "New description",
+            registrationEnd: newRegEnd,
+            status: TournamentStatus.Announced
+        );
+
+        Assert.True(success);
+        Assert.NotNull(updated);
+        Assert.Equal("New Championship", updated.Title);
+        Assert.Equal("Omaha PLO", updated.Format);
+        Assert.Equal(5000, updated.BuyIn);
+        Assert.Equal(60, updated.MaxSeats);
+        Assert.Equal(newStartTime, updated.StartTime);
+        Assert.Equal(newRegEnd, updated.RegistrationEnd);
+        Assert.Equal("New description", updated.Description);
+        Assert.Equal(TournamentStatus.Announced, updated.Status);
+
+        var reloaded = await context.Tournaments.FindAsync(tour.Id);
+        Assert.Equal("New Championship", reloaded?.Title);
+        Assert.Equal(5000, reloaded?.BuyIn);
+    }
+
+    [Fact]
+    public async Task UpdateTournamentAsync_ClearsRegistrationEnd_WhenFlagIsTrue()
+    {
+        using var context = CreateInMemoryDbContext();
+        var city = new City { Name = "Пермь", Slug = "perm", IsActive = true };
+        var club = new Club { Name = "Monte Carlo", Address = "Монастырская 59", City = city, IsActive = true };
+        var tour = new Tournament
+        {
+            Club = club,
+            Title = "Tour With RegEnd",
+            StartTime = DateTime.UtcNow.AddDays(1),
+            RegistrationEnd = DateTime.UtcNow.AddDays(1).AddHours(-1),
+            MaxSeats = 30
+        };
+        context.Cities.Add(city);
+        context.Clubs.Add(club);
+        context.Tournaments.Add(tour);
+        await context.SaveChangesAsync();
+
+        var service = new TournamentService(context);
+
+        var (success, updated, message) = await service.UpdateTournamentAsync(
+            id: tour.Id,
+            clearRegistrationEnd: true
+        );
+
+        Assert.True(success);
+        Assert.NotNull(updated);
+        Assert.Null(updated.RegistrationEnd);
+
+        var reloaded = await context.Tournaments.FindAsync(tour.Id);
+        Assert.Null(reloaded?.RegistrationEnd);
+    }
+
+    [Fact]
+    public async Task UpdateTournamentAsync_WhenTournamentNotFound_ReturnsFalse()
+    {
+        using var context = CreateInMemoryDbContext();
+        var service = new TournamentService(context);
+
+        var (success, updated, message) = await service.UpdateTournamentAsync(
+            id: 99999,
+            title: "Non-existent Tour"
+        );
+
+        Assert.False(success);
+        Assert.Null(updated);
+        Assert.Equal("Турнир не найден.", message);
+    }
+
+    [Fact]
+    public async Task UpdateTournamentAsync_ValidationFailures_ReturnsFalse()
+    {
+        using var context = CreateInMemoryDbContext();
+        var city = new City { Name = "Пермь", Slug = "perm", IsActive = true };
+        var club = new Club { Name = "Monte Carlo", Address = "Монастырская 59", City = city, IsActive = true };
+        var tour = new Tournament
+        {
+            Club = club,
+            Title = "Valid Tournament",
+            StartTime = DateTime.UtcNow.AddDays(1),
+            MaxSeats = 30,
+            BuyIn = 1000
+        };
+        context.Cities.Add(city);
+        context.Clubs.Add(club);
+        context.Tournaments.Add(tour);
+        await context.SaveChangesAsync();
+
+        var service = new TournamentService(context);
+
+        // 1. Слишком короткий заголовок
+        var (s1, _, m1) = await service.UpdateTournamentAsync(tour.Id, title: "ab");
+        Assert.False(s1);
+        Assert.Contains("не менее 3 символов", m1);
+
+        // 2. Отрицательный бай-ин
+        var (s2, _, m2) = await service.UpdateTournamentAsync(tour.Id, buyIn: -500);
+        Assert.False(s2);
+        Assert.Contains("Бай-ин не может быть отрицательным", m2);
+
+        // 3. Некорректное количество мест
+        var (s3, _, m3) = await service.UpdateTournamentAsync(tour.Id, maxSeats: 0);
+        Assert.False(s3);
+        Assert.Contains("Количество мест должно быть", m3);
+
+        // 4. Некорректный год
+        var (s4, _, m4) = await service.UpdateTournamentAsync(tour.Id, startTime: new DateTime(1990, 1, 1));
+        Assert.False(s4);
+        Assert.Contains("корректную дату и время", m4);
+
+        // 5. Дата default
+        var (s5, _, m5) = await service.UpdateTournamentAsync(tour.Id, startTime: default(DateTime));
+        Assert.False(s5);
+        Assert.Contains("корректную дату и время", m5);
+    }
+
+    [Fact]
+    public async Task UpdateTournamentAsync_WhenMaxSeatsLessThanRegistered_ReturnsFalse()
+    {
+        using var context = CreateInMemoryDbContext();
+        var user1 = new User { VkId = "u1", FirstName = "User1", CreatedAt = DateTime.UtcNow };
+        var user2 = new User { VkId = "u2", FirstName = "User2", CreatedAt = DateTime.UtcNow };
+        var city = new City { Name = "Пермь", Slug = "perm", IsActive = true };
+        var club = new Club { Name = "Monte Carlo", Address = "Монастырская 59", City = city, IsActive = true };
+        var tour = new Tournament
+        {
+            Club = club,
+            Title = "Tour With Players",
+            StartTime = DateTime.UtcNow.AddDays(1),
+            MaxSeats = 10,
+            Status = TournamentStatus.RegistrationOpen
+        };
+        tour.Registrations.Add(new Registration { User = user1, Status = RegStatus.Active });
+        tour.Registrations.Add(new Registration { User = user2, Status = RegStatus.Active });
+
+        context.Users.AddRange(user1, user2);
+        context.Cities.Add(city);
+        context.Clubs.Add(club);
+        context.Tournaments.Add(tour);
+        await context.SaveChangesAsync();
+
+        var service = new TournamentService(context);
+
+        var (success, _, message) = await service.UpdateTournamentAsync(tour.Id, maxSeats: 1);
+        Assert.False(success);
+        Assert.Contains("не может быть меньше числа уже зарегистрированных игроков", message);
+    }
+
+    [Fact]
+    public async Task UpdateTournamentAsync_WhenAddressMatchesExistingClub_SwitchesClubWithoutMutatingOriginal()
+    {
+        using var context = CreateInMemoryDbContext();
+        var city = new City { Name = "Пермь", Slug = "perm", IsActive = true };
+        var club1 = new Club { Name = "Club 1", Address = "Адрес 1", City = city, IsActive = true };
+        var club2 = new Club { Name = "Club 2", Address = "Адрес 2", City = city, IsActive = true };
+        var tour = new Tournament
+        {
+            Club = club1,
+            Title = "Tour Address Test",
+            StartTime = DateTime.UtcNow.AddDays(1),
+            MaxSeats = 30
+        };
+        context.Cities.Add(city);
+        context.Clubs.AddRange(club1, club2);
+        context.Tournaments.Add(tour);
+        await context.SaveChangesAsync();
+
+        var service = new TournamentService(context);
+
+        var (success, updated, _) = await service.UpdateTournamentAsync(tour.Id, address: "Адрес 2");
+        Assert.True(success);
+        Assert.NotNull(updated?.Club);
+        Assert.Equal(club2.Id, updated.ClubId);
+        Assert.Equal("Адрес 1", club1.Address);
+    }
+
+    [Fact]
+    public async Task UpdateTournamentAsync_UpdatesClubAddress_WhenAddressProvided()
+    {
+        using var context = CreateInMemoryDbContext();
+        var city = new City { Name = "Пермь", Slug = "perm", IsActive = true };
+        var club = new Club { Name = "Monte Carlo", Address = "Старый адрес 1", City = city, IsActive = true };
+        var tour = new Tournament
+        {
+            Club = club,
+            Title = "Tour Address Test",
+            StartTime = DateTime.UtcNow.AddDays(1),
+            MaxSeats = 30
+        };
+        context.Cities.Add(city);
+        context.Clubs.Add(club);
+        context.Tournaments.Add(tour);
+        await context.SaveChangesAsync();
+
+        var service = new TournamentService(context);
+
+        var (success, updated, _) = await service.UpdateTournamentAsync(tour.Id, address: "Новый адрес 100");
+        Assert.True(success);
+        Assert.NotNull(updated?.Club);
+        Assert.Equal("Новый адрес 100", updated.Club.Address);
+    }
+
+    [Fact]
+    public async Task TournamentsController_UpdateTournament_ValidatesFields_ReturnsBadRequest()
+    {
+        using var context = CreateInMemoryDbContext();
+        var city = new City { Name = "Пермь", Slug = "perm", IsActive = true };
+        var club = new Club { Name = "Monte Carlo", Address = "Монастырская 59", City = city, IsActive = true };
+        var tour = new Tournament { Club = club, Title = "Tour Test", StartTime = DateTime.UtcNow.AddDays(1), MaxSeats = 30 };
+        context.Cities.Add(city);
+        context.Clubs.Add(club);
+        context.Tournaments.Add(tour);
+        await context.SaveChangesAsync();
+
+        var service = new TournamentService(context);
+        var controller = new TournamentsController(service);
+
+        // 1. Пустое название
+        var res1 = await controller.UpdateTournament(tour.Id, new UpdateTournamentRequest(Title: "  "));
+        Assert.IsType<BadRequestObjectResult>(res1.Result);
+
+        // 2. Мест 0
+        var res2 = await controller.UpdateTournament(tour.Id, new UpdateTournamentRequest(MaxSeats: 0));
+        Assert.IsType<BadRequestObjectResult>(res2.Result);
+
+        // 3. Отрицательный бай-ин
+        var res3 = await controller.UpdateTournament(tour.Id, new UpdateTournamentRequest(BuyIn: -100));
+        Assert.IsType<BadRequestObjectResult>(res3.Result);
+
+        // 4. Дата по умолчанию
+        var res4 = await controller.UpdateTournament(tour.Id, new UpdateTournamentRequest(StartTime: default(DateTime)));
+        Assert.IsType<BadRequestObjectResult>(res4.Result);
+    }
+
+    [Fact]
+    public async Task TournamentsController_UpdateTournament_WhenNotFound_ReturnsNotFound()
+    {
+        using var context = CreateInMemoryDbContext();
+        var service = new TournamentService(context);
+        var controller = new TournamentsController(service);
+
+        var res = await controller.UpdateTournament(88888, new UpdateTournamentRequest(Title: "Valid Title"));
+        Assert.IsType<NotFoundObjectResult>(res.Result);
+    }
+
+    [Fact]
+    public async Task TournamentsController_UpdateTournament_WhenValid_ReturnsOkWithDetailDto()
+    {
+        using var context = CreateInMemoryDbContext();
+        var city = new City { Name = "Пермь", Slug = "perm", IsActive = true };
+        var club = new Club { Name = "Monte Carlo", Address = "Монастырская 59", City = city, IsActive = true };
+        var tour = new Tournament
+        {
+            Club = club,
+            Title = "Tour Before Edit",
+            StartTime = DateTime.UtcNow.AddDays(2),
+            MaxSeats = 30,
+            BuyIn = 1500,
+            Format = "NL Holdem",
+            Description = "Before edit"
+        };
+        context.Cities.Add(city);
+        context.Clubs.Add(club);
+        context.Tournaments.Add(tour);
+        await context.SaveChangesAsync();
+
+        var service = new TournamentService(context);
+        var controller = new TournamentsController(service);
+
+        var newTime = DateTime.UtcNow.AddDays(3);
+        var request = new UpdateTournamentRequest(
+            Title: "Tour After Edit",
+            BuyIn: 3000,
+            MaxSeats: 45,
+            StartTime: newTime,
+            Description: "After edit"
+        );
+
+        var res = await controller.UpdateTournament(tour.Id, request);
+        var okResult = Assert.IsType<OkObjectResult>(res.Result);
+        var detail = Assert.IsType<TournamentDetailDto>(okResult.Value);
+
+        Assert.Equal("Tour After Edit", detail.Title);
+        Assert.Equal(3000, detail.BuyIn);
+        Assert.Equal(45, detail.MaxSeats);
+        Assert.Equal("After edit", detail.Description);
+    }
+
+    [Fact]
+    public async Task TournamentsController_GetSchedule_PopulatesClubAddress()
+    {
+        using var context = CreateInMemoryDbContext();
+        var city = new City { Name = "Пермь", Slug = "perm", IsActive = true };
+        var club = new Club { Name = "Monte Carlo", Address = "Монастырская 59", City = city, IsActive = true };
+        var tour = new Tournament
+        {
+            Club = club,
+            Title = "Schedule Tour",
+            StartTime = DateTime.UtcNow.AddDays(1),
+            MaxSeats = 30,
+            Status = TournamentStatus.RegistrationOpen
+        };
+        context.Cities.Add(city);
+        context.Clubs.Add(club);
+        context.Tournaments.Add(tour);
+        await context.SaveChangesAsync();
+
+        var service = new TournamentService(context);
+        var controller = new TournamentsController(service);
+
+        var res = await controller.GetSchedule(cityId: null, clubId: null, includeFinished: false);
+        var okResult = Assert.IsType<OkObjectResult>(res.Result);
+        var list = Assert.IsType<List<TournamentScheduleDto>>(okResult.Value);
+
+        var first = Assert.Single(list);
+        Assert.Equal("Монастырская 59", first.ClubAddress);
     }
 
     private class TestHttpMessageHandler : HttpMessageHandler

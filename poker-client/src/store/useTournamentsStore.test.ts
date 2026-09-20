@@ -195,3 +195,98 @@ describe('useTournamentsStore registration & deletion', () => {
     }
   });
 });
+
+describe('useTournamentsStore tournament editing', () => {
+  const dummyTournament: Tournament = {
+    id: 50,
+    title: 'Original Title',
+    buyIn: 1000,
+    startTime: '2026-09-25T19:00:00.000Z',
+    status: TournamentStatus.RegistrationOpen,
+    maxSeats: 30,
+    registeredCount: 3,
+    isUserRegistered: true,
+    clubId: 1,
+  };
+
+  const dummyDetail = {
+    ...dummyTournament,
+    clubAddress: 'Монастырская 59',
+    participants: [],
+  };
+
+  it('setEditingTournament correctly sets and clears editingTournament', () => {
+    useTournamentsStore.getState().setEditingTournament(dummyTournament);
+    expect(useTournamentsStore.getState().editingTournament).toEqual(dummyTournament);
+
+    useTournamentsStore.getState().setEditingTournament(null);
+    expect(useTournamentsStore.getState().editingTournament).toBeNull();
+  });
+
+  it('updateTournament updates tournaments, myTournaments, selectedTournament and editingTournament', async () => {
+    const origUpdate = tournamentsApi.updateTournament;
+
+    useTournamentsStore.setState({
+      tournaments: [dummyTournament],
+      myTournaments: [dummyTournament],
+      selectedTournament: dummyDetail,
+      editingTournament: dummyTournament,
+    });
+
+    const updatedDetail = {
+      ...dummyDetail,
+      title: 'Updated Title',
+      buyIn: 2000,
+      maxSeats: 50,
+    };
+
+    tournamentsApi.updateTournament = mock(async () => updatedDetail);
+
+    try {
+      const ok = await useTournamentsStore.getState().updateTournament(50, {
+        title: 'Updated Title',
+        buyIn: 2000,
+        maxSeats: 50,
+      });
+
+      expect(ok).toBe(true);
+
+      const state = useTournamentsStore.getState();
+      expect(state.tournaments[0].title).toBe('Updated Title');
+      expect(state.tournaments[0].buyIn).toBe(2000);
+      expect(state.tournaments[0].maxSeats).toBe(50);
+      expect(state.myTournaments[0].title).toBe('Updated Title');
+      expect(state.selectedTournament?.title).toBe('Updated Title');
+      expect(state.editingTournament?.title).toBe('Updated Title');
+      expect(state.actionError).toBeNull();
+    } finally {
+      tournamentsApi.updateTournament = origUpdate;
+    }
+  });
+
+  it('updateTournament sets actionError on failure', async () => {
+    const origUpdate = tournamentsApi.updateTournament;
+
+    useTournamentsStore.setState({
+      tournaments: [dummyTournament],
+      actionError: null,
+    });
+
+    tournamentsApi.updateTournament = mock(async () => {
+      throw new Error('Network error');
+    });
+
+    try {
+      const ok = await useTournamentsStore.getState().updateTournament(50, {
+        title: 'Fail Title',
+      });
+
+      expect(ok).toBe(false);
+      const state = useTournamentsStore.getState();
+      expect(state.actionError).toBe('Network error');
+    } finally {
+      tournamentsApi.updateTournament = origUpdate;
+    }
+  });
+});
+

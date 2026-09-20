@@ -42,7 +42,8 @@ public class TournamentsController : ControllerBase
             t.Registrations.Count(r => r.Status == RegStatus.Active || r.Status == RegStatus.Played),
             !string.IsNullOrWhiteSpace(currentVkId) && 
             t.Registrations.Any(r => r.User?.VkId == currentVkId && (r.Status == RegStatus.Active || r.Status == RegStatus.Played)),
-            t.RegistrationEnd
+            t.RegistrationEnd,
+            t.Club?.Address
         )).ToList();
 
         return Ok(result);
@@ -119,7 +120,8 @@ public class TournamentsController : ControllerBase
             t.Club?.City?.Name,
             t.Registrations.Count(r => r.Status == RegStatus.Active || r.Status == RegStatus.Played),
             t.Registrations.Any(r => r.User != null && r.User.VkId == vkId && (r.Status == RegStatus.Active || r.Status == RegStatus.Played)),
-            t.RegistrationEnd
+            t.RegistrationEnd,
+            t.Club?.Address
         )).ToList();
 
         return Ok(result);
@@ -211,10 +213,97 @@ public class TournamentsController : ControllerBase
             tournament.Club?.City?.Name,
             0,
             false,
-            tournament.RegistrationEnd
+            tournament.RegistrationEnd,
+            tournament.Club?.Address
         );
 
         return CreatedAtAction(nameof(GetTournament), new { id = tournament.Id }, result);
+    }
+
+    [HttpPut("{id:int}")]
+    [HttpPost("{id:int}/update")]
+    [VkAuthorize(RequireAdmin = true)]
+    public async Task<ActionResult<TournamentDetailDto>> UpdateTournament(int id, [FromBody] UpdateTournamentRequest request)
+    {
+        if (request.Title != null)
+        {
+            if (string.IsNullOrWhiteSpace(request.Title))
+                return BadRequest(new { Message = "Название турнира обязательно для заполнения." });
+
+            if (request.Title.Trim().Length < 3)
+                return BadRequest(new { Message = "Название турнира должно содержать не менее 3 символов." });
+        }
+
+        if (request.MaxSeats.HasValue && (request.MaxSeats.Value <= 0 || request.MaxSeats.Value > 1000))
+            return BadRequest(new { Message = "Количество мест должно быть в диапазоне от 1 до 1 000." });
+
+        if (request.BuyIn.HasValue && request.BuyIn.Value < 0)
+            return BadRequest(new { Message = "Бай-ин не может быть отрицательным." });
+
+        if (request.StartTime.HasValue && (request.StartTime.Value == default || request.StartTime.Value.Year < 2020 || request.StartTime.Value.Year > 2100))
+            return BadRequest(new { Message = "Укажите корректную дату и время начала турнира." });
+
+        var (success, tournament, message) = await _tournamentService.UpdateTournamentAsync(
+            id,
+            request.ClubId,
+            request.Title,
+            request.Format,
+            request.BuyIn,
+            request.MaxSeats,
+            request.StartTime,
+            request.Description,
+            request.CityId,
+            request.Address,
+            request.RegistrationEnd,
+            request.Status,
+            request.ClearRegistrationEnd
+        );
+
+        if (!success || tournament == null)
+        {
+            if (message == "Турнир не найден.")
+                return NotFound(new { Message = message });
+            return BadRequest(new { Message = message });
+        }
+
+        var currentVkId = HttpContext.GetVkUserId();
+        var relevantRegistrations = tournament.Registrations
+            .Where(r => r.Status == RegStatus.Active || r.Status == RegStatus.Played)
+            .OrderBy(r => r.CreatedAt)
+            .ToList();
+
+        var participants = relevantRegistrations.Select(r => new RegisteredPlayerDto(
+            r.UserId,
+            r.User?.VkId ?? string.Empty,
+            r.User?.FirstName,
+            r.User?.LastName,
+            r.User?.AvatarUrl,
+            r.User?.TotalRating ?? 0,
+            r.CreatedAt,
+            r.PointsEarned
+        )).ToList();
+
+        var result = new TournamentDetailDto(
+            tournament.Id,
+            tournament.Title,
+            tournament.Format,
+            tournament.BuyIn,
+            tournament.Description,
+            tournament.MaxSeats,
+            tournament.StartTime,
+            tournament.Status,
+            tournament.ClubId,
+            tournament.Club?.Name,
+            tournament.Club?.City?.Name,
+            tournament.Club?.Address,
+            relevantRegistrations.Count,
+            !string.IsNullOrWhiteSpace(currentVkId) && 
+            relevantRegistrations.Any(r => r.User?.VkId == currentVkId),
+            participants,
+            tournament.RegistrationEnd
+        );
+
+        return Ok(result);
     }
 
     [HttpDelete("{id:int}")]
