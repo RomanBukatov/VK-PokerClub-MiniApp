@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ChevronLeft, CheckCircle2, AlertCircle, MapPin, Clock, Info, Users, Trophy } from 'lucide-react';
+import { ChevronLeft, CheckCircle2, AlertCircle, MapPin, Clock, Info, Users, Trophy, CreditCard } from 'lucide-react';
 import { useTournamentsStore } from '../store/useTournamentsStore';
 import { useUserStore } from '../store/useUserStore';
 import { formatCurrency, formatChips } from '../utils/formatters';
@@ -7,6 +7,62 @@ import { triggerHaptic, requestGroupMessagesPermission } from '../utils/vkBridge
 import { TournamentStatus } from '../types';
 import { CURRENT_BRANDING, getEffectiveVkGroupId } from '../config/branding';
 import { PlayerAvatar } from '../components/PlayerAvatar';
+
+// eslint-disable-next-line react-refresh/only-export-components
+export const checkCanViewVkId = (vkUser?: { isAdmin?: boolean } | null): boolean => {
+  return vkUser?.isAdmin === true;
+};
+
+// eslint-disable-next-line react-refresh/only-export-components
+export const checkProfileCompleteness = (
+  vkUser?: { id?: number; first_name?: string; last_name?: string; isAdmin?: boolean } | null,
+  profile?: { fullName?: string; firstName?: string; lastName?: string; nickname?: string; phoneNumber?: string; clubCardId?: string } | null
+) => {
+  const rawFullName = (
+    profile?.fullName ||
+    `${profile?.lastName || ''} ${profile?.firstName || ''}`.trim() ||
+    `${vkUser?.last_name || ''} ${vkUser?.first_name || ''}`.trim()
+  ).trim();
+
+  const lowerFullName = rawFullName.toLowerCase();
+  const lowerNick = (profile?.nickname || '').trim().toLowerCase();
+  const vkFirst = (vkUser?.first_name || '').trim().toLowerCase();
+  const vkLast = (vkUser?.last_name || '').trim().toLowerCase();
+
+  const isGuestUser =
+    !vkUser ||
+    vkUser.id === 0 ||
+    (vkFirst === 'гость' && (vkLast === 'клуба' || !vkLast)) ||
+    lowerFullName === 'гость клуба' ||
+    lowerFullName === 'клуба гость' ||
+    lowerFullName === 'гость' ||
+    lowerNick === 'гость клуба' ||
+    lowerNick === 'гость';
+
+  const hasRealName =
+    rawFullName.length >= 2 &&
+    lowerFullName !== 'гость клуба' &&
+    lowerFullName !== 'клуба гость' &&
+    lowerFullName !== 'гость' &&
+    lowerFullName !== 'игрок vk' &&
+    lowerFullName !== 'игрок' &&
+    !lowerFullName.startsWith('игрок #') &&
+    !/^игрок\s*\d+$/i.test(lowerFullName);
+
+  const rawPhone = (profile?.phoneNumber || '').replace(/\D/g, '');
+  const hasPhone = rawPhone.length >= 10;
+
+  const isProfileComplete = !isGuestUser && hasRealName && hasPhone;
+  const shouldShowClubCardBanner = !profile?.clubCardId || !profile.clubCardId.trim();
+
+  return {
+    isProfileComplete,
+    isGuestUser,
+    hasRealName,
+    hasPhone,
+    shouldShowClubCardBanner,
+  };
+};
 
 export const TournamentDetailModal: React.FC = () => {
   const { 
@@ -18,7 +74,7 @@ export const TournamentDetailModal: React.FC = () => {
     isActionLoading,
     actionError,
   } = useTournamentsStore();
-  const { vkUser } = useUserStore();
+  const { vkUser, profile, setIsProfileModalOpen } = useUserStore();
 
   const [isCancelConfirmOpen, setIsCancelConfirmOpen] = useState(false);
 
@@ -32,14 +88,25 @@ export const TournamentDetailModal: React.FC = () => {
   const participantsCount = t.participants ? t.participants.length : (t.registeredCount || 0);
   const isSeatsFull = participantsCount >= maxSeats;
 
+  const { isProfileComplete, shouldShowClubCardBanner } = checkProfileCompleteness(vkUser, profile);
+  const canViewVkId = checkCanViewVkId(vkUser);
+
+  const groupId = getEffectiveVkGroupId();
+  const communityMessagesUrl = groupId > 0
+    ? `https://vk.com/im?sel=-${groupId}`
+    : CURRENT_BRANDING.socialLinks?.vkGroup || 'https://vk.com';
+
   const handleRegister = async () => {
+    if (!isProfileComplete) {
+      triggerHaptic('heavy');
+      setIsProfileModalOpen(true);
+      return;
+    }
+
     triggerHaptic('heavy');
     const success = await registerToTournament(t.id);
     if (success) {
-      const groupId = getEffectiveVkGroupId();
-      if (groupId) {
-        await requestGroupMessagesPermission(groupId);
-      }
+      await requestGroupMessagesPermission(groupId || 238367404);
     }
   };
 
@@ -146,9 +213,10 @@ export const TournamentDetailModal: React.FC = () => {
           type="button"
           onClick={handleRegister}
           disabled={isActionLoading}
+          data-testid="register-button"
           className="w-full py-4 px-6 rounded-full bg-[#c39a44] text-white font-bold text-base shadow-xl hover:brightness-105 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
         >
-          {isActionLoading ? 'Запись...' : 'Зарегистрироваться'}
+          {isActionLoading ? 'Запись...' : !isProfileComplete ? 'Заполнить профиль для записи' : 'Зарегистрироваться'}
         </button>
       );
     }
@@ -185,8 +253,9 @@ export const TournamentDetailModal: React.FC = () => {
           <h1 className="text-2xl font-extrabold text-white tracking-tight mb-1">
             {t.title}
           </h1>
-          <div className="text-xs font-bold text-[#d1e0d7] uppercase tracking-wider">
-            {formatCardDate(t.startTime)}
+          <div className="flex items-center gap-2 text-xs font-semibold text-[#a4c9b7]">
+            <Clock className="w-3.5 h-3.5 text-[#c39a44]" />
+            <span>{formatCardDate(t.startTime)}</span>
           </div>
         </div>
 
@@ -222,6 +291,42 @@ export const TournamentDetailModal: React.FC = () => {
             <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
             <div className="flex-1">
               <span className="font-semibold">{actionError}</span>
+            </div>
+          </div>
+        )}
+
+        {/* Предупреждение о необходимости заполнить профиль перед регистрацией */}
+        {!isRegistered && !isProfileComplete && (
+          <div 
+            onClick={() => { triggerHaptic('medium'); setIsProfileModalOpen(true); }}
+            className="p-3.5 rounded-2xl bg-amber-950/60 border border-amber-500/40 text-amber-200 text-xs flex items-center justify-between gap-3 shadow-md cursor-pointer hover:bg-amber-950/80 transition-all animate-fade-in"
+          >
+            <div className="flex items-center gap-2.5">
+              <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+              <span className="font-semibold">Для записи на турнир требуется заполнить реальное ФИО и номер телефона</span>
+            </div>
+            <span className="text-[11px] font-bold text-[#c39a44] shrink-0 underline">Заполнить</span>
+          </div>
+        )}
+
+        {/* Баннер проверки наличия клубного ID */}
+        {!isRegistered && shouldShowClubCardBanner && (
+          <div className="p-3.5 rounded-2xl bg-[#0a231b] border border-[#c39a44]/50 text-white text-xs flex items-start gap-3 shadow-md animate-fade-in">
+            <CreditCard className="w-4 h-4 text-[#c39a44] shrink-0 mt-0.5" />
+            <div className="flex-1 space-y-1">
+              <div className="font-semibold text-[#e5c06e] leading-snug">
+                Для регистрации необходим клубный ID. Напишите в сообщения сообщества для получения карты.
+              </div>
+              <a
+                href={communityMessagesUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="inline-flex items-center gap-1 text-[11px] font-bold text-[#c39a44] hover:text-[#e5c06e] underline transition-colors pt-0.5"
+              >
+                <span>Написать в сообщения сообщества</span>
+                <span className="text-[10px]">↗</span>
+              </a>
             </div>
           </div>
         )}
@@ -339,7 +444,7 @@ export const TournamentDetailModal: React.FC = () => {
                             </span>
                           )}
                         </div>
-                        {player.vkId && (
+                        {player.vkId && canViewVkId && (
                           <a
                             href={`https://vk.com/id${player.vkId}`}
                             target="_blank"

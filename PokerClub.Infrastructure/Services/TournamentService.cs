@@ -257,9 +257,7 @@ public class TournamentService : ITournamentService
         try
         {
             var rawTitle = !string.IsNullOrWhiteSpace(tournament.Title) ? tournament.Title.Trim() : "Турнир";
-            var formattedDate = tournament.StartTime.TimeOfDay == TimeSpan.Zero
-                ? tournament.StartTime.ToString("dd.MM.yyyy")
-                : tournament.StartTime.ToString("dd.MM.yyyy HH:mm");
+            var formattedDate = tournament.StartTime.AddHours(5).ToString("dd.MM.yyyy HH:mm");
             var tournamentTitle = $"{rawTitle} ({formattedDate})";
 
             var fullName = $"{user.FirstName} {user.LastName}".Trim();
@@ -281,12 +279,15 @@ public class TournamentService : ITournamentService
                 playerName = !string.IsNullOrWhiteSpace(user.VkId) ? $"Игрок {user.VkId}" : "Игрок";
             }
 
+            var rawPhone = user.PhoneNumber?.Trim() ?? "";
+            var cleanPhone = rawPhone.Trim().TrimStart('+', ' ').Trim();
+
             var payload = new
             {
                 tournamentTitle,
                 playerName,
                 clubCardId = user.ClubCardId?.Trim() ?? "",
-                phoneNumber = user.PhoneNumber?.Trim() ?? "",
+                phoneNumber = cleanPhone,
                 source = "VK Mini App"
             };
 
@@ -330,15 +331,19 @@ public class TournamentService : ITournamentService
                 ?? _configuration?["VK_COMMUNITY_TOKEN"]
                 ?? Environment.GetEnvironmentVariable("VK_COMMUNITY_TOKEN");
 
+            _logger?.LogInformation("Попытка отправки подтверждения в VK для пользователя {VkUserId}, токен задан: {HasToken}",
+                user.VkId, !string.IsNullOrWhiteSpace(communityToken));
+
             if (string.IsNullOrWhiteSpace(communityToken))
             {
-                _logger?.LogDebug("VK CommunityToken не настроен. Пропускаем отправку сообщения в ЛС.");
+                _logger?.LogWarning("VK CommunityToken не настроен. Пропускаем отправку сообщения в ЛС.");
                 return;
             }
 
-            if (!long.TryParse(user.VkId, out var numericVkUserId) || numericVkUserId <= 0)
+            var cleanVkId = (user.VkId ?? string.Empty).Replace("id", "", StringComparison.OrdinalIgnoreCase).Trim();
+            if (!long.TryParse(cleanVkId, out var numericVkUserId) || numericVkUserId <= 0)
             {
-                _logger?.LogDebug("User VkId '{VkId}' не является числовым идентификатором VK. Пропускаем отправку сообщения в ЛС.", user.VkId);
+                _logger?.LogWarning("User VkId '{VkId}' (очищенный '{CleanVkId}') не является числовым идентификатором VK. Пропускаем отправку сообщения в ЛС.", user.VkId, cleanVkId);
                 return;
             }
 
@@ -346,12 +351,12 @@ public class TournamentService : ITournamentService
                 ? tournament.Club.Address.Trim()
                 : "Монастырская улица, 59, Пермь";
 
-            var message = $"♠️ Вы успешно зарегистрированы на турнир \"{tournament.Title}\"!\n📅 Дата: {tournament.StartTime:dd.MM в HH:mm}\n📍 Адрес: {clubAddress}\n\nЖдем вас за столом клуба Monte Carlo!";
+            var message = $"♠️ Вы успешно зарегистрированы на турнир \"{tournament.Title}\"!\n📅 Дата: {tournament.StartTime.AddHours(5):dd.MM в HH:mm}\n📍 Адрес: {clubAddress}\n\nЖдем вас за столом клуба Monte Carlo!";
 
             var parameters = new Dictionary<string, string>
             {
                 ["user_id"] = numericVkUserId.ToString(),
-                ["random_id"] = Random.Shared.Next().ToString(),
+                ["random_id"] = Random.Shared.Next(1, int.MaxValue).ToString(),
                 ["peer_id"] = numericVkUserId.ToString(),
                 ["message"] = message,
                 ["access_token"] = communityToken.Trim(),
@@ -364,13 +369,13 @@ public class TournamentService : ITournamentService
             var response = await client.PostAsync("https://api.vk.com/method/messages.send", content, cts.Token);
             var responseBody = await response.Content.ReadAsStringAsync();
 
-            if (!response.IsSuccessStatusCode || responseBody.Contains("\"error\":"))
+            if (!response.IsSuccessStatusCode || responseBody.Contains("\"error\""))
             {
-                _logger?.LogWarning("VK API messages.send вернул статус {StatusCode}: {Response}", response.StatusCode, responseBody);
+                _logger?.LogError("VK messages.send вернул ошибку: {ErrorBody}", responseBody);
             }
             else
             {
-                _logger?.LogInformation("Успешно отправлено подтверждение в ЛС VK для пользователя {VkId} на турнир {TournamentId}", user.VkId, tournament.Id);
+                _logger?.LogInformation("VK сообщение успешно отправлено пользователю {VkUserId}: {ResponseBody}", user.VkId, responseBody);
             }
         }
         catch (Exception ex)

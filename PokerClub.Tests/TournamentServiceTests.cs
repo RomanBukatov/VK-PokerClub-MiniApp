@@ -959,7 +959,7 @@ public class TournamentServiceTests
     {
         using var context = CreateInMemoryDbContext();
         var club = new Club { Name = "Monte Carlo", Address = "Монастырская 59", City = new City { Name = "Пермь", Slug = "perm" }, IsActive = true };
-        var startTime = new DateTime(2026, 9, 25, 19, 0, 0, DateTimeKind.Utc);
+        var startTime = new DateTime(2026, 9, 25, 14, 0, 0, DateTimeKind.Utc);
         var tournament = new Tournament
         {
             Title = "Friday Deepstack",
@@ -1014,7 +1014,7 @@ public class TournamentServiceTests
         Assert.Equal("Friday Deepstack (25.09.2026 19:00)", root.GetProperty("tournamentTitle").GetString());
         Assert.Equal("Иван Иванов", root.GetProperty("playerName").GetString());
         Assert.Equal("1266", root.GetProperty("clubCardId").GetString());
-        Assert.Equal("+79991234567", root.GetProperty("phoneNumber").GetString());
+        Assert.Equal("79991234567", root.GetProperty("phoneNumber").GetString());
         Assert.Equal("VK Mini App", root.GetProperty("source").GetString());
         Assert.Contains("PokerClubApp/1.0", capturedRequest.Headers.UserAgent.ToString());
     }
@@ -1077,11 +1077,128 @@ public class TournamentServiceTests
 
         using var doc = System.Text.Json.JsonDocument.Parse(capturedBody);
         var root = doc.RootElement;
-        Assert.Equal("Турнир (25.09.2026)", root.GetProperty("tournamentTitle").GetString());
+        Assert.Equal("Турнир (25.09.2026 05:00)", root.GetProperty("tournamentTitle").GetString());
         Assert.Equal("LuckyGuy", root.GetProperty("playerName").GetString());
         Assert.Equal("999", root.GetProperty("clubCardId").GetString());
-        Assert.Equal("+79001234567", root.GetProperty("phoneNumber").GetString());
+        Assert.Equal("79001234567", root.GetProperty("phoneNumber").GetString());
         Assert.Equal("VK Mini App", root.GetProperty("source").GetString());
+    }
+
+    [Fact]
+    public async Task RegisterPlayerAsync_StripsLeadingPlusFromPhoneNumber_AndFormatsDateInPermTimeUtcPlus5()
+    {
+        using var context = CreateInMemoryDbContext();
+        var club = new Club { Name = "Monte Carlo", Address = "Монастырская 59", City = new City { Name = "Пермь", Slug = "perm" }, IsActive = true };
+        var startTime = new DateTime(2026, 9, 21, 14, 30, 0, DateTimeKind.Utc); // 14:30 UTC -> 19:30 Perm (UTC+5)
+        var tournament = new Tournament
+        {
+            Title = "Perm Time Test",
+            Club = club,
+            StartTime = startTime,
+            Status = TournamentStatus.RegistrationOpen,
+            MaxSeats = 30
+        };
+        var user = new User
+        {
+            VkId = "777888",
+            FirstName = "Алексей",
+            LastName = "Смирнов",
+            ClubCardId = "2048",
+            PhoneNumber = "+7 (999) 000-11-22"
+        };
+        context.Clubs.Add(club);
+        context.Tournaments.Add(tournament);
+        context.Users.Add(user);
+        await context.SaveChangesAsync();
+
+        HttpRequestMessage? capturedRequest = null;
+        string? capturedBody = null;
+
+        var mockHandler = new TestHttpMessageHandler(req =>
+        {
+            capturedRequest = req;
+            capturedBody = req.Content?.ReadAsStringAsync().GetAwaiter().GetResult();
+            return new HttpResponseMessage(System.Net.HttpStatusCode.OK);
+        });
+        var httpClient = new HttpClient(mockHandler);
+
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["GoogleSheets:RegistrationWebhookUrl"] = "https://script.google.com/macros/s/perm-test/exec"
+            })
+            .Build();
+
+        var service = new TournamentService(context, config, null, httpClient);
+
+        var (success, _) = await service.RegisterPlayerAsync(tournament.Id, "777888");
+
+        Assert.True(success);
+        Assert.NotNull(capturedRequest);
+        Assert.NotNull(capturedBody);
+
+        using var doc = System.Text.Json.JsonDocument.Parse(capturedBody);
+        var root = doc.RootElement;
+        // 14:30 UTC + 5h = 19:30 Perm time
+        Assert.Equal("Perm Time Test (21.09.2026 19:30)", root.GetProperty("tournamentTitle").GetString());
+        // Leading plus stripped
+        Assert.Equal("7 (999) 000-11-22", root.GetProperty("phoneNumber").GetString());
+        Assert.False(root.GetProperty("phoneNumber").GetString()!.StartsWith('+'));
+    }
+
+    [Fact]
+    public async Task RegisterPlayerAsync_StripsLeadingPlusAndSpaces_WhenPhoneHasWhitespaceOrMultiplePluses()
+    {
+        using var context = CreateInMemoryDbContext();
+        var club = new Club { Name = "Monte Carlo", Address = "Монастырская 59", City = new City { Name = "Пермь", Slug = "perm" }, IsActive = true };
+        var startTime = new DateTime(2026, 9, 21, 10, 0, 0, DateTimeKind.Utc); // 10:00 UTC -> 15:00 Perm
+        var tournament = new Tournament
+        {
+            Title = "Edge Case Phone Test",
+            Club = club,
+            StartTime = startTime,
+            Status = TournamentStatus.RegistrationOpen,
+            MaxSeats = 30
+        };
+        var user = new User
+        {
+            VkId = "999111",
+            FirstName = "Дмитрий",
+            LastName = "Волков",
+            ClubCardId = "555",
+            PhoneNumber = "  + 79001112233  "
+        };
+        context.Clubs.Add(club);
+        context.Tournaments.Add(tournament);
+        context.Users.Add(user);
+        await context.SaveChangesAsync();
+
+        string? capturedBody = null;
+        var mockHandler = new TestHttpMessageHandler(req =>
+        {
+            capturedBody = req.Content?.ReadAsStringAsync().GetAwaiter().GetResult();
+            return new HttpResponseMessage(System.Net.HttpStatusCode.OK);
+        });
+        var httpClient = new HttpClient(mockHandler);
+
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["GoogleSheets:RegistrationWebhookUrl"] = "https://script.google.com/macros/s/edge-phone/exec"
+            })
+            .Build();
+
+        var service = new TournamentService(context, config, null, httpClient);
+        var (success, _) = await service.RegisterPlayerAsync(tournament.Id, "999111");
+
+        Assert.True(success);
+        Assert.NotNull(capturedBody);
+
+        using var doc = System.Text.Json.JsonDocument.Parse(capturedBody);
+        var root = doc.RootElement;
+        Assert.Equal("Edge Case Phone Test (21.09.2026 15:00)", root.GetProperty("tournamentTitle").GetString());
+        Assert.Equal("79001112233", root.GetProperty("phoneNumber").GetString());
+        Assert.False(root.GetProperty("phoneNumber").GetString()!.StartsWith('+'));
     }
 
     [Fact]
@@ -1143,7 +1260,7 @@ public class TournamentServiceTests
         {
             Title = "Sunday Cup",
             Club = club,
-            StartTime = new DateTime(2026, 9, 27, 18, 0, 0, DateTimeKind.Utc),
+            StartTime = new DateTime(2026, 9, 27, 13, 0, 0, DateTimeKind.Utc),
             Status = TournamentStatus.RegistrationOpen,
             MaxSeats = 30
         };
@@ -1659,6 +1776,116 @@ public class TournamentServiceTests
         Assert.Equal("Монастырская 59", first.ClubAddress);
     }
 
+    [Fact]
+    public async Task RegisterPlayerAsync_WithIdPrefixedVkId_StripsPrefixAndSendsVkConfirmationMessage()
+    {
+        using var context = CreateInMemoryDbContext();
+        var city = new City { Name = "Пермь", Slug = "perm", IsActive = true };
+        var club = new Club { Name = "Monte Carlo", Address = "Монастырская улица, 59", City = city, IsActive = true };
+        var tournament = new Tournament
+        {
+            Title = "Friday Deepstack",
+            StartTime = new DateTime(2026, 9, 25, 19, 0, 0, DateTimeKind.Utc),
+            Status = TournamentStatus.RegistrationOpen,
+            MaxSeats = 10,
+            Club = club
+        };
+        context.Cities.Add(city);
+        context.Clubs.Add(club);
+        context.Tournaments.Add(tournament);
+        await context.SaveChangesAsync();
+
+        HttpRequestMessage? vkRequest = null;
+        string? vkBody = null;
+
+        var handler = new TestHttpMessageHandler(req =>
+        {
+            if (req.RequestUri?.ToString().Contains("api.vk.com/method/messages.send") == true)
+            {
+                vkRequest = req;
+                vkBody = req.Content?.ReadAsStringAsync().GetAwaiter().GetResult();
+                return new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+                {
+                    Content = new StringContent("{\"response\": 12345}")
+                };
+            }
+            return new HttpResponseMessage(System.Net.HttpStatusCode.OK);
+        });
+        var httpClient = new HttpClient(handler);
+
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["VkOptions:CommunityToken"] = "test_community_token_123"
+            })
+            .Build();
+
+        var service = new TournamentService(context, config, null, httpClient);
+
+        var (success, message) = await service.RegisterPlayerAsync(
+            tournament.Id,
+            "id308885723",
+            "Иван",
+            "Иванов"
+        );
+
+        Assert.True(success);
+        Assert.NotNull(vkRequest);
+        Assert.NotNull(vkBody);
+        Assert.Contains("user_id=308885723", vkBody);
+        Assert.Contains("peer_id=308885723", vkBody);
+        Assert.Contains("access_token=test_community_token_123", vkBody);
+    }
+
+    [Fact]
+    public async Task AdminController_TestVkMessage_SendsMessageAndReturnsResponse()
+    {
+        HttpRequestMessage? vkRequest = null;
+        string? vkBody = null;
+
+        var handler = new TestHttpMessageHandler(req =>
+        {
+            if (req.RequestUri?.ToString().Contains("api.vk.com/method/messages.send") == true)
+            {
+                vkRequest = req;
+                vkBody = req.Content?.ReadAsStringAsync().GetAwaiter().GetResult();
+                return new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+                {
+                    Content = new StringContent("{\"response\": 777}")
+                };
+            }
+            return new HttpResponseMessage(System.Net.HttpStatusCode.OK);
+        });
+        var httpClient = new HttpClient(handler);
+
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["VkOptions:CommunityToken"] = "test_token_xyz"
+            })
+            .Build();
+
+        var factory = new TestHttpClientFactory(httpClient);
+        var controller = new AdminController(
+            null!,
+            null,
+            null,
+            config,
+            null,
+            factory);
+
+        var result = await controller.TestVkMessage("id308885723", "Тестовое сообщение");
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        var json = System.Text.Json.JsonSerializer.Serialize(okResult.Value);
+        using var doc = System.Text.Json.JsonDocument.Parse(json);
+        Assert.True(doc.RootElement.GetProperty("Success").GetBoolean());
+        Assert.Equal(308885723L, doc.RootElement.GetProperty("TargetVkId").GetInt64());
+        Assert.NotNull(vkRequest);
+        Assert.NotNull(vkBody);
+        Assert.Contains("user_id=308885723", vkBody);
+        Assert.Contains("access_token=test_token_xyz", vkBody);
+    }
+
     private class TestHttpMessageHandler : HttpMessageHandler
     {
         private readonly Func<HttpRequestMessage, HttpResponseMessage> _handler;
@@ -1672,6 +1899,13 @@ public class TournamentServiceTests
         {
             return Task.FromResult(_handler(request));
         }
+    }
+
+    private class TestHttpClientFactory : IHttpClientFactory
+    {
+        private readonly HttpClient _client;
+        public TestHttpClientFactory(HttpClient client) => _client = client;
+        public HttpClient CreateClient(string name) => _client;
     }
 }
 

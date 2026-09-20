@@ -33,6 +33,8 @@ services:
       - ASPNETCORE_URLS=http://+:5052
       - VkOptions__AppId=${VK_APP_ID}
       - VkOptions__ClientSecret=${VK_PROTECTED_KEY}
+      - VkOptions__CommunityToken=${VK_COMMUNITY_TOKEN:-}
+      - VK_COMMUNITY_TOKEN=${VK_COMMUNITY_TOKEN:-}
       - VK_ADMIN_IDS=${VK_ADMIN_IDS:-}
       - ConnectionStrings__DefaultConnection=Host=poker-db;Port=5432;Database=${DB_NAME:-poker_club_db};Username=${DB_USER:-poker_admin};Password=${DB_PASSWORD:-super_secret_poker_password_2026}
       - GOOGLE_SHEETS_SPREADSHEET_ID=${GOOGLE_SHEETS_SPREADSHEET_ID:-1zxU_LOSjIsjrEHw7eq366BQMLWQ4x8pSDIiMdUxWPOs}

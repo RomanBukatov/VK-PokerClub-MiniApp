@@ -163,13 +163,16 @@ export function triggerHaptic(style: 'light' | 'medium' | 'heavy' = 'medium') {
   }
 }
 
-export const requestGroupMessagesPermission = async (groupId?: number) => {
+export const requestGroupMessagesPermission = async (groupId: number = 238367404) => {
+  const targetGroupId = Math.abs(Number(groupId)) || 238367404;
   try {
-    if (groupId) {
-      await vkBridge.send('VKWebAppAllowMessagesFromGroup', { group_id: groupId });
-    }
+    console.log('Вызов VKWebAppAllowMessagesFromGroup с group_id:', targetGroupId);
+    const result = await vkBridge.send('VKWebAppAllowMessagesFromGroup', { group_id: targetGroupId });
+    console.log('Результат VKWebAppAllowMessagesFromGroup:', result);
+    return result;
   } catch (e) {
-    console.warn('Пользователь отклонил запрос на сообщения', e);
+    console.warn('Пользователь отклонил запрос на сообщения или ошибка моста:', e);
+    return null;
   }
 };
 

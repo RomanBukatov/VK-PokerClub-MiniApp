@@ -24,12 +24,33 @@ const ProfileModalContent: React.FC = () => {
   });
 
   const [fullName, setFullName] = useState(() => {
-    if (profile?.fullName) return profile.fullName;
+    const isPlaceholder = (val: string) => {
+      const lower = val.trim().toLowerCase();
+      return (
+        lower === 'гость клуба' ||
+        lower === 'клуба гость' ||
+        lower === 'гость' ||
+        lower === 'игрок vk' ||
+        lower === 'игрок' ||
+        lower.startsWith('игрок #') ||
+        /^игрок\s*\d+$/i.test(lower)
+      );
+    };
+
+    if (profile?.fullName && !isPlaceholder(profile.fullName)) {
+      return profile.fullName;
+    }
     if (profile?.lastName || profile?.firstName) {
-      return `${profile.lastName || ''} ${profile.firstName || ''}`.trim();
+      const combined = `${profile.lastName || ''} ${profile.firstName || ''}`.trim();
+      if (combined && !isPlaceholder(combined)) {
+        return combined;
+      }
     }
     if (vkUser?.last_name || vkUser?.first_name) {
-      return `${vkUser.last_name || ''} ${vkUser.first_name || ''}`.trim();
+      const combined = `${vkUser.last_name || ''} ${vkUser.first_name || ''}`.trim();
+      if (combined && !isPlaceholder(combined)) {
+        return combined;
+      }
     }
     return '';
   });
@@ -110,6 +131,28 @@ const ProfileModalContent: React.FC = () => {
       return;
     }
 
+    const trimmedFullName = fullName.trim();
+    if (!trimmedFullName || trimmedFullName.length < 2) {
+      setError('Введите ваше реальное ФИО (Имя и Фамилию).');
+      triggerHaptic('heavy');
+      return;
+    }
+
+    const lowerFullName = trimmedFullName.toLowerCase();
+    if (
+      lowerFullName === 'гость клуба' ||
+      lowerFullName === 'клуба гость' ||
+      lowerFullName === 'гость' ||
+      lowerFullName === 'игрок vk' ||
+      lowerFullName === 'игрок' ||
+      lowerFullName.startsWith('игрок #') ||
+      /^игрок\s*\d+$/i.test(trimmedFullName)
+    ) {
+      setError('Пожалуйста, укажите ваши реальные Имя и Фамилию.');
+      triggerHaptic('heavy');
+      return;
+    }
+
     const trimmedPhone = phoneNumber.trim();
     const phoneDigits = trimmedPhone.replace(/\D/g, '');
     if (!trimmedPhone || phoneDigits.length < 11) {
@@ -122,9 +165,15 @@ const ProfileModalContent: React.FC = () => {
     triggerHaptic('medium');
 
     try {
+      const nameParts = trimmedFullName.split(/\s+/);
+      const firstName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : nameParts[0];
+      const lastName = nameParts.length > 1 ? nameParts[0] : undefined;
+
       await updateProfile({
         nickname: trimmedNick,
-        fullName: fullName.trim() || undefined,
+        fullName: trimmedFullName,
+        firstName,
+        lastName,
         phoneNumber: trimmedPhone || undefined,
         clubCardId: clubCardId.trim() || undefined,
       });
@@ -205,21 +254,26 @@ const ProfileModalContent: React.FC = () => {
           {/* Ваше имя (ФИО) */}
           <div>
             <label className="block text-[11px] font-bold uppercase tracking-wider text-[#8fa89b] mb-1.5">
-              Ваше имя (ФИО)
+              Ваше реальное имя (ФИО) <span className="text-[#c39a44]">*</span>
             </label>
             <div className="relative">
               <User className="w-4 h-4 text-white/30 absolute left-4 top-3.5" />
               <input
                 type="text"
+                required
                 maxLength={80}
-                placeholder="Иванов Иван Иванович"
+                placeholder="Иванов Иван"
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
-                className="w-full bg-black/40 border border-white/10 focus:border-[#c39a44] rounded-2xl py-3 pl-11 pr-4 text-sm font-semibold text-white placeholder-white/20 focus:outline-none transition-all"
+                className={`w-full bg-black/40 border ${
+                  error && (error.includes('ФИО') || error.includes('Фамилию'))
+                    ? 'border-red-500/80 focus:border-red-400'
+                    : 'border-white/10 focus:border-[#c39a44]'
+                } rounded-2xl py-3 pl-11 pr-4 text-sm font-semibold text-white placeholder-white/20 focus:outline-none transition-all`}
               />
             </div>
             <p className="text-[10px] text-[#606a66] mt-1">
-              Для сопоставления с клубной таблицей рейтинга
+              Реальные Имя и Фамилия для турнирной сетки и клубного рейтинга
             </p>
           </div>
 

@@ -34,10 +34,10 @@ export const CURRENT_BRANDING: ClubBranding = {
   clubSubtitle: 'Турнирный клуб спортивного покера',
   defaultCityName: 'Пермь',
   defaultAddress: 'Монастырская улица, 59, Пермь',
-  vkGroupId: Number(import.meta.env.VITE_VK_GROUP_ID) || 0,
+  vkGroupId: Number(import.meta.env.VITE_VK_GROUP_ID) || 238367404,
   socialLinks: {
-    vkGroup: 'https://vk.com/pokerclub',
-    vkGroupId: Number(import.meta.env.VITE_VK_GROUP_ID) || 0,
+    vkGroup: 'https://vk.com/club238367404',
+    vkGroupId: Number(import.meta.env.VITE_VK_GROUP_ID) || 238367404,
   },
   assets: {
     logoSvg,
@@ -74,6 +74,6 @@ export function getEffectiveVkGroupId(): number {
     }
   }
 
-  return 0;
+  return 238367404;
 }
 
