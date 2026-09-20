@@ -85,6 +85,12 @@ apiClient.interceptors.request.use((config) => {
   const savedRole = typeof window !== 'undefined' ? localStorage.getItem('poker_is_admin') : null;
   config.headers['X-Is-Admin'] = savedRole === 'true' ? 'true' : 'false';
 
+  // Передаем аватар VK, если он сохранен локально
+  const savedAvatar = typeof window !== 'undefined' ? localStorage.getItem('vk_avatar_url') : null;
+  if (savedAvatar) {
+    config.headers['X-Avatar-Url'] = savedAvatar;
+  }
+
   return config;
 }, (error) => {
   return Promise.reject(error);

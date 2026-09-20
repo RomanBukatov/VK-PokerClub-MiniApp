@@ -31,6 +31,7 @@ import { triggerHaptic } from '../utils/vkBridge';
 import { TournamentStatus, type Achievement } from '../types';
 import { getRankProgress } from '../config/ranks.config';
 import { getAchievements } from '../config/achievements.config';
+import { PlayerAvatar } from '../components/PlayerAvatar';
 
 export const ProfilePanel: React.FC = () => {
   const { vkUser, profile, fetchProfile, setIsProfileModalOpen, logout } = useUserStore();
@@ -113,15 +114,6 @@ export const ProfilePanel: React.FC = () => {
     (t) => t.status === TournamentStatus.Finished
   );
 
-  const getInitials = (name?: string) => {
-    if (!name) return 'MC';
-    const parts = name.trim().split(' ');
-    if (parts.length >= 2) {
-      return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
-    }
-    return name.slice(0, 2).toUpperCase();
-  };
-
   const displayName = profile?.fullName || `${vkUser?.last_name || ''} ${vkUser?.first_name || ''}`.trim() || 'Игрок Monte Carlo';
   const displayNickname = profile?.nickname || (vkUser ? (vkUser.id ? `Player_${vkUser.id}` : 'Гость') : 'Player');
   const displayPhone = profile?.phoneNumber || 'Телефон не указан';
@@ -138,13 +130,14 @@ export const ProfilePanel: React.FC = () => {
           <div className="flex items-center gap-3.5">
             {/* Аватар с инициалами / фото */}
             <div className="relative">
-              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#2a4d3d] to-[#122e23] border-2 border-[#c39a44]/50 flex items-center justify-center font-black text-xl text-[#d8af56] overflow-hidden shadow-lg shadow-black/60 shrink-0">
-                {profile?.avatarUrl || vkUser?.photo_200 ? (
-                  <img src={profile?.avatarUrl || vkUser?.photo_200} alt="" className="w-full h-full object-cover" />
-                ) : (
-                  getInitials(displayName)
-                )}
-              </div>
+              <PlayerAvatar
+                avatarUrl={profile?.avatarUrl || vkUser?.photo_200}
+                firstName={profile?.firstName || vkUser?.first_name}
+                lastName={profile?.lastName || vkUser?.last_name}
+                nickname={displayNickname}
+                className="w-16 h-16 rounded-2xl border-2 border-[#c39a44]/50 shadow-lg shadow-black/60"
+                textClassName="text-xl font-black text-[#d8af56]"
+              />
               {/* Статус бейдж поверх аватара */}
               <div className={`absolute -bottom-1.5 -right-1.5 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-gradient-to-r ${rankProgress.currentRank.gradient} text-white shadow-md border ${rankProgress.currentRank.borderColor} flex items-center gap-1 max-w-[105px]`}>
                 <span className="shrink-0">{rankProgress.currentRank.icon}</span>

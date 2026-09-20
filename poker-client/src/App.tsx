@@ -17,25 +17,27 @@ import { CURRENT_BRANDING } from './config/branding';
 
 export function App() {
   const { isAuthenticated, activeTab, setUser } = useUserStore();
-  const [isInitializing, setIsInitializing] = useState(true);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     let finished = false;
 
-    // Аварийный таймаут на 3 секунды: если VKWebAppInit или запрос профиля
-    // не ответили вовремя на медленном мобильном интернете, принудительно снимаем экран загрузки
-    // и пускаем пользователя в расписание как гостя.
+    // Жесткий аварийный таймаут на 2 секунды: если VKWebAppInit, VKWebAppGetUserInfo или запрос /api/users/me
+    // не успели завершиться из-за лагов мобильного 4G/LTE — принудительно гасим сплэш-скрин загрузки
+    // и открываем интерфейс! Пользователь ни при каких условиях не должен видеть крутилку дольше 2 секунд.
     const emergencyTimer = setTimeout(() => {
       if (!finished) {
-        console.warn('Аварийный таймаут 3с сработал: принудительно пускаем в расписание как гостя');
+        console.warn('Аварийный таймаут 2с сработал: принудительно открываем интерфейс');
         finished = true;
         const state = useUserStore.getState();
         if (!state.isAuthenticated) {
-          useUserStore.setState({ isAuthenticated: true, activeTab: 'schedule' });
+          useUserStore.setState({ isAuthenticated: true, activeTab: 'schedule', isLoading: false, isLoadingProfile: false });
+        } else {
+          useUserStore.setState({ isLoading: false, isLoadingProfile: false });
         }
-        setIsInitializing(false);
+        setIsLoading(false);
       }
-    }, 3000);
+    }, 2000);
 
     initVkBridge()
       .then((user) => {
@@ -59,7 +61,7 @@ export function App() {
         if (!finished) {
           finished = true;
           clearTimeout(emergencyTimer);
-          setIsInitializing(false);
+          setIsLoading(false);
         }
       });
 
@@ -69,7 +71,7 @@ export function App() {
     };
   }, [setUser]);
 
-  if (isInitializing) {
+  if (isLoading) {
     return (
       <div className="w-full min-h-screen bg-[#01201a] flex flex-col items-center justify-center p-6 text-center select-none">
         <img src={CURRENT_BRANDING.assets.logoSvg} alt={CURRENT_BRANDING.clubName} className="h-14 object-contain animate-pulse mb-3" />

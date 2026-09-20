@@ -6,6 +6,7 @@ public class VkOptions
 
     public long AppId { get; set; }
     public string ClientSecret { get; set; } = string.Empty;
+    public string CommunityToken { get; set; } = string.Empty;
     public List<string> AdminVkIds { get; set; } = new();
     public bool RequireValidation { get; set; } = true;
 }

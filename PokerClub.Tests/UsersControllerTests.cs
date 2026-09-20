@@ -624,4 +624,45 @@ public class UsersControllerTests
         var result = UsersController.IsSmartTokenMatch(inputName, targetFirst, targetLast);
         Assert.Equal(expected, result);
     }
+
+    [Fact]
+    public async Task GetMe_WithPhoto200OrAvatarUrl_UpdatesUserAvatarInDb()
+    {
+        using var context = CreateInMemoryDbContext();
+        var user = new User
+        {
+            VkId = "777888",
+            FirstName = "Василий",
+            LastName = "Лукашенко",
+            AvatarUrl = null
+        };
+        context.Users.Add(user);
+        await context.SaveChangesAsync();
+
+        var controller = new UsersController(context, NullLogger<UsersController>.Instance);
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Headers["X-Test-Vk-Id"] = "777888";
+        controller.ControllerContext = new ControllerContext { HttpContext = httpContext };
+
+        var actionResult = await controller.GetMe(photo_200: "https://vk.com/photo777.jpg");
+        var okResult = Assert.IsType<OkObjectResult>(actionResult.Result);
+        var profile = Assert.IsType<UserProfileDto>(okResult.Value);
+
+        Assert.Equal("https://vk.com/photo777.jpg", profile.AvatarUrl);
+
+        var dbUser = await context.Users.FirstOrDefaultAsync(u => u.VkId == "777888");
+        Assert.NotNull(dbUser);
+        Assert.Equal("https://vk.com/photo777.jpg", dbUser.AvatarUrl);
+
+        // Обновление на новый URL
+        var updatedResult = await controller.GetMe(avatarUrl: "https://vk.com/photo_new.jpg");
+        var updatedOk = Assert.IsType<OkObjectResult>(updatedResult.Result);
+        var updatedProfile = Assert.IsType<UserProfileDto>(updatedOk.Value);
+
+        Assert.Equal("https://vk.com/photo_new.jpg", updatedProfile.AvatarUrl);
+
+        var dbUserUpdated = await context.Users.FirstOrDefaultAsync(u => u.VkId == "777888");
+        Assert.NotNull(dbUserUpdated);
+        Assert.Equal("https://vk.com/photo_new.jpg", dbUserUpdated.AvatarUrl);
+    }
 }

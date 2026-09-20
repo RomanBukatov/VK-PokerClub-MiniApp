@@ -504,4 +504,41 @@ describe('useUserStore logout and reset', () => {
     useUserStore.getState().setIsAdmin(true);
     expect(useUserStore.getState().activeTab).toBe('leaderboard');
   });
+
+  it('should trigger emergency 2s timeout in fetchProfile if request hangs', async () => {
+    useUserStore.getState().logout();
+
+    const originalGetMe = usersApi.getMe;
+    // Simulate hanging promise
+    usersApi.getMe = () => new Promise(() => {});
+
+    try {
+      // Fire and do not await fetchProfile because it never resolves
+      useUserStore.getState().fetchProfile();
+      expect(useUserStore.getState().isLoading).toBe(true);
+
+      // Wait 2100ms
+      await new Promise((resolve) => setTimeout(resolve, 2100));
+
+      const state = useUserStore.getState();
+      expect(state.isLoading).toBe(false);
+      expect(state.isLoadingProfile).toBe(false);
+      expect(state.isAuthenticated).toBe(true);
+      expect(state.activeTab).toBe('schedule');
+    } finally {
+      usersApi.getMe = originalGetMe;
+    }
+  });
+
+  it('should auto-reset isLoading after 2s emergency timeout when setIsLoading(true) is called', async () => {
+    useUserStore.getState().setIsLoading(false);
+    expect(useUserStore.getState().isLoading).toBe(false);
+
+    useUserStore.getState().setIsLoading(true);
+    expect(useUserStore.getState().isLoading).toBe(true);
+
+    await new Promise((resolve) => setTimeout(resolve, 2100));
+
+    expect(useUserStore.getState().isLoading).toBe(false);
+  });
 });

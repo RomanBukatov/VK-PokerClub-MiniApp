@@ -4,6 +4,7 @@ import { useTournamentsStore } from '../store/useTournamentsStore';
 import { useUserStore } from '../store/useUserStore';
 import { triggerHaptic } from '../utils/vkBridge';
 import { PublicPlayerModal } from '../components/PublicPlayerModal';
+import { PlayerAvatar } from '../components/PlayerAvatar';
 
 // eslint-disable-next-line react-refresh/only-export-components
 export const getLeaderboardSubtitle = (seasonTab: string, seasonName?: string) => {
@@ -99,12 +100,6 @@ export const LeaderboardPanel: React.FC = () => {
     : userPoints > 0
     ? `${leaderboard.length > 0 ? `${leaderboard.length}+` : '50+'} в клубе`
     : 'Не в рейтинге';
-
-  const getInitials = (first?: string, last?: string) => {
-    const f = first?.[0] || 'А';
-    const l = last?.[0] || 'К';
-    return `${f}${l}`.toUpperCase();
-  };
 
   return (
     <div className="px-5 pb-24 animate-fade-in space-y-4">
@@ -223,13 +218,13 @@ export const LeaderboardPanel: React.FC = () => {
                     {player.rank}
                   </span>
 
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs overflow-hidden shrink-0 ${zone.avatarBg}`}>
-                    {player.avatarUrl ? (
-                      <img src={player.avatarUrl} alt="" className="w-full h-full object-cover" />
-                    ) : (
-                      getInitials(player.firstName, player.lastName)
-                    )}
-                  </div>
+                  <PlayerAvatar
+                    avatarUrl={player.avatarUrl}
+                    firstName={player.firstName}
+                    lastName={player.lastName}
+                    className="w-8 h-8 rounded-full"
+                    textClassName="text-[11px] font-black"
+                  />
 
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-semibold text-white">

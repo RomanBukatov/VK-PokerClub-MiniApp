@@ -31,7 +31,9 @@ public class UsersController : ControllerBase
     [HttpGet("me")]
     [HttpGet("profile")]
     [VkAuthorize]
-    public async Task<ActionResult<UserProfileDto>> GetMe()
+    public async Task<ActionResult<UserProfileDto>> GetMe(
+        [FromQuery] string? photo_200 = null,
+        [FromQuery] string? avatarUrl = null)
     {
         var currentVkId = HttpContext.GetVkUserId();
         if (string.IsNullOrWhiteSpace(currentVkId))
@@ -39,21 +41,47 @@ public class UsersController : ControllerBase
             return Unauthorized(new { Message = "Пользователь не авторизован." });
         }
 
-        var user = await _context.Users.AsNoTracking().FirstOrDefaultAsync(u => u.VkId == currentVkId);
+        // Извлекаем переданный аватар из query, headers или telegram данных
+        string? incomingAvatarUrl = !string.IsNullOrWhiteSpace(photo_200) ? photo_200.Trim() : null;
+        if (string.IsNullOrWhiteSpace(incomingAvatarUrl) && !string.IsNullOrWhiteSpace(avatarUrl))
+        {
+            incomingAvatarUrl = avatarUrl.Trim();
+        }
+        if (string.IsNullOrWhiteSpace(incomingAvatarUrl) && HttpContext.Request.Query.TryGetValue("avatar_url", out var qAvatar))
+        {
+            incomingAvatarUrl = qAvatar.ToString().Trim();
+        }
+        if (string.IsNullOrWhiteSpace(incomingAvatarUrl) && HttpContext.Request.Headers.TryGetValue("X-Avatar-Url", out var hAvatar))
+        {
+            incomingAvatarUrl = hAvatar.ToString().Trim();
+        }
+        if (string.IsNullOrWhiteSpace(incomingAvatarUrl) && HttpContext.Request.Headers.TryGetValue("X-VK-Photo", out var hVkPhoto))
+        {
+            incomingAvatarUrl = hVkPhoto.ToString().Trim();
+        }
+        if (string.IsNullOrWhiteSpace(incomingAvatarUrl) && HttpContext.Request.Headers.TryGetValue("X-Telegram-User", out var tgUserJson))
+        {
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(tgUserJson.ToString());
+                if (doc.RootElement.TryGetProperty("photo_url", out var pu)) incomingAvatarUrl = pu.GetString()?.Trim();
+            }
+            catch { }
+        }
+
+        var user = await _context.Users.FirstOrDefaultAsync(u => u.VkId == currentVkId);
         if (user == null)
         {
             string firstName = "Игрок";
             string lastName = "";
-            string? avatarUrl = null;
 
-            if (HttpContext.Request.Headers.TryGetValue("X-Telegram-User", out var tgUserJson))
+            if (HttpContext.Request.Headers.TryGetValue("X-Telegram-User", out var tgUserJsonCreate))
             {
                 try
                 {
-                    using var doc = System.Text.Json.JsonDocument.Parse(tgUserJson.ToString());
+                    using var doc = System.Text.Json.JsonDocument.Parse(tgUserJsonCreate.ToString());
                     if (doc.RootElement.TryGetProperty("first_name", out var fn)) firstName = fn.GetString() ?? firstName;
                     if (doc.RootElement.TryGetProperty("last_name", out var ln)) lastName = ln.GetString() ?? lastName;
-                    if (doc.RootElement.TryGetProperty("photo_url", out var pu)) avatarUrl = pu.GetString();
                 }
                 catch { }
             }
@@ -64,7 +92,7 @@ public class UsersController : ControllerBase
                 VkId = currentVkId,
                 FirstName = firstName,
                 LastName = lastName,
-                AvatarUrl = avatarUrl,
+                AvatarUrl = incomingAvatarUrl,
                 TotalRating = 0,
                 SeasonRating = 0,
                 TournamentsPlayed = 0,
@@ -77,6 +105,17 @@ public class UsersController : ControllerBase
             };
             _context.Users.Add(user);
             await _context.SaveChangesAsync();
+        }
+        else
+        {
+            // Если от VK Bridge передано поле с аватаром (photo_200 / avatarUrl),
+            // автоматически обновляй user.AvatarUrl в базе данных, если оно пустое или изменилось.
+            if (!string.IsNullOrWhiteSpace(incomingAvatarUrl) &&
+                (string.IsNullOrWhiteSpace(user.AvatarUrl) || user.AvatarUrl != incomingAvatarUrl))
+            {
+                user.AvatarUrl = incomingAvatarUrl;
+                await _context.SaveChangesAsync();
+            }
         }
 
         bool isAdmin = CheckIsAdmin(currentVkId);

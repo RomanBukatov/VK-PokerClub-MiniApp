@@ -5,6 +5,7 @@ import { tournamentsApi } from '../../api/tournamentsApi';
 import { ratingsApi } from '../../api/ratingsApi';
 import type { Tournament, TournamentDetail } from '../../types';
 import { triggerHaptic } from '../../utils/vkBridge';
+import { PlayerAvatar } from '../../components/PlayerAvatar';
 
 interface AdminAssignPointsModalProps {
   tournament: Tournament;
@@ -118,12 +119,6 @@ export const AdminAssignPointsModal: React.FC<AdminAssignPointsModalProps> = ({
     }
   };
 
-  const getInitials = (first?: string, last?: string) => {
-    const f = first?.[0] || 'А';
-    const l = last?.[0] || 'К';
-    return `${f}${l}`.toUpperCase();
-  };
-
   const formatSubtitleDate = (dateStr: string) => {
     try {
       const date = new Date(dateStr);
@@ -231,13 +226,13 @@ export const AdminAssignPointsModal: React.FC<AdminAssignPointsModalProps> = ({
                   <span className="w-4 text-xs font-bold text-gray-400 text-center shrink-0">
                     #{idx + 1}
                   </span>
-                  <div className="w-8 h-8 rounded-full bg-[#606a66] flex items-center justify-center font-bold text-xs text-white overflow-hidden shrink-0">
-                    {p.avatarUrl ? (
-                      <img src={p.avatarUrl} alt="" className="w-full h-full object-cover" />
-                    ) : (
-                      getInitials(p.firstName, p.lastName)
-                    )}
-                  </div>
+                  <PlayerAvatar
+                    avatarUrl={p.avatarUrl}
+                    firstName={p.firstName}
+                    lastName={p.lastName}
+                    className="w-8 h-8 rounded-full"
+                    textClassName="text-[11px] font-black"
+                  />
                   <div className="min-w-0 flex-1">
                     <div className="text-sm font-semibold text-white truncate">
                       {p.firstName} {p.lastName}

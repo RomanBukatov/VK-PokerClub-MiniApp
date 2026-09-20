@@ -135,6 +135,7 @@ public class TournamentService : ITournamentService
             // 2. Загружаем турнир со всеми связями стандартным EF Core запросом в той же транзакции
             var tournament = await _context.Tournaments
                 .Include(t => t.Registrations)
+                .Include(t => t.Club)
                 .FirstOrDefaultAsync(t => t.Id == tournamentId);
 
             if (tournament == null)
@@ -211,6 +212,7 @@ public class TournamentService : ITournamentService
                 await transaction.CommitAsync();
 
                 await SendRegistrationWebhookAsync(tournament, user);
+                await SendVkConfirmationMessageAsync(tournament, user);
 
                 return (true, "Запись успешно восстановлена! Ждем вас за столом.");
             }
@@ -233,6 +235,7 @@ public class TournamentService : ITournamentService
             await transaction.CommitAsync();
 
             await SendRegistrationWebhookAsync(tournament, user);
+            await SendVkConfirmationMessageAsync(tournament, user);
 
             return (true, "Вы успешно записаны на турнир! Ждем вас за столом.");
         }
@@ -320,6 +323,64 @@ public class TournamentService : ITournamentService
         {
             _logger?.LogError(ex,
                 "Ошибка отправки вебхука регистрации Google Sheets для турнира {TournamentId}, пользователя {VkId}",
+                tournament.Id, user.VkId);
+        }
+    }
+
+    private async Task SendVkConfirmationMessageAsync(Tournament tournament, User user)
+    {
+        try
+        {
+            var communityToken = _configuration?["VkOptions:CommunityToken"]
+                ?? _configuration?["VK_COMMUNITY_TOKEN"]
+                ?? Environment.GetEnvironmentVariable("VK_COMMUNITY_TOKEN");
+
+            if (string.IsNullOrWhiteSpace(communityToken))
+            {
+                _logger?.LogDebug("VK CommunityToken не настроен. Пропускаем отправку сообщения в ЛС.");
+                return;
+            }
+
+            if (!long.TryParse(user.VkId, out var numericVkUserId) || numericVkUserId <= 0)
+            {
+                _logger?.LogDebug("User VkId '{VkId}' не является числовым идентификатором VK. Пропускаем отправку сообщения в ЛС.", user.VkId);
+                return;
+            }
+
+            var clubAddress = !string.IsNullOrWhiteSpace(tournament.Club?.Address)
+                ? tournament.Club.Address.Trim()
+                : "Монастырская улица, 59, Пермь";
+
+            var message = $"♠️ Вы успешно зарегистрированы на турнир \"{tournament.Title}\"!\n📅 Дата: {tournament.StartTime:dd.MM в HH:mm}\n📍 Адрес: {clubAddress}\n\nЖдем вас за столом клуба Monte Carlo!";
+
+            var parameters = new Dictionary<string, string>
+            {
+                ["user_id"] = numericVkUserId.ToString(),
+                ["random_id"] = Random.Shared.Next().ToString(),
+                ["peer_id"] = numericVkUserId.ToString(),
+                ["message"] = message,
+                ["access_token"] = communityToken.Trim(),
+                ["v"] = "5.199"
+            };
+
+            var client = GetHttpClient();
+            using var content = new FormUrlEncodedContent(parameters);
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var response = await client.PostAsync("https://api.vk.com/method/messages.send", content, cts.Token);
+            var responseBody = await response.Content.ReadAsStringAsync();
+
+            if (!response.IsSuccessStatusCode || responseBody.Contains("\"error\":"))
+            {
+                _logger?.LogWarning("VK API messages.send вернул статус {StatusCode}: {Response}", response.StatusCode, responseBody);
+            }
+            else
+            {
+                _logger?.LogInformation("Успешно отправлено подтверждение в ЛС VK для пользователя {VkId} на турнир {TournamentId}", user.VkId, tournament.Id);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "Ошибка при отправке сообщения-подтверждения в VK для турнира {TournamentId}, пользователя {VkId}",
                 tournament.Id, user.VkId);
         }
     }

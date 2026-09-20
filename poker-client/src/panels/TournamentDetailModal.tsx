@@ -6,6 +6,7 @@ import { formatCurrency, formatChips } from '../utils/formatters';
 import { triggerHaptic, requestGroupMessagesPermission } from '../utils/vkBridge';
 import { TournamentStatus } from '../types';
 import { CURRENT_BRANDING, getEffectiveVkGroupId } from '../config/branding';
+import { PlayerAvatar } from '../components/PlayerAvatar';
 
 export const TournamentDetailModal: React.FC = () => {
   const { 
@@ -321,17 +322,12 @@ export const TournamentDetailModal: React.FC = () => {
                       </span>
 
                       {/* Аватар */}
-                      {player.avatarUrl ? (
-                        <img
-                          src={player.avatarUrl}
-                          alt={playerName}
-                          className="w-8 h-8 rounded-full object-cover border border-[#1e533f]"
-                        />
-                      ) : (
-                        <div className="w-8 h-8 rounded-full bg-[#132c20] border border-[#1e533f] flex items-center justify-center text-xs font-bold text-[#a4c9b7]">
-                          {playerName.charAt(0).toUpperCase()}
-                        </div>
-                      )}
+                      <PlayerAvatar
+                        avatarUrl={player.avatarUrl}
+                        firstName={playerName}
+                        className="w-8 h-8 rounded-full"
+                        textClassName="text-[11px] font-black"
+                      />
 
                       {/* Имя игрока */}
                       <div className="truncate">

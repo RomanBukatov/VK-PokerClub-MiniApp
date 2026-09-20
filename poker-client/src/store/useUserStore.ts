@@ -24,6 +24,7 @@ interface UserState {
   isProfileModalOpen: boolean;
 
   setUser: (user: VkUser | null) => void;
+  setIsLoading: (isLoading: boolean) => void;
   setIsAdmin: (isAdmin: boolean) => void;
   setActiveRole: (role: 'admin' | 'player') => void;
   setSelectedCity: (cityId: number | null, cityName: string) => void;
@@ -99,6 +100,17 @@ export const useUserStore = create<UserState>((set, get) => ({
   isLegalModalOpen: false,
   isProfileModalOpen: false,
 
+  setIsLoading: (isLoading) => {
+    set({ isLoading });
+    if (isLoading) {
+      setTimeout(() => {
+        if (get().isLoading) {
+          set({ isLoading: false, isLoadingProfile: false });
+        }
+      }, 2000);
+    }
+  },
+
   setUser: (user) => {
     const hasAdminRight = user?.isAdmin === true || get().hasAdminRole || (typeof window !== 'undefined' && localStorage.getItem('poker_has_admin_role') === 'true');
     const savedActiveRole = typeof window !== 'undefined' ? localStorage.getItem('poker_active_role') : null;
@@ -116,6 +128,9 @@ export const useUserStore = create<UserState>((set, get) => ({
     const isAdmin = hasAdminRight && activeRole === 'admin';
 
     if (typeof window !== 'undefined') {
+      if (user?.photo_200) {
+        localStorage.setItem('vk_avatar_url', user.photo_200);
+      }
       if (hasAdminRight) {
         localStorage.setItem('poker_has_admin_role', 'true');
         localStorage.setItem('poker_is_admin', isAdmin ? 'true' : 'false');
@@ -209,8 +224,18 @@ export const useUserStore = create<UserState>((set, get) => ({
 
   fetchProfile: async () => {
     set({ isLoading: true, isLoadingProfile: true });
+
+    // Жесткий аварийный таймаут на 2 секунды: защита от вечного спиннера на медленном 4G/LTE
+    const emergencyTimer = setTimeout(() => {
+      if (get().isLoading || get().isLoadingProfile) {
+        console.warn('Аварийный таймаут 2с в fetchProfile сработал: принудительно снимаем крутилку');
+        set({ isLoading: false, isLoadingProfile: false, isAuthenticated: true, activeTab: 'schedule' });
+      }
+    }, 2000);
+
     try {
-      const profile = await usersApi.getMe();
+      const vkUserAvatar = get().vkUser?.photo_200 || get().vkUser?.photo_100;
+      const profile = await usersApi.getMe(vkUserAvatar);
       const isProfileAdmin = profile?.isAdmin === true;
       const currentVkUser = get().vkUser;
       const hasAdminRole = isProfileAdmin;
@@ -286,12 +311,22 @@ export const useUserStore = create<UserState>((set, get) => ({
       set({ isAuthenticated: true, activeTab: 'schedule' });
       return null;
     } finally {
+      clearTimeout(emergencyTimer);
       set({ isLoading: false, isLoadingProfile: false }); // Гарантированное снятие крутилки при 401 коде!
     }
   },
 
   initUser: async (user?: VkUser | null) => {
     set({ isLoading: true });
+
+    // Жесткий аварийный таймаут на 2 секунды: защита от вечного спиннера
+    const emergencyTimer = setTimeout(() => {
+      if (get().isLoading) {
+        console.warn('Аварийный таймаут 2с в initUser сработал: принудительно снимаем крутилку');
+        set({ isLoading: false, isAuthenticated: true, activeTab: 'schedule' });
+      }
+    }, 2000);
+
     try {
       if (user) {
         get().setUser(user);
@@ -305,6 +340,7 @@ export const useUserStore = create<UserState>((set, get) => ({
       console.warn('Не удалось инициализировать пользователя:', error);
       set({ isAuthenticated: true, activeTab: 'schedule' });
     } finally {
+      clearTimeout(emergencyTimer);
       set({ isLoading: false });
     }
   },

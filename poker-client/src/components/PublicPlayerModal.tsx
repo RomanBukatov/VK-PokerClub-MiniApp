@@ -23,6 +23,7 @@ import {
   Anchor
 } from 'lucide-react';
 import { usersApi } from '../api/usersApi';
+import { PlayerAvatar } from './PlayerAvatar';
 import type { PublicUserProfile, Achievement } from '../types';
 import { getRankProgress } from '../config/ranks.config';
 import { getAchievements } from '../config/achievements.config';
@@ -83,12 +84,6 @@ export const PublicPlayerModal: React.FC<PublicPlayerModalProps> = ({ playerId, 
   const handleClose = () => {
     triggerHaptic('light');
     onClose();
-  };
-
-  const getInitials = (first?: string, last?: string) => {
-    const f = first?.[0] || 'И';
-    const l = last?.[0] || 'Г';
-    return `${f}${l}`.toUpperCase();
   };
 
   const renderAchievementIcon = (id: string, isUnlocked: boolean) => {
@@ -209,13 +204,14 @@ export const PublicPlayerModal: React.FC<PublicPlayerModalProps> = ({ playerId, 
               <div className="flex items-center gap-4 relative z-10">
                 {/* Аватар с бейджем ранга */}
                 <div className="relative shrink-0">
-                  <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#2a4d3d] to-[#122e23] border-2 border-[#c39a44]/50 flex items-center justify-center font-black text-xl text-[#d8af56] overflow-hidden shadow-lg shadow-black/60">
-                    {player.avatarUrl ? (
-                      <img src={player.avatarUrl} alt="" className="w-full h-full object-cover" />
-                    ) : (
-                      getInitials(player.firstName, player.lastName)
-                    )}
-                  </div>
+                  <PlayerAvatar
+                    avatarUrl={player.avatarUrl}
+                    firstName={player.firstName}
+                    lastName={player.lastName}
+                    nickname={player.nickname}
+                    className="w-16 h-16 rounded-2xl border-2 border-[#c39a44]/50 shadow-lg shadow-black/60"
+                    textClassName="text-xl font-black text-[#d8af56]"
+                  />
                   <div className={`absolute -bottom-1.5 -right-1.5 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-gradient-to-r ${rankProgress.currentRank.gradient} text-white shadow-md border ${rankProgress.currentRank.borderColor} flex items-center gap-1`}>
                     <span>{rankProgress.currentRank.icon}</span>
                     <span>{rankProgress.badgeText}</span>

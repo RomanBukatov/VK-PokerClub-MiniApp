@@ -35,6 +35,14 @@ builder.Services.Configure<VkOptions>(options =>
     {
         options.ClientSecret = envSecret;
     }
+
+    var envCommunityToken = builder.Configuration["VK_COMMUNITY_TOKEN"] 
+        ?? builder.Configuration["VkOptions:CommunityToken"]
+        ?? Environment.GetEnvironmentVariable("VK_COMMUNITY_TOKEN");
+    if (!string.IsNullOrWhiteSpace(envCommunityToken))
+    {
+        options.CommunityToken = envCommunityToken;
+    }
 });
 
 // Подключаем PostgreSQL

@@ -1148,6 +1148,110 @@ public class TournamentServiceTests
         Assert.Equal("777", root.GetProperty("clubCardId").GetString());
     }
 
+    [Fact]
+    public async Task RegisterPlayerAsync_WithCommunityToken_SendsVkConfirmationMessage()
+    {
+        using var context = CreateInMemoryDbContext();
+        var city = new City { Name = "Пермь", Slug = "perm", IsActive = true };
+        var club = new Club { Name = "Monte Carlo", Address = "Монастырская улица, 59", City = city, IsActive = true };
+        var tournament = new Tournament
+        {
+            Title = "Friday Deepstack",
+            StartTime = new DateTime(2026, 9, 25, 19, 0, 0, DateTimeKind.Utc),
+            Status = TournamentStatus.RegistrationOpen,
+            MaxSeats = 10,
+            Club = club
+        };
+        context.Cities.Add(city);
+        context.Clubs.Add(club);
+        context.Tournaments.Add(tournament);
+        await context.SaveChangesAsync();
+
+        HttpRequestMessage? vkRequest = null;
+        string? vkBody = null;
+
+        var handler = new TestHttpMessageHandler(req =>
+        {
+            if (req.RequestUri?.ToString().Contains("api.vk.com/method/messages.send") == true)
+            {
+                vkRequest = req;
+                vkBody = req.Content?.ReadAsStringAsync().GetAwaiter().GetResult();
+                return new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+                {
+                    Content = new StringContent("{\"response\": 12345}")
+                };
+            }
+            return new HttpResponseMessage(System.Net.HttpStatusCode.OK);
+        });
+        var httpClient = new HttpClient(handler);
+
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["VkOptions:CommunityToken"] = "test_community_token_123"
+            })
+            .Build();
+
+        var service = new TournamentService(context, config, null, httpClient);
+
+        var (success, message) = await service.RegisterPlayerAsync(
+            tournament.Id,
+            "123456789",
+            "Иван",
+            "Иванов"
+        );
+
+        Assert.True(success);
+        Assert.NotNull(vkRequest);
+        Assert.NotNull(vkBody);
+        Assert.Contains("user_id=123456789", vkBody);
+        Assert.Contains("peer_id=123456789", vkBody);
+        Assert.Contains("access_token=test_community_token_123", vkBody);
+        Assert.Contains("v=5.199", vkBody);
+        Assert.Contains("random_id=", vkBody);
+        Assert.Contains("Friday+Deepstack", vkBody);
+    }
+
+    [Fact]
+    public async Task RegisterPlayerAsync_WhenVkFails_RegistrationStillSucceeds()
+    {
+        using var context = CreateInMemoryDbContext();
+        var city = new City { Name = "Пермь", Slug = "perm", IsActive = true };
+        var club = new Club { Name = "Monte Carlo", Address = "Монастырская 59", City = city, IsActive = true };
+        var tournament = new Tournament
+        {
+            Title = "Saturday Bounty",
+            StartTime = new DateTime(2026, 9, 26, 18, 0, 0, DateTimeKind.Utc),
+            Status = TournamentStatus.RegistrationOpen,
+            MaxSeats = 10,
+            Club = club
+        };
+        context.Cities.Add(city);
+        context.Clubs.Add(club);
+        context.Tournaments.Add(tournament);
+        await context.SaveChangesAsync();
+
+        var handler = new TestHttpMessageHandler(req =>
+        {
+            throw new HttpRequestException("VK Network failure");
+        });
+        var httpClient = new HttpClient(handler);
+
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["VkOptions:CommunityToken"] = "token"
+            })
+            .Build();
+
+        var service = new TournamentService(context, config, null, httpClient);
+
+        var (success, message) = await service.RegisterPlayerAsync(tournament.Id, "999888");
+
+        Assert.True(success);
+        Assert.Contains("Вы успешно записаны на турнир", message);
+    }
+
     private class TestHttpMessageHandler : HttpMessageHandler
     {
         private readonly Func<HttpRequestMessage, HttpResponseMessage> _handler;

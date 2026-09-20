@@ -2,8 +2,9 @@ import { apiClient } from './apiClient';
 import type { UserProfile, UpdateProfilePayload, PublicUserProfile } from '../types';
 
 export const usersApi = {
-  async getMe(): Promise<UserProfile> {
-    const response = await apiClient.get<UserProfile>('/api/users/me');
+  async getMe(avatarUrl?: string): Promise<UserProfile> {
+    const params = avatarUrl ? { avatarUrl, photo_200: avatarUrl } : undefined;
+    const response = await apiClient.get<UserProfile>('/api/users/me', { params });
     return response.data;
   },
 
