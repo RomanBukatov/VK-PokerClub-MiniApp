@@ -43,7 +43,8 @@ public class TournamentsController : ControllerBase
             !string.IsNullOrWhiteSpace(currentVkId) && 
             t.Registrations.Any(r => r.User?.VkId == currentVkId && (r.Status == RegStatus.Active || r.Status == RegStatus.Played)),
             t.RegistrationEnd,
-            t.Club?.Address
+            t.Club?.Address,
+            t.StartingStack
         )).ToList();
 
         return Ok(result);
@@ -90,7 +91,8 @@ public class TournamentsController : ControllerBase
             !string.IsNullOrWhiteSpace(currentVkId) && 
             relevantRegistrations.Any(r => r.User?.VkId == currentVkId),
             participants,
-            t.RegistrationEnd
+            t.RegistrationEnd,
+            t.StartingStack
         );
 
         return Ok(result);
@@ -121,7 +123,8 @@ public class TournamentsController : ControllerBase
             t.Registrations.Count(r => r.Status == RegStatus.Active || r.Status == RegStatus.Played),
             t.Registrations.Any(r => r.User != null && r.User.VkId == vkId && (r.Status == RegStatus.Active || r.Status == RegStatus.Played)),
             t.RegistrationEnd,
-            t.Club?.Address
+            t.Club?.Address,
+            t.StartingStack
         )).ToList();
 
         return Ok(result);
@@ -183,6 +186,11 @@ public class TournamentsController : ControllerBase
         if (request.StartTime == default || request.StartTime.Year < 2020 || request.StartTime.Year > 2100)
             return BadRequest(new { Message = "Укажите корректную дату и время начала турнира." });
 
+        if ((request.StartingStack.HasValue && request.StartingStack.Value <= 0) ||
+            (request.StartingChips.HasValue && request.StartingChips.Value <= 0))
+            return BadRequest(new { Message = "Стартовый стек должен быть больше 0." });
+
+        var startingStack = request.StartingStack ?? request.StartingChips ?? 10000;
         var (success, tournament, message) = await _tournamentService.CreateTournamentAsync(
             request.ClubId,
             request.Title,
@@ -193,7 +201,8 @@ public class TournamentsController : ControllerBase
             request.Description,
             request.CityId,
             request.Address,
-            request.RegistrationEnd
+            request.RegistrationEnd,
+            startingStack
         );
 
         if (!success || tournament == null)
@@ -214,7 +223,8 @@ public class TournamentsController : ControllerBase
             0,
             false,
             tournament.RegistrationEnd,
-            tournament.Club?.Address
+            tournament.Club?.Address,
+            tournament.StartingStack
         );
 
         return CreatedAtAction(nameof(GetTournament), new { id = tournament.Id }, result);
@@ -243,6 +253,11 @@ public class TournamentsController : ControllerBase
         if (request.StartTime.HasValue && (request.StartTime.Value == default || request.StartTime.Value.Year < 2020 || request.StartTime.Value.Year > 2100))
             return BadRequest(new { Message = "Укажите корректную дату и время начала турнира." });
 
+        if ((request.StartingStack.HasValue && request.StartingStack.Value <= 0) ||
+            (request.StartingChips.HasValue && request.StartingChips.Value <= 0))
+            return BadRequest(new { Message = "Стартовый стек должен быть больше 0." });
+
+        var startingStack = request.StartingStack ?? request.StartingChips;
         var (success, tournament, message) = await _tournamentService.UpdateTournamentAsync(
             id,
             request.ClubId,
@@ -256,7 +271,8 @@ public class TournamentsController : ControllerBase
             request.Address,
             request.RegistrationEnd,
             request.Status,
-            request.ClearRegistrationEnd
+            request.ClearRegistrationEnd,
+            startingStack
         );
 
         if (!success || tournament == null)
@@ -300,7 +316,8 @@ public class TournamentsController : ControllerBase
             !string.IsNullOrWhiteSpace(currentVkId) && 
             relevantRegistrations.Any(r => r.User?.VkId == currentVkId),
             participants,
-            tournament.RegistrationEnd
+            tournament.RegistrationEnd,
+            tournament.StartingStack
         );
 
         return Ok(result);

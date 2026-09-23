@@ -2,15 +2,19 @@ import React, { useState } from 'react';
 import { ChevronLeft, CheckCircle2, AlertCircle, MapPin, Clock, Info, Users, Trophy, CreditCard } from 'lucide-react';
 import { useTournamentsStore } from '../store/useTournamentsStore';
 import { useUserStore } from '../store/useUserStore';
-import { formatCurrency, formatChips } from '../utils/formatters';
+import { formatCurrency } from '../utils/formatters';
 import { triggerHaptic, requestGroupMessagesPermission } from '../utils/vkBridge';
 import { TournamentStatus } from '../types';
 import { CURRENT_BRANDING, getEffectiveVkGroupId } from '../config/branding';
 import { PlayerAvatar } from '../components/PlayerAvatar';
 
 // eslint-disable-next-line react-refresh/only-export-components
-export const checkCanViewVkId = (vkUser?: { isAdmin?: boolean } | null): boolean => {
-  return vkUser?.isAdmin === true;
+export const checkCanViewVkId = (
+  vkUser?: { isAdmin?: boolean } | null,
+  hasAdminRole?: boolean,
+  profile?: { isAdmin?: boolean } | null
+): boolean => {
+  return hasAdminRole === true || vkUser?.isAdmin === true || profile?.isAdmin === true;
 };
 
 // eslint-disable-next-line react-refresh/only-export-components
@@ -74,9 +78,10 @@ export const TournamentDetailModal: React.FC = () => {
     isActionLoading,
     actionError,
   } = useTournamentsStore();
-  const { vkUser, profile, setIsProfileModalOpen } = useUserStore();
+  const { vkUser, profile, setIsProfileModalOpen, hasAdminRole: storeHasAdminRole } = useUserStore();
 
   const [isCancelConfirmOpen, setIsCancelConfirmOpen] = useState(false);
+  const [isRegistering, setIsRegistering] = useState(false);
 
   if (!isDetailModalOpen || !selectedTournament) return null;
 
@@ -89,7 +94,7 @@ export const TournamentDetailModal: React.FC = () => {
   const isSeatsFull = participantsCount >= maxSeats;
 
   const { isProfileComplete, shouldShowClubCardBanner } = checkProfileCompleteness(vkUser, profile);
-  const canViewVkId = checkCanViewVkId(vkUser);
+  const hasAdminRole = checkCanViewVkId(vkUser, storeHasAdminRole, profile);
 
   const groupId = getEffectiveVkGroupId();
   const communityMessagesUrl = groupId > 0
@@ -97,16 +102,22 @@ export const TournamentDetailModal: React.FC = () => {
     : CURRENT_BRANDING.socialLinks?.vkGroup || 'https://vk.com';
 
   const handleRegister = async () => {
+    if (isRegistering || isActionLoading) return;
     if (!isProfileComplete) {
       triggerHaptic('heavy');
       setIsProfileModalOpen(true);
       return;
     }
 
+    setIsRegistering(true);
     triggerHaptic('heavy');
-    const success = await registerToTournament(t.id);
-    if (success) {
+    try {
+      // Всегда вызываем запрос разрешений на сообщения сообщества при клике на регистрацию
+      // (подписка на группу не дает прав на отправку сообщений, нужен именно отдельный permission)
       await requestGroupMessagesPermission(groupId || 238367404);
+      await registerToTournament(t.id);
+    } finally {
+      setIsRegistering(false);
     }
   };
 
@@ -212,11 +223,11 @@ export const TournamentDetailModal: React.FC = () => {
         <button
           type="button"
           onClick={handleRegister}
-          disabled={isActionLoading}
+          disabled={isActionLoading || isRegistering}
           data-testid="register-button"
-          className="w-full py-4 px-6 rounded-full bg-[#c39a44] text-white font-bold text-base shadow-xl hover:brightness-105 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+          className="w-full py-4 px-6 rounded-full bg-[#c39a44] text-white font-bold text-base shadow-xl hover:brightness-105 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {isActionLoading ? 'Запись...' : !isProfileComplete ? 'Заполнить профиль для записи' : 'Зарегистрироваться'}
+          {isActionLoading || isRegistering ? 'Запись...' : !isProfileComplete ? 'Заполнить профиль для записи' : 'Зарегистрироваться'}
         </button>
       );
     }
@@ -265,7 +276,7 @@ export const TournamentDetailModal: React.FC = () => {
             {t.format || 'NL Holdem'}
           </span>
           <span className="px-3.5 py-1 rounded-full text-xs font-semibold text-white bg-black/70 border border-[#1a3b2b]">
-            стартовый стек {formatChips(t.startingChips || 10000)}
+            стартовый стек {(t.startingStack ?? t.startingChips ?? 10000).toLocaleString('ru-RU')} chips
           </span>
           <span className="px-3.5 py-1 rounded-full text-xs font-semibold text-white bg-black/70 border border-[#1a3b2b]">
             {formatCurrency(t.buyIn)}
@@ -384,7 +395,7 @@ export const TournamentDetailModal: React.FC = () => {
               {t.description || (
                 <>
                   Турнир для гостей и членов клуба {CURRENT_BRANDING.clubName}.
-                  {'\n\n'}• Стартовый стек — {formatChips(t.startingChips || 10000)} фишек
+                  {'\n\n'}• Стартовый стек — {(t.startingStack ?? t.startingChips ?? 10000).toLocaleString('ru-RU')} фишек
                   {'\n'}• Формат — {t.format || 'No Limit Holdem'}
                   {'\n'}• Блайнд-апы — 15 минут
                   {'\n'}• Поздняя регистрация — 3 часа
@@ -444,17 +455,19 @@ export const TournamentDetailModal: React.FC = () => {
                             </span>
                           )}
                         </div>
-                        {player.vkId && canViewVkId && (
-                          <a
-                            href={`https://vk.com/id${player.vkId}`}
-                            target="_blank"
-                            rel="noreferrer"
-                            onClick={(e) => e.stopPropagation()}
-                            className="text-[10px] text-[#7d9b8c] hover:text-[#c39a44] transition-colors truncate flex items-center gap-0.5"
-                          >
-                            <span>VK ID: {player.vkId}</span>
-                            <span className="text-[#c39a44] text-[9px]">↗</span>
-                          </a>
+                        {hasAdminRole && Boolean(player.vkId) && (
+                          <div className="text-xs text-neutral-500">
+                            <a
+                              href={`https://vk.com/id${player.vkId}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="hover:text-[#c39a44] transition-colors truncate inline-flex items-center gap-0.5 text-inherit"
+                            >
+                              <span>VK ID: {player.vkId}</span>
+                              <span className="text-[#c39a44] text-[9px]">↗</span>
+                            </a>
+                          </div>
                         )}
                       </div>
                     </div>

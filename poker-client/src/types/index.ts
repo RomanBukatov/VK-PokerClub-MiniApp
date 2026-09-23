@@ -59,6 +59,7 @@ export interface Tournament {
   registeredCount: number;
   isUserRegistered: boolean;
   startingChips?: number;
+  startingStack?: number;
 }
 
 export interface TournamentDetail extends Tournament {
@@ -110,6 +111,7 @@ export interface CreateTournamentRequest {
   registrationEnd?: string | null;
   description?: string;
   startingChips?: number;
+  startingStack?: number;
   blindLevelMinutes?: number;
 }
 
@@ -125,6 +127,7 @@ export interface UpdateTournamentRequest {
   registrationEnd?: string | null;
   description?: string;
   startingChips?: number;
+  startingStack?: number;
   blindLevelMinutes?: number;
   status?: TournamentStatus;
   clearRegistrationEnd?: boolean;

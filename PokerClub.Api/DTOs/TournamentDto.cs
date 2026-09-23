@@ -17,8 +17,12 @@ public record TournamentScheduleDto(
     int RegisteredCount,
     bool IsUserRegistered = false,
     DateTime? RegistrationEnd = null,
-    string? ClubAddress = null
-);
+    string? ClubAddress = null,
+    int StartingStack = 10000
+)
+{
+    public int StartingChips => StartingStack;
+}
 
 public record TournamentDetailDto(
     int Id,
@@ -36,8 +40,12 @@ public record TournamentDetailDto(
     int RegisteredCount,
     bool IsUserRegistered,
     List<RegisteredPlayerDto> Participants,
-    DateTime? RegistrationEnd = null
-);
+    DateTime? RegistrationEnd = null,
+    int StartingStack = 10000
+)
+{
+    public int StartingChips => StartingStack;
+}
 
 public record RegisteredPlayerDto(
     int UserId,

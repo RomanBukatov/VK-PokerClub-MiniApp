@@ -31,6 +31,7 @@ public record CreateTournamentRequest(
     DateTime StartTime = default,
     string? Description = null,
     int? StartingChips = null,
+    int? StartingStack = null,
     int? BlindLevelMinutes = null,
     DateTime? RegistrationEnd = null
 );
@@ -46,6 +47,7 @@ public record UpdateTournamentRequest(
     DateTime? StartTime = null,
     string? Description = null,
     int? StartingChips = null,
+    int? StartingStack = null,
     int? BlindLevelMinutes = null,
     DateTime? RegistrationEnd = null,
     TournamentStatus? Status = null,

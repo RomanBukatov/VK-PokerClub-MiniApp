@@ -1886,6 +1886,91 @@ public class TournamentServiceTests
         Assert.Contains("access_token=test_token_xyz", vkBody);
     }
 
+    [Fact]
+    public async Task CreateTournament_WithStartingStack_SetsStartingStackCorrectly()
+    {
+        using var context = CreateInMemoryDbContext();
+        var city = new City { Name = "Пермь", Slug = "perm", IsActive = true };
+        var club = new Club { Name = "Monte Carlo", Address = "Монастырская 59", City = city, IsActive = true };
+        context.Cities.Add(city);
+        context.Clubs.Add(club);
+        await context.SaveChangesAsync();
+
+        var service = new TournamentService(context);
+        var startTime = DateTime.SpecifyKind(new DateTime(2026, 9, 8, 19, 0, 0), DateTimeKind.Unspecified);
+
+        var (success, tournament, message) = await service.CreateTournamentAsync(
+            clubId: club.Id,
+            title: "Deepstack 20K",
+            format: "NL Holdem",
+            buyIn: 2000,
+            maxSeats: 30,
+            startTime: startTime,
+            description: "20k chips",
+            startingStack: 20000
+        );
+
+        Assert.True(success);
+        Assert.NotNull(tournament);
+        Assert.Equal(20000, tournament.StartingStack);
+    }
+
+    [Fact]
+    public async Task TournamentsController_UpdateTournament_WithStartingStack_PersistsAndReturnsInDtos()
+    {
+        using var context = CreateInMemoryDbContext();
+        var city = new City { Name = "Пермь", Slug = "perm", IsActive = true };
+        var club = new Club { Name = "Monte Carlo", Address = "Монастырская 59", City = city, IsActive = true };
+        var tour = new Tournament
+        {
+            Club = club,
+            Title = "Tour Stack Test",
+            StartTime = DateTime.UtcNow.AddDays(2),
+            MaxSeats = 30,
+            BuyIn = 1500,
+            Format = "NL Holdem",
+            StartingStack = 10000
+        };
+        context.Cities.Add(city);
+        context.Clubs.Add(club);
+        context.Tournaments.Add(tour);
+        await context.SaveChangesAsync();
+
+        var service = new TournamentService(context);
+        var controller = new TournamentsController(service);
+
+        var updateReq = new UpdateTournamentRequest(
+            StartingStack: 15000
+        );
+
+        var updateRes = await controller.UpdateTournament(tour.Id, updateReq);
+        var okDetail = Assert.IsType<OkObjectResult>(updateRes.Result);
+        var detail = Assert.IsType<TournamentDetailDto>(okDetail.Value);
+
+        Assert.Equal(15000, detail.StartingStack);
+        Assert.Equal(15000, detail.StartingChips);
+
+        var scheduleRes = await controller.GetSchedule(null, null, false);
+        var okSchedule = Assert.IsType<OkObjectResult>(scheduleRes.Result);
+        var scheduleList = Assert.IsType<List<TournamentScheduleDto>>(okSchedule.Value);
+        var scheduleItem = Assert.Single(scheduleList);
+
+        Assert.Equal(15000, scheduleItem.StartingStack);
+        Assert.Equal(15000, scheduleItem.StartingChips);
+
+        var badUpdate = await controller.UpdateTournament(tour.Id, new UpdateTournamentRequest(StartingStack: 0));
+        Assert.IsType<BadRequestObjectResult>(badUpdate.Result);
+
+        var badCreate = await controller.CreateTournament(new CreateTournamentRequest(
+            Title: "Valid Title",
+            ClubId: club.Id,
+            StartTime: DateTime.UtcNow.AddDays(1),
+            MaxSeats: 30,
+            StartingStack: -500
+        ));
+        Assert.IsType<BadRequestObjectResult>(badCreate.Result);
+    }
+
     private class TestHttpMessageHandler : HttpMessageHandler
     {
         private readonly Func<HttpRequestMessage, HttpResponseMessage> _handler;

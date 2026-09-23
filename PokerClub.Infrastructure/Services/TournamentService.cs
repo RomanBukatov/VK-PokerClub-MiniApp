@@ -421,7 +421,8 @@ public class TournamentService : ITournamentService
         string? description,
         int? cityId = null,
         string? address = null,
-        DateTime? registrationEnd = null)
+        DateTime? registrationEnd = null,
+        int startingStack = 10000)
     {
         if (string.IsNullOrWhiteSpace(title))
             return (false, null, "Название турнира не может быть пустым.");
@@ -548,6 +549,7 @@ public class TournamentService : ITournamentService
             StartTime = utcStartTime,
             RegistrationEnd = utcRegistrationEnd,
             Description = description?.Trim(),
+            StartingStack = startingStack > 0 ? startingStack : 10000,
             Status = TournamentStatus.RegistrationOpen,
             CreatedAt = DateTime.UtcNow,
             Club = club
@@ -572,7 +574,8 @@ public class TournamentService : ITournamentService
         string? address = null,
         DateTime? registrationEnd = null,
         TournamentStatus? status = null,
-        bool clearRegistrationEnd = false)
+        bool clearRegistrationEnd = false,
+        int? startingStack = null)
     {
         var tournament = await _context.Tournaments
             .Include(t => t.Club)
@@ -644,6 +647,11 @@ public class TournamentService : ITournamentService
         if (status.HasValue)
         {
             tournament.Status = status.Value;
+        }
+
+        if (startingStack.HasValue && startingStack.Value > 0)
+        {
+            tournament.StartingStack = startingStack.Value;
         }
 
         // 1. Если передан clubId > 0, ищем клуб по Id

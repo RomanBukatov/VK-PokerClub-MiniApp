@@ -497,7 +497,7 @@ export const ProfilePanel: React.FC = () => {
                       {t.format || 'NL Holdem'}
                     </span>
                     <span className="px-2.5 py-0.5 rounded-lg bg-black/60 border border-white/10 font-semibold text-[#d1e0d7]">
-                      {formatChips(t.startingChips || 10000)} фишек
+                      {formatChips(t.startingStack ?? t.startingChips ?? 10000)}
                     </span>
                     <span className="px-2.5 py-0.5 rounded-lg bg-black/60 border border-white/10 font-semibold text-[#c39a44]">
                       {formatCurrency(t.buyIn)}

@@ -40,7 +40,8 @@ public interface ITournamentService
         string? description,
         int? cityId = null,
         string? address = null,
-        DateTime? registrationEnd = null
+        DateTime? registrationEnd = null,
+        int startingStack = 10000
     );
 
     // Обновление существующего турнира (админ)
@@ -57,6 +58,7 @@ public interface ITournamentService
         string? address = null,
         DateTime? registrationEnd = null,
         TournamentStatus? status = null,
-        bool clearRegistrationEnd = false
+        bool clearRegistrationEnd = false,
+        int? startingStack = null
     );
 }

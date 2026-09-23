@@ -3,6 +3,7 @@ import { User, Phone, CreditCard, Sparkles, X, AlertCircle } from 'lucide-react'
 import { useUserStore } from '../store/useUserStore';
 import { triggerHaptic } from '../utils/vkBridge';
 import { formatPhoneNumber } from '../utils/formatters';
+import { validateFullName, NAME_VALIDATION_ERROR } from '../utils/nameValidator';
 
 export const WelcomeProfileModal: React.FC = () => {
   const { isProfileModalOpen } = useUserStore();
@@ -59,6 +60,11 @@ const ProfileModalContent: React.FC = () => {
   const [clubCardId, setClubCardId] = useState(() => profile?.clubCardId || '');
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isFullNameTouched, setIsFullNameTouched] = useState(false);
+
+  const nameValidation = validateFullName(fullName);
+  const isNameValid = nameValidation.isValid;
+  const showNameError = !isNameValid && (fullName.trim().length > 0 || isFullNameTouched || error === NAME_VALIDATION_ERROR);
 
   // Обработка Backspace перед нецифровыми символами-разделителями
   const handlePhoneKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -131,27 +137,15 @@ const ProfileModalContent: React.FC = () => {
       return;
     }
 
-    const trimmedFullName = fullName.trim();
-    if (!trimmedFullName || trimmedFullName.length < 2) {
-      setError('Введите ваше реальное ФИО (Имя и Фамилию).');
+    const nameValidationResult = validateFullName(fullName);
+    if (!nameValidationResult.isValid) {
+      setError(NAME_VALIDATION_ERROR);
+      setIsFullNameTouched(true);
       triggerHaptic('heavy');
       return;
     }
 
-    const lowerFullName = trimmedFullName.toLowerCase();
-    if (
-      lowerFullName === 'гость клуба' ||
-      lowerFullName === 'клуба гость' ||
-      lowerFullName === 'гость' ||
-      lowerFullName === 'игрок vk' ||
-      lowerFullName === 'игрок' ||
-      lowerFullName.startsWith('игрок #') ||
-      /^игрок\s*\d+$/i.test(trimmedFullName)
-    ) {
-      setError('Пожалуйста, укажите ваши реальные Имя и Фамилию.');
-      triggerHaptic('heavy');
-      return;
-    }
+    const trimmedFullName = fullName.trim();
 
     const trimmedPhone = phoneNumber.trim();
     const phoneDigits = trimmedPhone.replace(/\D/g, '');
@@ -264,17 +258,30 @@ const ProfileModalContent: React.FC = () => {
                 maxLength={80}
                 placeholder="Иванов Иван"
                 value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
+                onChange={(e) => {
+                  setFullName(e.target.value);
+                  setIsFullNameTouched(true);
+                  if (error === NAME_VALIDATION_ERROR) {
+                    setError(null);
+                  }
+                }}
+                onBlur={() => setIsFullNameTouched(true)}
                 className={`w-full bg-black/40 border ${
-                  error && (error.includes('ФИО') || error.includes('Фамилию'))
+                  showNameError
                     ? 'border-red-500/80 focus:border-red-400'
                     : 'border-white/10 focus:border-[#c39a44]'
                 } rounded-2xl py-3 pl-11 pr-4 text-sm font-semibold text-white placeholder-white/20 focus:outline-none transition-all`}
               />
             </div>
-            <p className="text-[10px] text-[#606a66] mt-1">
-              Реальные Имя и Фамилия для турнирной сетки и клубного рейтинга
-            </p>
+            {showNameError ? (
+              <p className="text-[11px] text-red-400 mt-1 font-medium leading-tight">
+                {NAME_VALIDATION_ERROR}
+              </p>
+            ) : (
+              <p className="text-[10px] text-[#606a66] mt-1">
+                Реальные Имя и Фамилия для турнирной сетки и клубного рейтинга
+              </p>
+            )}
           </div>
 
           {/* Телефон с маской */}
@@ -328,8 +335,8 @@ const ProfileModalContent: React.FC = () => {
           <div className="pt-2">
             <button
               type="submit"
-              disabled={isSubmitting}
-              className="w-full py-3.5 px-5 rounded-2xl font-extrabold text-sm bg-gradient-to-r from-[#d8af56] to-[#b38833] text-black shadow-lg shadow-[#c39a44]/30 hover:brightness-105 active:scale-[0.98] transition-all disabled:opacity-50"
+              disabled={isSubmitting || !isNameValid}
+              className="w-full py-3.5 px-5 rounded-2xl font-extrabold text-sm bg-gradient-to-r from-[#d8af56] to-[#b38833] text-black shadow-lg shadow-[#c39a44]/30 hover:brightness-105 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isSubmitting ? 'Сохранение...' : 'Сохранить и войти в игру'}
             </button>

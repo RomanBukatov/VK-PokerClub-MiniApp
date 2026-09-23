@@ -51,7 +51,7 @@ const AdminCreateTournamentForm: React.FC = () => {
     return '19:00';
   });
   const [format, setFormat] = useState(() => editingTournament?.format || 'NL Holdem');
-  const [chips, setChips] = useState(() => editingTournament?.startingChips ? String(editingTournament.startingChips) : '15000');
+  const [chips, setChips] = useState(() => (editingTournament?.startingStack || editingTournament?.startingChips) ? String(editingTournament.startingStack || editingTournament.startingChips) : '15000');
   const [buyIn, setBuyIn] = useState(() => editingTournament?.buyIn !== undefined ? String(editingTournament.buyIn) : '1500');
   const [maxSeats, setMaxSeats] = useState(() => editingTournament?.maxSeats ? String(editingTournament.maxSeats) : '30');
   const [regEnd, setRegEnd] = useState(() => {
@@ -232,6 +232,7 @@ const AdminCreateTournamentForm: React.FC = () => {
           description: description.trim(),
           format: format.trim() || 'NL Holdem',
           startingChips: parseInt(chips, 10) || 15000,
+          startingStack: parseInt(chips, 10) || 15000,
           blindLevelMinutes: 15,
         });
 
@@ -254,6 +255,7 @@ const AdminCreateTournamentForm: React.FC = () => {
           description: description.trim(),
           format: format.trim() || 'NL Holdem',
           startingChips: parseInt(chips, 10) || 15000,
+          startingStack: parseInt(chips, 10) || 15000,
           blindLevelMinutes: 15,
         });
       }

@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import { useTournamentsStore } from '../store/useTournamentsStore';
 import { useRatingsStore } from '../store/useRatingsStore';
 import { useUserStore } from '../store/useUserStore';
-import { formatCurrency, formatChips } from '../utils/formatters';
+import { formatCurrency } from '../utils/formatters';
 import { triggerHaptic } from '../utils/vkBridge';
 import { TournamentStatus } from '../types';
 import type { Tournament } from '../types';
@@ -217,7 +217,7 @@ export const SchedulePanel: React.FC = () => {
                   {t.format || 'no limit'}
                 </span>
                 <span className="px-3.5 py-1 rounded-full text-xs font-semibold text-white bg-black/70 border border-[#1a3b2b]">
-                  стартовый стек {formatChips(t.startingChips || 10000)}
+                  стартовый стек {(t.startingStack ?? t.startingChips ?? 10000).toLocaleString('ru-RU')} chips
                 </span>
                 <span className="px-3.5 py-1 rounded-full text-xs font-semibold text-white bg-black/70 border border-[#1a3b2b]">
                   {formatCurrency(t.buyIn)}

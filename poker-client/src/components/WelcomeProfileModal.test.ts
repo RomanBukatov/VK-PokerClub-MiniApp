@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'bun:test';
 import { formatPhoneNumber } from '../utils/formatters';
+import { validateFullName, NAME_VALIDATION_ERROR } from '../utils/nameValidator';
 
 describe('formatPhoneNumber', () => {
   it('returns empty string for empty input or non-digits', () => {
@@ -53,5 +54,70 @@ describe('formatPhoneNumber', () => {
     const at6 = formatPhoneNumber(at7.slice(0, -1)); // '+7 (915) 666'
     expect(at6).toBe('+7 (915) 666');
     expect(at6.endsWith('-')).toBe(false);
+  });
+});
+
+describe('validateFullName (Cyrillic & min 2 words validation)', () => {
+  it('accepts valid Russian names with two or more words', () => {
+    expect(validateFullName('Иванов Иван').isValid).toBe(true);
+    expect(validateFullName('Иванов Иван Иванович').isValid).toBe(true);
+    expect(validateFullName('  Петров   Алексей  ').isValid).toBe(true);
+  });
+
+  it('accepts valid Russian names with hyphens', () => {
+    expect(validateFullName('Мамин-Сибиряк Дмитрий').isValid).toBe(true);
+    expect(validateFullName('Анна-Мария Смирнова').isValid).toBe(true);
+  });
+
+  it('rejects Latin characters and mixed names', () => {
+    const res1 = validateFullName('Dima Sarnavskiy');
+    expect(res1.isValid).toBe(false);
+    expect(res1.error).toBe(NAME_VALIDATION_ERROR);
+
+    const res2 = validateFullName('Дмитрий Ice');
+    expect(res2.isValid).toBe(false);
+    expect(res2.error).toBe(NAME_VALIDATION_ERROR);
+
+    const res3 = validateFullName('John Doe');
+    expect(res3.isValid).toBe(false);
+  });
+
+  it('rejects single word names', () => {
+    const res1 = validateFullName('Иван');
+    expect(res1.isValid).toBe(false);
+    expect(res1.error).toBe(NAME_VALIDATION_ERROR);
+
+    const res2 = validateFullName('Дмитрий');
+    expect(res2.isValid).toBe(false);
+    expect(res2.error).toBe(NAME_VALIDATION_ERROR);
+  });
+
+  it('accepts Russian names containing letters ё and Ё', () => {
+    expect(validateFullName('Фёдор Достоевский').isValid).toBe(true);
+    expect(validateFullName('Артём Семёнов').isValid).toBe(true);
+    expect(validateFullName('Ёлкин Пётр').isValid).toBe(true);
+  });
+
+  it('rejects empty, whitespace, or hyphen-only strings and malformed hyphens', () => {
+    expect(validateFullName('').isValid).toBe(false);
+    expect(validateFullName('   ').isValid).toBe(false);
+    expect(validateFullName(' - ').isValid).toBe(false);
+    expect(validateFullName('Иван -').isValid).toBe(false);
+    expect(validateFullName('-Иванов Иван').isValid).toBe(false);
+    expect(validateFullName('Иванов Иван-').isValid).toBe(false);
+    expect(validateFullName('Иванов--Петров Иван').isValid).toBe(false);
+  });
+
+  it('rejects digits and special characters', () => {
+    expect(validateFullName('Иван 123').isValid).toBe(false);
+    expect(validateFullName('Иван_Иванов').isValid).toBe(false);
+    expect(validateFullName('Иван @ Иванов').isValid).toBe(false);
+  });
+
+  it('rejects fake placeholder names', () => {
+    expect(validateFullName('Гость Клуба').isValid).toBe(false);
+    expect(validateFullName('гость клуба').isValid).toBe(false);
+    expect(validateFullName('Игрок VK').isValid).toBe(false);
+    expect(validateFullName('Игрок #12345').isValid).toBe(false);
   });
 });

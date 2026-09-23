@@ -13,8 +13,24 @@ describe('TournamentDetailModal and Tournament Security & Barriers', () => {
       expect(checkCanViewVkId({} as Partial<VkUser>)).toBe(false);
     });
 
-    it('shows VK ID only when vkUser.isAdmin === true', () => {
+    it('shows VK ID only when vkUser.isAdmin === true or hasAdminRole === true or profile.isAdmin === true', () => {
       expect(checkCanViewVkId({ isAdmin: true })).toBe(true);
+      expect(checkCanViewVkId(null, true)).toBe(true);
+      expect(checkCanViewVkId({ isAdmin: false }, true)).toBe(true);
+      expect(checkCanViewVkId({ isAdmin: false }, false)).toBe(false);
+      expect(checkCanViewVkId({ isAdmin: false }, false, { isAdmin: true })).toBe(true);
+      expect(checkCanViewVkId(null, false, { isAdmin: true })).toBe(true);
+      expect(checkCanViewVkId(null, false, { isAdmin: false })).toBe(false);
+    });
+
+    it('formats startingStack dynamically for tournament badges', () => {
+      const formatStackBadge = (t: Partial<Tournament>) =>
+        `стартовый стек ${(t.startingStack ?? t.startingChips ?? 10000).toLocaleString('ru-RU')} chips`;
+
+      expect(formatStackBadge({ startingStack: 15000 }).replace(/\u00A0/g, ' ')).toBe('стартовый стек 15 000 chips');
+      expect(formatStackBadge({ startingStack: 20000 }).replace(/\u00A0/g, ' ')).toBe('стартовый стек 20 000 chips');
+      expect(formatStackBadge({ startingChips: 12000 }).replace(/\u00A0/g, ' ')).toBe('стартовый стек 12 000 chips');
+      expect(formatStackBadge({}).replace(/\u00A0/g, ' ')).toBe('стартовый стек 10 000 chips');
     });
   });
 
