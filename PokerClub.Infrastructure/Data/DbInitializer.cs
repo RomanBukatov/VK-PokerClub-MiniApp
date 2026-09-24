@@ -36,6 +36,8 @@ public static class DbInitializer
 
     public static async Task CleanFakeUsersAsync(AppDbContext context)
     {
+        await EnsureDatabaseSchemaAsync(context);
+
         var allUsers = await context.Users.ToListAsync();
         var fakeUsers = allUsers.Where(IsFakeBot).ToList();
 
@@ -64,20 +66,88 @@ public static class DbInitializer
             await context.SaveChangesAsync();
         }
 
-        // Гарантируем DEFAULT 0 для колонки TotalRating в PostgreSQL
+        // Гарантируем DEFAULT 0 для колонки TotalRating и наличие StartingStack в PostgreSQL
+        if (context.Database.IsRelational())
+        {
+            try
+            {
+                await context.Database.ExecuteSqlRawAsync("ALTER TABLE \"Tournaments\" ADD COLUMN IF NOT EXISTS \"StartingStack\" integer NOT NULL DEFAULT 10000;");
+            }
+            catch (Exception)
+            {
+                // логирование или игнор если уже есть
+            }
+
+            try
+            {
+                await context.Database.ExecuteSqlRawAsync("ALTER TABLE \"Users\" ALTER COLUMN \"TotalRating\" SET DEFAULT 0;");
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                await context.Database.ExecuteSqlRawAsync("ALTER TABLE \"Users\" ADD COLUMN IF NOT EXISTS \"AcceptedTermsAt\" timestamp with time zone NULL;");
+            }
+            catch
+            {
+            }
+        }
+    }
+
+    public static async Task EnsureDatabaseSchemaAsync(AppDbContext context)
+    {
+        if (!context.Database.IsRelational())
+        {
+            return;
+        }
+
+        try
+        {
+            await context.Database.ExecuteSqlRawAsync("ALTER TABLE \"Tournaments\" ADD COLUMN IF NOT EXISTS \"StartingStack\" integer NOT NULL DEFAULT 10000;");
+        }
+        catch (Exception)
+        {
+            // Игнорируем, если таблица еще не создана
+        }
+
         try
         {
             await context.Database.ExecuteSqlRawAsync("ALTER TABLE \"Users\" ALTER COLUMN \"TotalRating\" SET DEFAULT 0;");
+        }
+        catch
+        {
+        }
+
+        try
+        {
             await context.Database.ExecuteSqlRawAsync("ALTER TABLE \"Users\" ADD COLUMN IF NOT EXISTS \"AcceptedTermsAt\" timestamp with time zone NULL;");
         }
         catch
         {
-            // Игнорируем, если база не PostgreSQL (например, InMemory в тестах) или дефолт уже применен
+        }
+
+        try
+        {
+            await context.Database.ExecuteSqlRawAsync(@"
+                INSERT INTO ""__EFMigrationsHistory"" (""MigrationId"", ""ProductVersion"")
+                SELECT '20260923163546_AddStartingStackToTournament', '10.0.8'
+                WHERE EXISTS (
+                    SELECT 1 FROM information_schema.columns 
+                    WHERE table_name = 'Tournaments' AND column_name = 'StartingStack'
+                )
+                ON CONFLICT (""MigrationId"") DO NOTHING;");
+        }
+        catch
+        {
         }
     }
 
     public static async Task CleanFakeTournamentsAsync(AppDbContext context)
     {
+        await EnsureDatabaseSchemaAsync(context);
+
         var startDate = new DateTime(2026, 9, 4, 0, 0, 0, DateTimeKind.Utc);
         var endDate = new DateTime(2026, 9, 9, 0, 0, 0, DateTimeKind.Utc);
 

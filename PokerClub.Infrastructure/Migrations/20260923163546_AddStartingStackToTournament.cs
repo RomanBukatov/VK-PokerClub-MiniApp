@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
@@ -10,12 +10,19 @@ namespace PokerClub.Infrastructure.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AddColumn<int>(
-                name: "StartingStack",
-                table: "Tournaments",
-                type: "integer",
-                nullable: false,
-                defaultValue: 10000);
+            if (migrationBuilder.ActiveProvider == "Npgsql.EntityFrameworkCore.PostgreSQL")
+            {
+                migrationBuilder.Sql("ALTER TABLE \"Tournaments\" ADD COLUMN IF NOT EXISTS \"StartingStack\" integer NOT NULL DEFAULT 10000;");
+            }
+            else
+            {
+                migrationBuilder.AddColumn<int>(
+                    name: "StartingStack",
+                    table: "Tournaments",
+                    type: "integer",
+                    nullable: false,
+                    defaultValue: 10000);
+            }
         }
 
         /// <inheritdoc />

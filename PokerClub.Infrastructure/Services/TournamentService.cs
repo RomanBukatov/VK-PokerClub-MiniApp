@@ -51,6 +51,33 @@ public class TournamentService : ITournamentService
 
     public async Task<List<Tournament>> GetScheduleAsync(int? cityId, int? clubId, bool includeFinished = false)
     {
+        try
+        {
+            return await ExecuteScheduleQueryAsync(cityId, clubId, includeFinished);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "Ошибка при получении расписания турниров (cityId={CityId}, clubId={ClubId}, includeFinished={IncludeFinished}). Пробуем восстановить схему БД.", cityId, clubId, includeFinished);
+
+            if (_context.Database.IsRelational())
+            {
+                try
+                {
+                    await _context.Database.ExecuteSqlRawAsync("ALTER TABLE \"Tournaments\" ADD COLUMN IF NOT EXISTS \"StartingStack\" integer NOT NULL DEFAULT 10000;");
+                    return await ExecuteScheduleQueryAsync(cityId, clubId, includeFinished);
+                }
+                catch (Exception retryEx)
+                {
+                    _logger?.LogError(retryEx, "Не удалось выполнить повторный запрос расписания турниров после применения ALTER TABLE.");
+                }
+            }
+
+            return new List<Tournament>();
+        }
+    }
+
+    private async Task<List<Tournament>> ExecuteScheduleQueryAsync(int? cityId, int? clubId, bool includeFinished)
+    {
         var query = _context.Tournaments
             .AsNoTracking()
             .Include(t => t.Club)
@@ -75,23 +102,92 @@ public class TournamentService : ITournamentService
             query = query.Where(t => t.Club != null && t.Club.CityId == cityId.Value);
         }
 
-        return await query.OrderBy(t => t.StartTime).ToListAsync();
+        var list = await query.OrderBy(t => t.StartTime).ToListAsync();
+        foreach (var tour in list)
+        {
+            if (tour.StartingStack <= 0)
+            {
+                tour.StartingStack = 10000;
+            }
+        }
+        return list;
     }
 
     public async Task<Tournament?> GetTournamentByIdAsync(int id)
     {
-        return await _context.Tournaments
+        try
+        {
+            return await ExecuteTournamentByIdQueryAsync(id);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "Ошибка при получении турнира {TournamentId}. Пробуем исправить схему БД.", id);
+
+            if (_context.Database.IsRelational())
+            {
+                try
+                {
+                    await _context.Database.ExecuteSqlRawAsync("ALTER TABLE \"Tournaments\" ADD COLUMN IF NOT EXISTS \"StartingStack\" integer NOT NULL DEFAULT 10000;");
+                    return await ExecuteTournamentByIdQueryAsync(id);
+                }
+                catch (Exception retryEx)
+                {
+                    _logger?.LogError(retryEx, "Не удалось загрузить турнир {TournamentId} после попытки исправления схемы.", id);
+                }
+            }
+
+            return null;
+        }
+    }
+
+    private async Task<Tournament?> ExecuteTournamentByIdQueryAsync(int id)
+    {
+        var tour = await _context.Tournaments
             .AsNoTracking()
             .Include(t => t.Club)
                 .ThenInclude(c => c!.City)
             .Include(t => t.Registrations.Where(r => r.Status == RegStatus.Active || r.Status == RegStatus.Played))
                 .ThenInclude(r => r.User)
             .FirstOrDefaultAsync(t => t.Id == id);
+
+        if (tour != null && tour.StartingStack <= 0)
+        {
+            tour.StartingStack = 10000;
+        }
+
+        return tour;
     }
 
     public async Task<List<Tournament>> GetUserTournamentsAsync(string vkId)
     {
-        return await _context.Tournaments
+        try
+        {
+            return await ExecuteUserTournamentsQueryAsync(vkId);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "Ошибка при получении турниров пользователя {VkId}. Пробуем исправить схему БД.", vkId);
+
+            if (_context.Database.IsRelational())
+            {
+                try
+                {
+                    await _context.Database.ExecuteSqlRawAsync("ALTER TABLE \"Tournaments\" ADD COLUMN IF NOT EXISTS \"StartingStack\" integer NOT NULL DEFAULT 10000;");
+                    return await ExecuteUserTournamentsQueryAsync(vkId);
+                }
+                catch (Exception retryEx)
+                {
+                    _logger?.LogError(retryEx, "Не удалось загрузить турниры пользователя {VkId} после попытки исправления схемы.", vkId);
+                }
+            }
+
+            return new List<Tournament>();
+        }
+    }
+
+    private async Task<List<Tournament>> ExecuteUserTournamentsQueryAsync(string vkId)
+    {
+        var list = await _context.Tournaments
             .AsNoTracking()
             .Include(t => t.Club)
                 .ThenInclude(c => c!.City)
@@ -100,6 +196,15 @@ public class TournamentService : ITournamentService
             .Where(t => t.Registrations.Any(r => r.User != null && r.User.VkId == vkId && r.Status != RegStatus.Canceled))
             .OrderByDescending(t => t.StartTime)
             .ToListAsync();
+
+        foreach (var tour in list)
+        {
+            if (tour.StartingStack <= 0)
+            {
+                tour.StartingStack = 10000;
+            }
+        }
+        return list;
     }
 
     public async Task<(bool Success, string Message)> RegisterPlayerAsync(
@@ -388,28 +493,36 @@ public class TournamentService : ITournamentService
 
     public async Task<(bool Success, string Message)> CancelRegistrationAsync(int tournamentId, string vkId)
     {
-        var user = await _context.Users.FirstOrDefaultAsync(u => u.VkId == vkId);
-        if (user == null)
-            return (false, "Пользователь не найден.");
+        try
+        {
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.VkId == vkId);
+            if (user == null)
+                return (false, "Пользователь не найден.");
 
-        var tournament = await _context.Tournaments
-            .Include(t => t.Registrations)
-            .FirstOrDefaultAsync(t => t.Id == tournamentId);
+            var tournament = await _context.Tournaments
+                .Include(t => t.Registrations)
+                .FirstOrDefaultAsync(t => t.Id == tournamentId);
 
-        if (tournament == null)
-            return (false, "Турнир не найден.");
+            if (tournament == null)
+                return (false, "Турнир не найден.");
 
-        if (tournament.Status == TournamentStatus.Finished || tournament.Status == TournamentStatus.Canceled)
-            return (false, "Невозможно отменить запись на завершенный или отмененный турнир.");
+            if (tournament.Status == TournamentStatus.Finished || tournament.Status == TournamentStatus.Canceled)
+                return (false, "Невозможно отменить запись на завершенный или отмененный турнир.");
 
-        var registration = tournament.Registrations.FirstOrDefault(r => r.UserId == user.Id);
-        if (registration == null || registration.Status != RegStatus.Active)
-            return (false, "Активная запись на данный турнир не найдена.");
+            var registration = (tournament.Registrations ?? Enumerable.Empty<Registration>()).FirstOrDefault(r => r.UserId == user.Id);
+            if (registration == null || registration.Status != RegStatus.Active)
+                return (false, "Активная запись на данный турнир не найдена.");
 
-        registration.Status = RegStatus.Canceled;
-        await _context.SaveChangesAsync();
+            registration.Status = RegStatus.Canceled;
+            await _context.SaveChangesAsync();
 
-        return (true, "Запись на турнир успешно отменена.");
+            return (true, "Запись на турнир успешно отменена.");
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "Ошибка при отмене записи пользователя {VkId} на турнир {TournamentId}", vkId, tournamentId);
+            return (false, "Ошибка при отмене записи на турнир.");
+        }
     }
 
     public async Task<(bool Success, Tournament? Tournament, string Message)> CreateTournamentAsync(
@@ -425,8 +538,10 @@ public class TournamentService : ITournamentService
         DateTime? registrationEnd = null,
         int startingStack = 10000)
     {
-        if (string.IsNullOrWhiteSpace(title))
-            return (false, null, "Название турнира не может быть пустым.");
+        try
+        {
+            if (string.IsNullOrWhiteSpace(title))
+                return (false, null, "Название турнира не может быть пустым.");
 
         Club? club = null;
 
@@ -557,9 +672,39 @@ public class TournamentService : ITournamentService
         };
 
         _context.Tournaments.Add(tournament);
-        await _context.SaveChangesAsync();
+        try
+        {
+            await _context.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "Ошибка при сохранении созданного турнира в БД.");
+            if (_context.Database.IsRelational())
+            {
+                try
+                {
+                    await _context.Database.ExecuteSqlRawAsync("ALTER TABLE \"Tournaments\" ADD COLUMN IF NOT EXISTS \"StartingStack\" integer NOT NULL DEFAULT 10000;");
+                    await _context.SaveChangesAsync();
+                }
+                catch (Exception retryEx)
+                {
+                    _logger?.LogError(retryEx, "Не удалось сохранить созданный турнир после попытки исправления схемы.");
+                    return (false, null, "Ошибка сохранения турнира в базе данных.");
+                }
+            }
+            else
+            {
+                return (false, null, "Ошибка сохранения турнира в базе данных.");
+            }
+        }
 
-        return (true, tournament, "Турнир успешно создан!");
+            return (true, tournament, "Турнир успешно создан!");
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "Ошибка при создании турнира.");
+            return (false, null, "Ошибка создания турнира в базе данных.");
+        }
     }
 
     public async Task<(bool Success, Tournament? Tournament, string Message)> UpdateTournamentAsync(
@@ -578,12 +723,14 @@ public class TournamentService : ITournamentService
         bool clearRegistrationEnd = false,
         int? startingStack = null)
     {
-        var tournament = await _context.Tournaments
-            .Include(t => t.Club)
-                .ThenInclude(c => c!.City)
-            .Include(t => t.Registrations)
-                .ThenInclude(r => r.User)
-            .FirstOrDefaultAsync(t => t.Id == id);
+        try
+        {
+            var tournament = await _context.Tournaments
+                .Include(t => t.Club)
+                    .ThenInclude(c => c!.City)
+                .Include(t => t.Registrations)
+                    .ThenInclude(r => r.User)
+                .FirstOrDefaultAsync(t => t.Id == id);
 
         if (tournament == null)
             return (false, null, "Турнир не найден.");
@@ -703,24 +850,65 @@ public class TournamentService : ITournamentService
             }
         }
 
-        await _context.SaveChangesAsync();
+        try
+        {
+            await _context.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "Ошибка при обновлении турнира в БД.");
+            if (_context.Database.IsRelational())
+            {
+                try
+                {
+                    await _context.Database.ExecuteSqlRawAsync("ALTER TABLE \"Tournaments\" ADD COLUMN IF NOT EXISTS \"StartingStack\" integer NOT NULL DEFAULT 10000;");
+                    await _context.SaveChangesAsync();
+                }
+                catch (Exception retryEx)
+                {
+                    _logger?.LogError(retryEx, "Не удалось обновить турнир после попытки исправления схемы.");
+                    return (false, null, "Ошибка обновления турнира в базе данных.");
+                }
+            }
+            else
+            {
+                return (false, null, "Ошибка обновления турнира в базе данных.");
+            }
+        }
 
-        return (true, tournament, "Турнир успешно обновлен.");
+            return (true, tournament, "Турнир успешно обновлен.");
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "Ошибка при обновлении турнира {TournamentId}", id);
+            return (false, null, "Ошибка обновления турнира в базе данных.");
+        }
     }
 
     public async Task<(bool Success, string Message)> DeleteTournamentAsync(int id)
     {
-        var tournament = await _context.Tournaments
-            .Include(t => t.Registrations)
-            .FirstOrDefaultAsync(t => t.Id == id);
+        try
+        {
+            var tournament = await _context.Tournaments
+                .Include(t => t.Registrations)
+                .FirstOrDefaultAsync(t => t.Id == id);
 
-        if (tournament == null)
-            return (false, "Турнир не найден.");
+            if (tournament == null)
+                return (false, "Турнир не найден.");
 
-        _context.Registrations.RemoveRange(tournament.Registrations);
-        _context.Tournaments.Remove(tournament);
-        await _context.SaveChangesAsync();
+            if (tournament.Registrations != null && tournament.Registrations.Count > 0)
+            {
+                _context.Registrations.RemoveRange(tournament.Registrations);
+            }
+            _context.Tournaments.Remove(tournament);
+            await _context.SaveChangesAsync();
 
-        return (true, "Турнир успешно удален.");
+            return (true, "Турнир успешно удален.");
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "Ошибка при удалении турнира {TournamentId}", id);
+            return (false, "Ошибка при удалении турнира.");
+        }
     }
 }

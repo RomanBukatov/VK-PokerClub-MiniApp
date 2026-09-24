@@ -21,7 +21,7 @@ public record TournamentScheduleDto(
     int StartingStack = 10000
 )
 {
-    public int StartingChips => StartingStack;
+    public int StartingChips => StartingStack > 0 ? StartingStack : 10000;
 }
 
 public record TournamentDetailDto(
@@ -44,7 +44,7 @@ public record TournamentDetailDto(
     int StartingStack = 10000
 )
 {
-    public int StartingChips => StartingStack;
+    public int StartingChips => StartingStack > 0 ? StartingStack : 10000;
 }
 
 public record RegisteredPlayerDto(

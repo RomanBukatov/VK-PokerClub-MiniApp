@@ -118,23 +118,42 @@ builder.Services.AddOpenApi();
 var app = builder.Build();
 
 // ==========================================
-// АВТОМАТИЧЕСКИЕ МИГРАЦИИ ПРИ СТАРТЕ
+// АВТОМАТИЧЕСКИЕ МИГРАЦИИ И СХЕМА ПРИ СТАРТЕ
 // ==========================================
 using (var scope = app.Services.CreateScope())
 {
     var services = scope.ServiceProvider;
+    var logger = services.GetRequiredService<ILogger<Program>>();
+    var context = services.GetRequiredService<AppDbContext>();
+
     try
     {
-        var context = services.GetRequiredService<AppDbContext>();
+        await DbInitializer.EnsureDatabaseSchemaAsync(context);
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Ошибка при предварительной проверке схемы БД.");
+    }
+
+    try
+    {
         await context.Database.MigrateAsync();
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Ошибка при выполнении автоматических миграций EF Core (продолжаем с прямой проверкой схемы).");
+    }
+
+    try
+    {
+        await DbInitializer.EnsureDatabaseSchemaAsync(context);
         await DbInitializer.CleanFakeUsersAsync(context);
         await DbInitializer.CleanFakeTournamentsAsync(context);
         await DbInitializer.SeedAsync(context);
     }
     catch (Exception ex)
     {
-        var logger = services.GetRequiredService<ILogger<Program>>();
-        logger.LogError(ex, "Ошибка при выполнении автоматических миграций или сида базы данных.");
+        logger.LogError(ex, "Ошибка при выполнении сида базы данных или проверке схемы.");
     }
 }
 

@@ -16,6 +16,7 @@ using PokerClub.Api.Models;
 using PokerClub.Api.Services;
 using PokerClub.Domain.Entities;
 using PokerClub.Domain.Enums;
+using PokerClub.Domain.Interfaces;
 using PokerClub.Infrastructure.Data;
 using PokerClub.Infrastructure.Services;
 using Xunit;
@@ -2133,6 +2134,154 @@ public class TournamentServiceTests
 
         var first = Assert.Single(list);
         Assert.Equal("Club 2 Open", first.Title);
+    }
+
+    [Fact]
+    public void TournamentDtos_StartingChips_FallbackToDefaultWhenZeroOrNegative()
+    {
+        var scheduleZero = new TournamentScheduleDto(
+            1, "Test", "NL", 1000, null, 20, DateTime.UtcNow, TournamentStatus.Announced, 1, "Club", "Perm", 0, false, null, null, 0);
+        Assert.Equal(10000, scheduleZero.StartingChips);
+
+        var scheduleNegative = new TournamentScheduleDto(
+            1, "Test", "NL", 1000, null, 20, DateTime.UtcNow, TournamentStatus.Announced, 1, "Club", "Perm", 0, false, null, null, -500);
+        Assert.Equal(10000, scheduleNegative.StartingChips);
+
+        var schedulePositive = new TournamentScheduleDto(
+            1, "Test", "NL", 1000, null, 20, DateTime.UtcNow, TournamentStatus.Announced, 1, "Club", "Perm", 0, false, null, null, 25000);
+        Assert.Equal(25000, schedulePositive.StartingChips);
+
+        var detailZero = new TournamentDetailDto(
+            1, "Test", "NL", 1000, null, 20, DateTime.UtcNow, TournamentStatus.Announced, 1, "Club", "Perm", "Address", 0, false, new List<RegisteredPlayerDto>(), null, 0);
+        Assert.Equal(10000, detailZero.StartingChips);
+
+        var detailPositive = new TournamentDetailDto(
+            1, "Test", "NL", 1000, null, 20, DateTime.UtcNow, TournamentStatus.Announced, 1, "Club", "Perm", "Address", 0, false, new List<RegisteredPlayerDto>(), null, 30000);
+        Assert.Equal(30000, detailPositive.StartingChips);
+    }
+
+    [Fact]
+    public async Task TournamentsController_GetSchedule_WhenServiceThrows_ReturnsEmptyListFallback()
+    {
+        var throwingService = new ThrowingTournamentService();
+        var controller = new TournamentsController(throwingService);
+        var result = await controller.GetSchedule(1, 1, false);
+
+        var okResult = Assert.IsType<OkObjectResult>(result.Result);
+        var list = Assert.IsType<List<TournamentScheduleDto>>(okResult.Value);
+        Assert.Empty(list);
+    }
+
+    private class ThrowingTournamentService : ITournamentService
+    {
+        public Task<List<Tournament>> GetScheduleAsync(int? cityId, int? clubId, bool includeFinished = false)
+            => throw new InvalidOperationException("Simulated database failure");
+        public Task<Tournament?> GetTournamentByIdAsync(int id)
+            => throw new InvalidOperationException("Simulated database failure");
+        public Task<List<Tournament>> GetUserTournamentsAsync(string vkId)
+            => throw new InvalidOperationException("Simulated database failure");
+        public Task<(bool Success, string Message)> RegisterPlayerAsync(int tournamentId, string vkId, string? firstName = null, string? lastName = null, string? avatarUrl = null)
+            => throw new InvalidOperationException("Simulated database failure");
+        public Task<(bool Success, string Message)> CancelRegistrationAsync(int tournamentId, string vkId)
+            => throw new InvalidOperationException("Simulated database failure");
+        public Task<(bool Success, string Message)> DeleteTournamentAsync(int id)
+            => throw new InvalidOperationException("Simulated database failure");
+        public Task<(bool Success, Tournament? Tournament, string Message)> CreateTournamentAsync(int? clubId, string title, string? format, decimal buyIn, int maxSeats, DateTime startTime, string? description, int? cityId = null, string? address = null, DateTime? registrationEnd = null, int startingStack = 10000)
+            => throw new InvalidOperationException("Simulated database failure");
+        public Task<(bool Success, Tournament? Tournament, string Message)> UpdateTournamentAsync(int id, int? clubId = null, string? title = null, string? format = null, decimal? buyIn = null, int? maxSeats = null, DateTime? startTime = null, string? description = null, int? cityId = null, string? address = null, DateTime? registrationEnd = null, TournamentStatus? status = null, bool clearRegistrationEnd = false, int? startingStack = null)
+            => throw new InvalidOperationException("Simulated database failure");
+    }
+
+    [Fact]
+    public async Task TournamentsController_GetTournament_WhenServiceThrows_ReturnsNotFoundFallback()
+    {
+        var throwingService = new ThrowingTournamentService();
+        var controller = new TournamentsController(throwingService);
+        var result = await controller.GetTournament(999);
+
+        var notFoundResult = Assert.IsType<NotFoundObjectResult>(result.Result);
+        Assert.NotNull(notFoundResult.Value);
+    }
+
+    [Fact]
+    public async Task TournamentsController_GetMyTournaments_WhenServiceThrows_ReturnsEmptyListFallback()
+    {
+        var throwingService = new ThrowingTournamentService();
+        var controller = new TournamentsController(throwingService);
+        var httpContext = new DefaultHttpContext();
+        httpContext.Items["VkUserId"] = "12345";
+        controller.ControllerContext = new ControllerContext { HttpContext = httpContext };
+
+        var result = await controller.GetMyTournaments();
+        var okResult = Assert.IsType<OkObjectResult>(result.Result);
+        var list = Assert.IsType<List<TournamentScheduleDto>>(okResult.Value);
+        Assert.Empty(list);
+    }
+
+    [Fact]
+    public async Task TournamentsController_Mutations_WhenServiceThrows_ReturnsBadRequestFallback()
+    {
+        var throwingService = new ThrowingTournamentService();
+        var controller = new TournamentsController(throwingService);
+        var httpContext = new DefaultHttpContext();
+        httpContext.Items["VkUserId"] = "12345";
+        controller.ControllerContext = new ControllerContext { HttpContext = httpContext };
+
+        var regResult = await controller.Register(new RegisterPlayerRequest(1, "12345"));
+        Assert.IsType<BadRequestObjectResult>(regResult);
+
+        var unregResult = await controller.Unregister(new CancelRegistrationRequest(1, "12345"));
+        Assert.IsType<BadRequestObjectResult>(unregResult);
+
+        var createResult = await controller.CreateTournament(new CreateTournamentRequest("New Tournament", ClubId: 1, Format: "NL", BuyIn: 1000, MaxSeats: 20, StartTime: DateTime.UtcNow.AddDays(1)));
+        Assert.IsType<BadRequestObjectResult>(createResult.Result);
+
+        var updateResult = await controller.UpdateTournament(1, new UpdateTournamentRequest("Updated"));
+        Assert.IsType<BadRequestObjectResult>(updateResult.Result);
+
+        var deleteResult = await controller.DeleteTournament(1);
+        Assert.IsType<BadRequestObjectResult>(deleteResult);
+    }
+
+    [Fact]
+    public async Task TournamentService_QuerySanitization_NormalizesZeroStartingStackToDefault()
+    {
+        using var context = CreateInMemoryDbContext();
+        var city = new City { Name = "Пермь", Slug = "perm", IsActive = true };
+        var club = new Club { Name = "Monte Carlo", Address = "Монастырская 59", City = city, IsActive = true };
+        context.Cities.Add(city);
+        context.Clubs.Add(club);
+
+        var tourZero = new Tournament
+        {
+            Club = club,
+            Title = "Zero Stack Tournament",
+            BuyIn = 1000,
+            MaxSeats = 20,
+            StartTime = DateTime.UtcNow.AddHours(2),
+            Status = TournamentStatus.Announced,
+            StartingStack = 0
+        };
+        context.Tournaments.Add(tourZero);
+        await context.SaveChangesAsync();
+
+        var service = new TournamentService(context);
+        var schedule = await service.GetScheduleAsync(city.Id, club.Id, false);
+        var item = Assert.Single(schedule);
+        Assert.Equal(10000, item.StartingStack);
+
+        var detail = await service.GetTournamentByIdAsync(tourZero.Id);
+        Assert.NotNull(detail);
+        Assert.Equal(10000, detail.StartingStack);
+    }
+
+    [Fact]
+    public async Task DbInitializer_EnsureDatabaseSchemaAsync_ExecutesWithoutError()
+    {
+        using var context = CreateInMemoryDbContext();
+        await DbInitializer.EnsureDatabaseSchemaAsync(context);
+        await DbInitializer.CleanFakeTournamentsAsync(context);
+        Assert.True(true);
     }
 
     private class TestHttpMessageHandler : HttpMessageHandler
