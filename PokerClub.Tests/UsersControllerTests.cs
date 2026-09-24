@@ -1,10 +1,15 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Abstractions;
+using Microsoft.AspNetCore.Mvc.Filters;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using PokerClub.Api.Controllers;
 using PokerClub.Api.DTOs;
+using PokerClub.Api.Filters;
 using PokerClub.Api.Models;
 using PokerClub.Api.Services;
 using PokerClub.Domain.Entities;
@@ -659,5 +664,253 @@ public class UsersControllerTests
         var dbUserUpdated = await context.Users.FirstOrDefaultAsync(u => u.VkId == "777888");
         Assert.NotNull(dbUserUpdated);
         Assert.Equal("https://vk.com/photo_new.jpg", dbUserUpdated.AvatarUrl);
+    }
+
+    [Fact]
+    public async Task UpdateProfile_WithMasterAdminCard_BypassesAntiTheftPhoneCheckAndGrantsAdmin()
+    {
+        using var context = CreateInMemoryDbContext();
+
+        // Предположим, в таблице есть игрок с похожим именем и своим телефоном
+        var sheetUser = new User
+        {
+            VkId = "sheet_admin_target",
+            FirstName = "Иван",
+            LastName = "Иванов",
+            PhoneNumber = "+7 (999) 111-22-33",
+            ClubCardId = "MC-ADMIN-MASTER-777-ACCESS-2026",
+            TotalRating = 500
+        };
+        context.Users.Add(sheetUser);
+        await context.SaveChangesAsync();
+
+        var controller = new UsersController(context, NullLogger<UsersController>.Instance);
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Headers["X-Test-Vk-Id"] = "admin_non_club_member";
+        controller.ControllerContext = new ControllerContext { HttpContext = httpContext };
+
+        // Админ вводит мастер-карту со своим произвольным телефоном
+        var request = new UpdateProfileRequest(
+            Nickname: "MasterAdmin",
+            FullName: "Иванов Иван",
+            PhoneNumber: "+7 (999) 888-77-66", // Не совпадает с sheetUser!
+            ClubCardId: "MC-ADMIN-MASTER-777-ACCESS-2026"
+        );
+
+        var actionResult = await controller.UpdateProfile(request);
+        var okResult = Assert.IsType<OkObjectResult>(actionResult.Result);
+        var profile = Assert.IsType<UserProfileDto>(okResult.Value);
+
+        Assert.True(profile.IsAdmin);
+        Assert.Equal("MC-ADMIN-MASTER-777-ACCESS-2026", profile.ClubCardId);
+        Assert.Equal("MasterAdmin", profile.Nickname);
+        Assert.Equal("+7 (999) 888-77-66", profile.PhoneNumber);
+
+        // Проверяем, что в БД пользователь сохранен с правами админа
+        var dbUser = await context.Users.FirstOrDefaultAsync(u => u.VkId == "admin_non_club_member");
+        Assert.NotNull(dbUser);
+        Assert.Equal("MC-ADMIN-MASTER-777-ACCESS-2026", dbUser.ClubCardId);
+
+        // При последующем вызове GetMe пользователь по-прежнему является админом
+        var meResult = await controller.GetMe();
+        var meOk = Assert.IsType<OkObjectResult>(meResult.Result);
+        var meProfile = Assert.IsType<UserProfileDto>(meOk.Value);
+        Assert.True(meProfile.IsAdmin);
+    }
+
+    [Fact]
+    public async Task UpdateProfile_WithMasterAdminCard_AllowsMultipleAdminsWithoutDuplicateError()
+    {
+        using var context = CreateInMemoryDbContext();
+
+        // Первый админ уже использует мастер-карту
+        var admin1 = new User
+        {
+            VkId = "admin_1",
+            Nickname = "AdminOne",
+            ClubCardId = "MC-ADMIN-MASTER-777-ACCESS-2026",
+            TotalRating = 0
+        };
+        context.Users.Add(admin1);
+        await context.SaveChangesAsync();
+
+        var controller = new UsersController(context, NullLogger<UsersController>.Instance);
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Headers["X-Test-Vk-Id"] = "admin_2";
+        controller.ControllerContext = new ControllerContext { HttpContext = httpContext };
+
+        // Второй админ вводит ту же самую мастер-карту
+        var request = new UpdateProfileRequest(
+            Nickname: "AdminTwo",
+            FullName: "Петров Петр",
+            PhoneNumber: "+7 (999) 222-33-44",
+            ClubCardId: "  mc-admin-master-777-access-2026  " // Проверка trim и case-insensitivity
+        );
+
+        var actionResult = await controller.UpdateProfile(request);
+        var okResult = Assert.IsType<OkObjectResult>(actionResult.Result);
+        var profile = Assert.IsType<UserProfileDto>(okResult.Value);
+
+        Assert.True(profile.IsAdmin);
+        Assert.Equal("MC-ADMIN-MASTER-777-ACCESS-2026", profile.ClubCardId);
+        Assert.Equal("AdminTwo", profile.Nickname);
+    }
+
+    [Fact]
+    public async Task UpdateProfile_WithSecondaryMasterAdminCard_BypassesAntiTheftAndGrantsAdmin()
+    {
+        using var context = CreateInMemoryDbContext();
+
+        var controller = new UsersController(context, NullLogger<UsersController>.Instance);
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Headers["X-Test-Vk-Id"] = "secondary_admin";
+        controller.ControllerContext = new ControllerContext { HttpContext = httpContext };
+
+        var request = new UpdateProfileRequest(
+            Nickname: "VipAdmin",
+            FullName: "Сидоров Сидор",
+            PhoneNumber: "+7 (999) 333-44-55",
+            ClubCardId: "ADMIN-777-MONTE-CARLO-VIP-PASS"
+        );
+
+        var actionResult = await controller.UpdateProfile(request);
+        var okResult = Assert.IsType<OkObjectResult>(actionResult.Result);
+        var profile = Assert.IsType<UserProfileDto>(okResult.Value);
+
+        Assert.True(profile.IsAdmin);
+        Assert.Equal("MC-ADMIN-MASTER-777-ACCESS-2026", profile.ClubCardId);
+    }
+
+    [Fact]
+    public async Task VkAuthorizeAttribute_WithMasterCardUser_AuthorizesAdminAccess()
+    {
+        using var context = CreateInMemoryDbContext();
+        var adminUser = new User
+        {
+            VkId = "master_vk_admin",
+            FirstName = "Мастер",
+            LastName = "Админ",
+            ClubCardId = "MC-ADMIN-MASTER-777-ACCESS-2026"
+        };
+        context.Users.Add(adminUser);
+        await context.SaveChangesAsync();
+
+        var serviceProvider = new ServiceCollection()
+            .AddScoped<IVkAuthValidator>(_ => new VkAuthValidator(
+                Options.Create(new VkOptions { RequireValidation = false }),
+                NullLogger<VkAuthValidator>.Instance))
+            .AddScoped(_ => context)
+            .BuildServiceProvider();
+
+        var httpContext = new DefaultHttpContext { RequestServices = serviceProvider };
+        httpContext.Request.Headers["X-Test-Vk-Id"] = "master_vk_admin";
+
+        var actionContext = new ActionContext(httpContext, new RouteData(), new ActionDescriptor());
+        var actionExecutingContext = new ActionExecutingContext(
+            actionContext,
+            new List<IFilterMetadata>(),
+            new Dictionary<string, object?>(),
+            new object());
+
+        bool nextCalled = false;
+        var filter = new VkAuthorizeAttribute { RequireAdmin = true };
+        await filter.OnActionExecutionAsync(actionExecutingContext, () =>
+        {
+            nextCalled = true;
+            return Task.FromResult(new ActionExecutedContext(actionContext, new List<IFilterMetadata>(), new object()));
+        });
+
+        Assert.True(nextCalled);
+        Assert.Null(actionExecutingContext.Result);
+        Assert.Equal(true, httpContext.Items["IsAdmin"]);
+    }
+
+    [Fact]
+    public async Task VkAuthorizeAttribute_WithMasterCardUser_AllowsAccessEvenIfXIsAdminFalse()
+    {
+        using var context = CreateInMemoryDbContext();
+        var adminUser = new User
+        {
+            VkId = "master_vk_admin_player_mode",
+            FirstName = "Мастер",
+            LastName = "Игрок",
+            ClubCardId = "MC-ADMIN-MASTER-777-ACCESS-2026"
+        };
+        context.Users.Add(adminUser);
+        await context.SaveChangesAsync();
+
+        var serviceProvider = new ServiceCollection()
+            .AddScoped<IVkAuthValidator>(_ => new VkAuthValidator(
+                Options.Create(new VkOptions { RequireValidation = false }),
+                NullLogger<VkAuthValidator>.Instance))
+            .AddScoped(_ => context)
+            .BuildServiceProvider();
+
+        var httpContext = new DefaultHttpContext { RequestServices = serviceProvider };
+        httpContext.Request.Headers["X-Test-Vk-Id"] = "master_vk_admin_player_mode";
+        httpContext.Request.Headers["X-Is-Admin"] = "false"; // UI режим игрока, но права мастера в БД сохраняются
+
+        var actionContext = new ActionContext(httpContext, new RouteData(), new ActionDescriptor());
+        var actionExecutingContext = new ActionExecutingContext(
+            actionContext,
+            new List<IFilterMetadata>(),
+            new Dictionary<string, object?>(),
+            new object());
+
+        bool nextCalled = false;
+        var filter = new VkAuthorizeAttribute { RequireAdmin = true };
+        await filter.OnActionExecutionAsync(actionExecutingContext, () =>
+        {
+            nextCalled = true;
+            return Task.FromResult(new ActionExecutedContext(actionContext, new List<IFilterMetadata>(), new object()));
+        });
+
+        Assert.True(nextCalled);
+        Assert.Null(actionExecutingContext.Result);
+        Assert.Equal(true, httpContext.Items["IsAdmin"]);
+    }
+
+    [Fact]
+    public async Task VkAuthorizeAttribute_RequireAdmin_WhenUserHasNormalCard_Returns403()
+    {
+        using var context = CreateInMemoryDbContext();
+        var normalUser = new User
+        {
+            VkId = "regular_player",
+            FirstName = "Обычный",
+            LastName = "Игрок",
+            ClubCardId = "1266"
+        };
+        context.Users.Add(normalUser);
+        await context.SaveChangesAsync();
+
+        var serviceProvider = new ServiceCollection()
+            .AddScoped<IVkAuthValidator>(_ => new VkAuthValidator(
+                Options.Create(new VkOptions { RequireValidation = false }),
+                NullLogger<VkAuthValidator>.Instance))
+            .AddScoped(_ => context)
+            .BuildServiceProvider();
+
+        var httpContext = new DefaultHttpContext { RequestServices = serviceProvider };
+        httpContext.Request.Headers["X-Test-Vk-Id"] = "regular_player";
+
+        var actionContext = new ActionContext(httpContext, new RouteData(), new ActionDescriptor());
+        var actionExecutingContext = new ActionExecutingContext(
+            actionContext,
+            new List<IFilterMetadata>(),
+            new Dictionary<string, object?>(),
+            new object());
+
+        bool nextCalled = false;
+        var filter = new VkAuthorizeAttribute { RequireAdmin = true };
+        await filter.OnActionExecutionAsync(actionExecutingContext, () =>
+        {
+            nextCalled = true;
+            return Task.FromResult(new ActionExecutedContext(actionContext, new List<IFilterMetadata>(), new object()));
+        });
+
+        Assert.False(nextCalled);
+        var objectResult = Assert.IsType<ObjectResult>(actionExecutingContext.Result);
+        Assert.Equal(StatusCodes.Status403Forbidden, objectResult.StatusCode);
     }
 }

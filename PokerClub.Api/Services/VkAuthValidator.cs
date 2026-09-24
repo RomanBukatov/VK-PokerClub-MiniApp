@@ -1,7 +1,10 @@
 using System.Security.Cryptography;
 using System.Text;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using PokerClub.Api.Models;
+using PokerClub.Domain.Constants;
+using PokerClub.Infrastructure.Data;
 
 namespace PokerClub.Api.Services;
 
@@ -41,8 +44,21 @@ public class VkAuthValidator : IVkAuthValidator
         if (string.IsNullOrWhiteSpace(vkUserId))
             return false;
 
-        // Права администратора выдаются строго при совпадении vk_user_id со списком AdminVkIds.
+        // Права администратора выдаются при совпадении vk_user_id со списком AdminVkIds или наличии мастер-карты.
         bool isTrustedAdmin = IsConfiguredAdmin(vkUserId);
+
+        if (!isTrustedAdmin && httpContext != null)
+        {
+            var dbContext = httpContext.RequestServices?.GetService<AppDbContext>();
+            if (dbContext != null)
+            {
+                var user = dbContext.Users.AsNoTracking().FirstOrDefault(u => u.VkId == vkUserId);
+                if (user != null && MasterClubCardConstants.IsMasterAdminCard(user.ClubCardId))
+                {
+                    isTrustedAdmin = true;
+                }
+            }
+        }
 
         if (!isTrustedAdmin)
             return false;

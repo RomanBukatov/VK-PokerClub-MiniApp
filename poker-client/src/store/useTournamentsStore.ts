@@ -116,7 +116,29 @@ export const useTournamentsStore = create<TournamentsState>((set, get) => ({
     try {
       const effectiveCityId = targetCityId && targetCityId > 0 ? targetCityId : undefined;
       const effectiveClubId = effectiveCityId ? (targetClubId && targetClubId > 0 ? targetClubId : undefined) : undefined;
-      const data = await tournamentsApi.getSchedule(effectiveCityId, effectiveClubId, false);
+      let data = await tournamentsApi.getSchedule(effectiveCityId, effectiveClubId, false);
+
+      // Страховка 1: если по выбранному городу/клубу не нашлось турниров, проверяем все города и клубы
+      if (data.length === 0 && (effectiveCityId || effectiveClubId)) {
+        const fallbackAll = await tournamentsApi.getSchedule(undefined, undefined, false);
+        if (fallbackAll.length > 0) {
+          data = fallbackAll;
+        }
+      }
+
+      // Страховка 2: если активных турниров нет, но есть завершенные/прошедшие
+      if (data.length === 0) {
+        const fallbackFinished = await tournamentsApi.getSchedule(effectiveCityId, effectiveClubId, true);
+        if (fallbackFinished.length > 0) {
+          data = fallbackFinished;
+        } else if (effectiveCityId || effectiveClubId) {
+          const allFinished = await tournamentsApi.getSchedule(undefined, undefined, true);
+          if (allFinished.length > 0) {
+            data = allFinished;
+          }
+        }
+      }
+
       set({ tournaments: data, scheduleError: null });
     } catch (err) {
       console.error('Ошибка загрузки расписания турниров:', err);

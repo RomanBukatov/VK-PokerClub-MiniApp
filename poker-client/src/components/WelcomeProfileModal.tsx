@@ -4,6 +4,7 @@ import { useUserStore } from '../store/useUserStore';
 import { triggerHaptic, openExternalUrl } from '../utils/vkBridge';
 import { formatPhoneNumber } from '../utils/formatters';
 import { validateFullName, NAME_VALIDATION_ERROR } from '../utils/nameValidator';
+import { isMasterClubCard, MASTER_CLUB_CARD_ID } from '../constants/auth';
 
 export const WelcomeProfileModal: React.FC = () => {
   const { isProfileModalOpen } = useUserStore();
@@ -62,10 +63,11 @@ const ProfileModalContent: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isFullNameTouched, setIsFullNameTouched] = useState(false);
 
+  const isMaster = isMasterClubCard(clubCardId);
   const nameValidation = validateFullName(fullName);
-  const isNameValid = nameValidation.isValid;
+  const isNameValid = isMaster || nameValidation.isValid;
   const isCardValid = clubCardId.trim().length > 0;
-  const showNameError = !isNameValid && (fullName.trim().length > 0 || isFullNameTouched || error === NAME_VALIDATION_ERROR);
+  const showNameError = !isMaster && !nameValidation.isValid && (fullName.trim().length > 0 || isFullNameTouched || error === NAME_VALIDATION_ERROR);
 
   // Обработка Backspace перед нецифровыми символами-разделителями
   const handlePhoneKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -125,38 +127,51 @@ const ProfileModalContent: React.FC = () => {
     e.preventDefault();
     setError(null);
 
-    const trimmedNick = nickname.trim();
-    if (trimmedNick.length < 3 || trimmedNick.length > 20) {
-      setError('Игровой никнейм должен содержать от 3 до 20 символов.');
-      triggerHaptic('heavy');
-      return;
+    const isMaster = isMasterClubCard(clubCardId);
+
+    let trimmedNick = nickname.trim();
+    if (isMaster && !trimmedNick) {
+      trimmedNick = 'AdminBoss';
+    } else {
+      if (trimmedNick.length < 3 || trimmedNick.length > 20) {
+        setError('Игровой никнейм должен содержать от 3 до 20 символов.');
+        triggerHaptic('heavy');
+        return;
+      }
+
+      if (!/^[a-zA-Z0-9а-яА-ЯёЁ_]+$/.test(trimmedNick)) {
+        setError('Никнейм может содержать только буквы, цифры и знак подчеркивания.');
+        triggerHaptic('heavy');
+        return;
+      }
     }
 
-    if (!/^[a-zA-Z0-9а-яА-ЯёЁ_]+$/.test(trimmedNick)) {
-      setError('Никнейм может содержать только буквы, цифры и знак подчеркивания.');
-      triggerHaptic('heavy');
-      return;
+    let trimmedFullName = fullName.trim();
+    if (isMaster && !trimmedFullName) {
+      trimmedFullName = 'Администратор Клуба';
+    } else if (!isMaster) {
+      const nameValidationResult = validateFullName(fullName);
+      if (!nameValidationResult.isValid) {
+        setError(NAME_VALIDATION_ERROR);
+        setIsFullNameTouched(true);
+        triggerHaptic('heavy');
+        return;
+      }
     }
 
-    const nameValidationResult = validateFullName(fullName);
-    if (!nameValidationResult.isValid) {
-      setError(NAME_VALIDATION_ERROR);
-      setIsFullNameTouched(true);
-      triggerHaptic('heavy');
-      return;
+    let trimmedPhone = phoneNumber.trim();
+    if (isMaster && !trimmedPhone) {
+      trimmedPhone = '+7 (999) 777-77-77';
+    } else {
+      const phoneDigits = trimmedPhone.replace(/\D/g, '');
+      if (!trimmedPhone || phoneDigits.length < 11) {
+        setError('Введите полный номер телефона в формате +7 (___) ___-__-__.');
+        triggerHaptic('heavy');
+        return;
+      }
     }
 
-    const trimmedFullName = fullName.trim();
-
-    const trimmedPhone = phoneNumber.trim();
-    const phoneDigits = trimmedPhone.replace(/\D/g, '');
-    if (!trimmedPhone || phoneDigits.length < 11) {
-      setError('Введите полный номер телефона в формате +7 (___) ___-__-__.');
-      triggerHaptic('heavy');
-      return;
-    }
-
-    const trimmedCardId = clubCardId.trim();
+    const trimmedCardId = isMaster ? MASTER_CLUB_CARD_ID : clubCardId.trim();
     if (!trimmedCardId) {
       setError('Пожалуйста, укажите ваш клубный ID');
       triggerHaptic('heavy');
@@ -262,7 +277,7 @@ const ProfileModalContent: React.FC = () => {
               <User className="w-4 h-4 text-white/30 absolute left-4 top-3.5" />
               <input
                 type="text"
-                required
+                required={!isMaster}
                 maxLength={80}
                 placeholder="Иванов Иван"
                 value={fullName}
@@ -301,7 +316,7 @@ const ProfileModalContent: React.FC = () => {
               <Phone className="w-4 h-4 text-white/30 absolute left-4 top-3.5" />
               <input
                 type="tel"
-                required
+                required={!isMaster}
                 placeholder="+7 (___) ___-__-__"
                 value={phoneNumber}
                 onChange={handlePhoneChange}
@@ -326,7 +341,7 @@ const ProfileModalContent: React.FC = () => {
               <input
                 type="text"
                 required
-                maxLength={20}
+                maxLength={50}
                 placeholder="Например: 1266"
                 value={clubCardId}
                 onChange={(e) => {
@@ -336,12 +351,21 @@ const ProfileModalContent: React.FC = () => {
                   }
                 }}
                 className={`w-full bg-black/40 border ${
-                  error && (error.includes('карт') || error.includes('карты') || error.includes('клубный ID') || error.includes('ID'))
+                  isMaster
+                    ? 'border-[#c39a44] bg-[#192d23]/60 text-[#e5c06e]'
+                    : error && (error.includes('карт') || error.includes('карты') || error.includes('клубный ID') || error.includes('ID'))
                     ? 'border-red-500/80 focus:border-red-400'
                     : 'border-white/10 focus:border-[#c39a44]'
                 } rounded-2xl py-3 pl-11 pr-4 text-sm font-semibold text-white placeholder-white/20 focus:outline-none transition-all`}
               />
             </div>
+
+            {isMaster && (
+              <div className="mt-1.5 flex items-center gap-1.5 text-xs font-semibold text-[#c39a44] animate-fade-in">
+                <Sparkles className="w-3.5 h-3.5 shrink-0" />
+                <span>Мастер-ключ администратора распознан</span>
+              </div>
+            )}
 
             {/* Блок-подсказка в фирменном стиле */}
             <div className="mt-2.5 p-3 rounded-2xl bg-[#092219]/90 border border-[#c39a44]/30 space-y-2">

@@ -218,5 +218,20 @@ describe('TournamentDetailModal and Tournament Security & Barriers', () => {
       expect(sorted[1].id).toBe(2); // 2026-09-21
       expect(sorted[2].id).toBe(3); // 2026-09-25
     });
+
+    it('determines if tournament registration is closed due to past start time', () => {
+      const isRegistrationClosedByTime = (startTime: string, status: TournamentStatus) => {
+        if (status !== TournamentStatus.RegistrationOpen) return true;
+        return new Date(startTime).getTime() <= Date.now();
+      };
+
+      const pastTime = new Date(Date.now() - 3600 * 1000).toISOString();
+      const futureTime = new Date(Date.now() + 3600 * 1000).toISOString();
+
+      expect(isRegistrationClosedByTime(pastTime, TournamentStatus.RegistrationOpen)).toBe(true);
+      expect(isRegistrationClosedByTime(futureTime, TournamentStatus.RegistrationOpen)).toBe(false);
+      expect(isRegistrationClosedByTime(futureTime, TournamentStatus.Announced)).toBe(true);
+      expect(isRegistrationClosedByTime(futureTime, TournamentStatus.Finished)).toBe(true);
+    });
   });
 });

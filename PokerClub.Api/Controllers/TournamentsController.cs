@@ -25,6 +25,47 @@ public class TournamentsController : ControllerBase
         [FromQuery] bool includeFinished = false)
     {
         var schedule = await _tournamentService.GetScheduleAsync(cityId, clubId, includeFinished);
+
+        // 1. Если для конкретного города/клуба турниры не найдены (например, город отфильтрован или турниры в другом клубе/городе) —
+        // подтягиваем турниры из всех клубов и городов, чтобы расписание не пропадало у пользователя
+        if (schedule.Count == 0 && (cityId.HasValue && cityId.Value > 0 || clubId.HasValue && clubId.Value > 0))
+        {
+            // Сначала пробуем тот же город, но любой клуб (если был передан clubId)
+            if (clubId.HasValue && clubId.Value > 0 && cityId.HasValue && cityId.Value > 0)
+            {
+                var cityAnyClubSchedule = await _tournamentService.GetScheduleAsync(cityId, null, includeFinished);
+                if (cityAnyClubSchedule.Count > 0)
+                {
+                    schedule = cityAnyClubSchedule;
+                }
+            }
+
+            // Если все еще пусто — подтягиваем турниры из всех городов и клубов
+            if (schedule.Count == 0)
+            {
+                var allCitiesSchedule = await _tournamentService.GetScheduleAsync(null, null, includeFinished);
+                if (allCitiesSchedule.Count > 0)
+                {
+                    schedule = allCitiesSchedule;
+                }
+            }
+        }
+
+        // 2. Если активных турниров нет, но есть прошедшие/завершенные — показываем их, чтобы расписание не выглядело пустым
+        if (schedule.Count == 0 && !includeFinished)
+        {
+            var finishedSchedule = await _tournamentService.GetScheduleAsync(cityId, clubId, includeFinished: true);
+            if (finishedSchedule.Count == 0 && (cityId.HasValue && cityId.Value > 0 || clubId.HasValue && clubId.Value > 0))
+            {
+                finishedSchedule = await _tournamentService.GetScheduleAsync(null, null, includeFinished: true);
+            }
+
+            if (finishedSchedule.Count > 0)
+            {
+                schedule = finishedSchedule;
+            }
+        }
+
         var currentVkId = HttpContext.GetVkUserId();
 
         var result = schedule.Select(t => new TournamentScheduleDto(

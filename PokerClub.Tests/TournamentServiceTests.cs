@@ -1971,6 +1971,170 @@ public class TournamentServiceTests
         Assert.IsType<BadRequestObjectResult>(badCreate.Result);
     }
 
+    [Fact]
+    public async Task GetSchedule_IncludesRunningTournamentsInActiveSchedule()
+    {
+        using var context = CreateInMemoryDbContext();
+        var city = new City { Name = "Пермь", Slug = "perm", IsActive = true };
+        var club = new Club { Name = "Monte Carlo", City = city, IsActive = true };
+        var runningTour = new Tournament
+        {
+            Club = club,
+            Title = "Running Live Event",
+            Status = TournamentStatus.Running,
+            StartTime = DateTime.UtcNow.AddMinutes(-30),
+            MaxSeats = 30
+        };
+        context.Cities.Add(city);
+        context.Clubs.Add(club);
+        context.Tournaments.Add(runningTour);
+        await context.SaveChangesAsync();
+
+        var service = new TournamentService(context);
+        var schedule = await service.GetScheduleAsync(cityId: null, clubId: null, includeFinished: false);
+
+        var single = Assert.Single(schedule);
+        Assert.Equal("Running Live Event", single.Title);
+        Assert.Equal(TournamentStatus.Running, single.Status);
+    }
+
+    [Fact]
+    public async Task TournamentsController_GetSchedule_WhenSelectedCityEmpty_FallbacksToAllCitiesSchedule()
+    {
+        using var context = CreateInMemoryDbContext();
+        var cityPerm = new City { Name = "Пермь", Slug = "perm", IsActive = true };
+        var cityEkb = new City { Name = "Екатеринбург", Slug = "ekb", IsActive = true };
+        var clubEkb = new Club { Name = "Ekb Club", City = cityEkb, IsActive = true };
+
+        var tourEkb = new Tournament
+        {
+            Club = clubEkb,
+            Title = "Ekb Championship",
+            Status = TournamentStatus.RegistrationOpen,
+            StartTime = DateTime.UtcNow.AddDays(2),
+            MaxSeats = 40
+        };
+
+        context.Cities.AddRange(cityPerm, cityEkb);
+        context.Clubs.Add(clubEkb);
+        context.Tournaments.Add(tourEkb);
+        await context.SaveChangesAsync();
+
+        var service = new TournamentService(context);
+        var controller = new TournamentsController(service);
+
+        // Пользователь запрашивает Пермь (где турниров нет), но в системе есть турнир в Екб
+        var res = await controller.GetSchedule(cityId: cityPerm.Id, clubId: null, includeFinished: false);
+        var okResult = Assert.IsType<OkObjectResult>(res.Result);
+        var list = Assert.IsType<List<TournamentScheduleDto>>(okResult.Value);
+
+        var first = Assert.Single(list);
+        Assert.Equal("Ekb Championship", first.Title);
+    }
+
+    [Fact]
+    public async Task TournamentsController_GetSchedule_WhenNoActiveTournaments_FallbacksToFinishedTournaments()
+    {
+        using var context = CreateInMemoryDbContext();
+        var city = new City { Name = "Пермь", Slug = "perm", IsActive = true };
+        var club = new Club { Name = "Monte Carlo", City = city, IsActive = true };
+
+        var tourFinished = new Tournament
+        {
+            Club = club,
+            Title = "Finished Last Week Cup",
+            Status = TournamentStatus.Finished,
+            StartTime = DateTime.UtcNow.AddDays(-2),
+            MaxSeats = 30
+        };
+
+        context.Cities.Add(city);
+        context.Clubs.Add(club);
+        context.Tournaments.Add(tourFinished);
+        await context.SaveChangesAsync();
+
+        var service = new TournamentService(context);
+        var controller = new TournamentsController(service);
+
+        // Запрашиваем без includeFinished: активных нет, но отдаются завершенные
+        var res = await controller.GetSchedule(cityId: null, clubId: null, includeFinished: false);
+        var okResult = Assert.IsType<OkObjectResult>(res.Result);
+        var list = Assert.IsType<List<TournamentScheduleDto>>(okResult.Value);
+
+        var first = Assert.Single(list);
+        Assert.Equal("Finished Last Week Cup", first.Title);
+        Assert.Equal(TournamentStatus.Finished, first.Status);
+    }
+
+    [Fact]
+    public async Task TournamentsController_GetSchedule_WhenSpecificCityAndClubRequested_FallbacksToOtherActiveTournaments()
+    {
+        using var context = CreateInMemoryDbContext();
+        var cityPerm = new City { Name = "Пермь", Slug = "perm", IsActive = true };
+        var cityEkb = new City { Name = "Екатеринбург", Slug = "ekb", IsActive = true };
+        var clubPerm = new Club { Name = "Monte Carlo Perm", City = cityPerm, IsActive = true };
+        var clubEkb = new Club { Name = "Monte Carlo Ekb", City = cityEkb, IsActive = true };
+
+        var tourEkb = new Tournament
+        {
+            Club = clubEkb,
+            Title = "Ekb Grand Cup",
+            Status = TournamentStatus.RegistrationOpen,
+            StartTime = DateTime.UtcNow.AddDays(3),
+            MaxSeats = 50
+        };
+
+        context.Cities.AddRange(cityPerm, cityEkb);
+        context.Clubs.AddRange(clubPerm, clubEkb);
+        context.Tournaments.Add(tourEkb);
+        await context.SaveChangesAsync();
+
+        var service = new TournamentService(context);
+        var controller = new TournamentsController(service);
+
+        // Пользователь запрашивает конкретный клуб в Перми (где турниров нет), но в системе есть турнир в Екб
+        var res = await controller.GetSchedule(cityId: cityPerm.Id, clubId: clubPerm.Id, includeFinished: false);
+        var okResult = Assert.IsType<OkObjectResult>(res.Result);
+        var list = Assert.IsType<List<TournamentScheduleDto>>(okResult.Value);
+
+        var first = Assert.Single(list);
+        Assert.Equal("Ekb Grand Cup", first.Title);
+    }
+
+    [Fact]
+    public async Task TournamentsController_GetSchedule_WhenClubRequestedInSameCity_FallbacksToOtherClubInSameCity()
+    {
+        using var context = CreateInMemoryDbContext();
+        var cityPerm = new City { Name = "Пермь", Slug = "perm", IsActive = true };
+        var clubPerm1 = new Club { Name = "Monte Carlo Club 1", City = cityPerm, IsActive = true };
+        var clubPerm2 = new Club { Name = "Monte Carlo Club 2", City = cityPerm, IsActive = true };
+
+        var tourClub2 = new Tournament
+        {
+            Club = clubPerm2,
+            Title = "Club 2 Open",
+            Status = TournamentStatus.RegistrationOpen,
+            StartTime = DateTime.UtcNow.AddDays(1),
+            MaxSeats = 30
+        };
+
+        context.Cities.Add(cityPerm);
+        context.Clubs.AddRange(clubPerm1, clubPerm2);
+        context.Tournaments.Add(tourClub2);
+        await context.SaveChangesAsync();
+
+        var service = new TournamentService(context);
+        var controller = new TournamentsController(service);
+
+        // Пользователь запрашивает клуб 1 в Перми (турниров нет), fallback находит турнир в клубе 2 в Перми
+        var res = await controller.GetSchedule(cityId: cityPerm.Id, clubId: clubPerm1.Id, includeFinished: false);
+        var okResult = Assert.IsType<OkObjectResult>(res.Result);
+        var list = Assert.IsType<List<TournamentScheduleDto>>(okResult.Value);
+
+        var first = Assert.Single(list);
+        Assert.Equal("Club 2 Open", first.Title);
+    }
+
     private class TestHttpMessageHandler : HttpMessageHandler
     {
         private readonly Func<HttpRequestMessage, HttpResponseMessage> _handler;

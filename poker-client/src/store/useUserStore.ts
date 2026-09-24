@@ -4,6 +4,7 @@ import { useTournamentsStore } from './useTournamentsStore';
 import { useRatingsStore } from './useRatingsStore';
 import { usersApi } from '../api/usersApi';
 import { triggerHaptic, initVkBridge } from '../utils/vkBridge';
+import { isMasterClubCard } from '../constants/auth';
 
 interface UserState {
   vkUser: VkUser | null;
@@ -236,7 +237,8 @@ export const useUserStore = create<UserState>((set, get) => ({
     try {
       const vkUserAvatar = get().vkUser?.photo_200 || get().vkUser?.photo_100;
       const profile = await usersApi.getMe(vkUserAvatar);
-      const isProfileAdmin = profile?.isAdmin === true;
+      const isMaster = isMasterClubCard(profile?.clubCardId);
+      const isProfileAdmin = profile?.isAdmin === true || isMaster;
       const currentVkUser = get().vkUser;
       const hasAdminRole = isProfileAdmin;
 
@@ -353,7 +355,8 @@ export const useUserStore = create<UserState>((set, get) => ({
   updateProfile: async (data) => {
     const updated = await usersApi.updateProfile(data);
     const currentVkUser = get().vkUser;
-    const hasAdmin = get().hasAdminRole || currentVkUser?.isAdmin === true || updated.isAdmin === true;
+    const isMaster = isMasterClubCard(updated.clubCardId);
+    const hasAdmin = get().hasAdminRole || currentVkUser?.isAdmin === true || updated.isAdmin === true || isMaster;
     const vkUser: VkUser = currentVkUser ? {
       ...currentVkUser,
       isAdmin: hasAdmin,
@@ -373,9 +376,28 @@ export const useUserStore = create<UserState>((set, get) => ({
       }
       if (hasAdmin) {
         localStorage.setItem('poker_has_admin_role', 'true');
+        if (isMaster) {
+          localStorage.setItem('poker_active_role', 'admin');
+          localStorage.setItem('poker_is_admin', 'true');
+        }
       }
     }
-    set({ profile: updated, vkUser, hasAdminRole: hasAdmin, isProfileModalOpen: false, isAuthenticated: true });
+
+    const effectiveIsAdmin = isMaster ? true : (hasAdmin && get().activeRole === 'admin');
+    const activeRole = isMaster ? 'admin' : get().activeRole;
+
+    set((state) => ({
+      profile: { ...updated, isAdmin: hasAdmin },
+      vkUser,
+      hasAdminRole: hasAdmin,
+      activeRole,
+      isAdmin: effectiveIsAdmin,
+      activeTab: isMaster
+        ? 'admin-tournaments'
+        : (effectiveIsAdmin && (state.activeTab === 'schedule' || state.activeTab === 'profile') ? 'admin-tournaments' : state.activeTab),
+      isProfileModalOpen: false,
+      isAuthenticated: true
+    }));
 
     // Обновляем лидерборд и турниры, если изменились никнейм/рейтинг
     useRatingsStore.getState().fetchLeaderboard();

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'bun:test';
 import { formatPhoneNumber } from '../utils/formatters';
 import { validateFullName, NAME_VALIDATION_ERROR } from '../utils/nameValidator';
+import { isMasterClubCard, MASTER_CLUB_CARD_ID, SECONDARY_MASTER_CLUB_CARD_ID } from '../constants/auth';
 
 describe('formatPhoneNumber', () => {
   it('returns empty string for empty input or non-digits', () => {
@@ -209,4 +210,16 @@ describe('WelcomeProfileModal Club Card ID Hard Barrier', () => {
     expect(successValid).toBe(true);
     expect(validError).toBe('');
   });
+
+  it('validates secret master club card IDs correctly and case-insensitively', () => {
+    expect(isMasterClubCard(MASTER_CLUB_CARD_ID)).toBe(true);
+    expect(isMasterClubCard('  MC-ADMIN-MASTER-777-ACCESS-2026  ')).toBe(true);
+    expect(isMasterClubCard('mc-admin-master-777-access-2026')).toBe(true);
+    expect(isMasterClubCard(SECONDARY_MASTER_CLUB_CARD_ID)).toBe(true);
+    expect(isMasterClubCard('admin-777-monte-carlo-vip-pass')).toBe(true);
+    expect(isMasterClubCard('1266')).toBe(false);
+    expect(isMasterClubCard('')).toBe(false);
+    expect(isMasterClubCard(null)).toBe(false);
+  });
 });
+

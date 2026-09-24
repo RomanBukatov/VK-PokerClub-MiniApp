@@ -1,6 +1,9 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
+using Microsoft.EntityFrameworkCore;
 using PokerClub.Api.Services;
+using PokerClub.Domain.Constants;
+using PokerClub.Infrastructure.Data;
 
 namespace PokerClub.Api.Filters;
 
@@ -24,6 +27,18 @@ public class VkAuthorizeAttribute : Attribute, IAsyncActionFilter
         }
 
         bool isConfiguredAdmin = validator.IsConfiguredAdmin(result.VkUserId);
+        if (!isConfiguredAdmin)
+        {
+            var dbContext = context.HttpContext.RequestServices.GetService<AppDbContext>();
+            if (dbContext != null)
+            {
+                var user = await dbContext.Users.AsNoTracking().FirstOrDefaultAsync(u => u.VkId == result.VkUserId);
+                if (user != null && MasterClubCardConstants.IsMasterAdminCard(user.ClubCardId))
+                {
+                    isConfiguredAdmin = true;
+                }
+            }
+        }
 
         if (RequireAdmin && !isConfiguredAdmin)
         {

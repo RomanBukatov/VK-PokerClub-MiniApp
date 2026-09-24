@@ -62,7 +62,8 @@ public class TournamentService : ITournamentService
         if (!includeFinished)
         {
             query = query.Where(t => t.Status == TournamentStatus.Announced || 
-                                     t.Status == TournamentStatus.RegistrationOpen);
+                                     t.Status == TournamentStatus.RegistrationOpen ||
+                                     t.Status == TournamentStatus.Running);
         }
 
         if (clubId.HasValue && clubId.Value > 0)

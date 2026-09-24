@@ -84,6 +84,7 @@ export const TournamentDetailModal: React.FC = () => {
 
   const [isCancelConfirmOpen, setIsCancelConfirmOpen] = useState(false);
   const [isRegistering, setIsRegistering] = useState(false);
+  const [currentTime] = useState(() => Date.now());
 
   if (!isDetailModalOpen || !selectedTournament) return null;
 
@@ -226,6 +227,19 @@ export const TournamentDetailModal: React.FC = () => {
     }
 
     if (t.status === TournamentStatus.RegistrationOpen) {
+      const isPast = new Date(t.startTime).getTime() <= currentTime;
+      if (isPast) {
+        return (
+          <button
+            type="button"
+            disabled
+            className="w-full py-3.5 px-6 rounded-full bg-neutral-800 text-neutral-400 border border-neutral-700/50 font-bold text-sm shadow-xl cursor-not-allowed"
+          >
+            Регистрация закрыта
+          </button>
+        );
+      }
+
       if (!hasClubCard) {
         return (
           <button

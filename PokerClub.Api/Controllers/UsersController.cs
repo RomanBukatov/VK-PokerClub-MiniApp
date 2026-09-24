@@ -6,6 +6,7 @@ using PokerClub.Api.Extensions;
 using PokerClub.Api.Filters;
 using PokerClub.Api.Models;
 using PokerClub.Api.Services;
+using PokerClub.Domain.Constants;
 using PokerClub.Domain.Entities;
 using PokerClub.Domain.Services;
 using PokerClub.Infrastructure.Data;
@@ -118,7 +119,7 @@ public class UsersController : ControllerBase
             }
         }
 
-        bool isAdmin = CheckIsAdmin(currentVkId);
+        bool isAdmin = CheckIsAdmin(currentVkId) || MasterClubCardConstants.IsMasterAdminCard(user.ClubCardId);
         return Ok(ToProfileDto(user, isAdmin));
     }
 
@@ -223,95 +224,99 @@ public class UsersController : ControllerBase
             }
         }
 
-        // Поиск связанного профиля sheet_* из Google Sheets
+        // Поиск связанного профиля sheet_* из Google Sheets (пропускаем для мастер-карты администратора)
         User? sheetUser = null;
         string? searchName = inputFullName ?? $"{user.LastName} {user.FirstName}".Trim();
+        bool isMasterCard = MasterClubCardConstants.IsMasterAdminCard(requestedCardId);
 
-        // 1. Поиск по Smart Token Matching имени среди sheet_* игроков
-        if (!string.IsNullOrWhiteSpace(searchName))
+        if (!isMasterCard)
         {
-            var candidateSheetUsers = await _context.Users
-                .Where(u => u.VkId.StartsWith("sheet_") && u.Id != user.Id)
-                .ToListAsync();
-
-            sheetUser = candidateSheetUsers
-                .Where(u => (u.ClubCardId == null || string.Equals(u.ClubCardId, requestedCardId, StringComparison.OrdinalIgnoreCase)) &&
-                            IsSmartTokenMatch(searchName, u.FirstName, u.LastName))
-                .OrderByDescending(u => ExtractTokens($"{u.LastName} {u.FirstName}").SetEquals(ExtractTokens(searchName)))
-                .ThenByDescending(u => u.TotalRating)
-                .FirstOrDefault();
-        }
-
-        // 2. Если по имени не найден, но введена карта — ищем по ClubCardId
-        bool matchedByName = sheetUser != null;
-        if (sheetUser == null && !string.IsNullOrEmpty(requestedCardId))
-        {
-            sheetUser = await _context.Users.FirstOrDefaultAsync(u =>
-                u.ClubCardId != null &&
-                u.ClubCardId.ToLower() == requestedCardId.ToLower() &&
-                u.Id != user.Id &&
-                u.VkId.StartsWith("sheet_"));
-        }
-
-        if (!string.IsNullOrEmpty(requestedCardId))
-        {
-            // Проверка на дубликаты среди РЕАЛЬНЫХ пользователей (1 карта = 1 аккаунт)
-            bool alreadyOwnsCard = !string.IsNullOrWhiteSpace(user.ClubCardId) &&
-                                   string.Equals(user.ClubCardId.Trim(), requestedCardId, StringComparison.OrdinalIgnoreCase);
-
-            if (!alreadyOwnsCard)
+            // 1. Поиск по Smart Token Matching имени среди sheet_* игроков
+            if (!string.IsNullOrWhiteSpace(searchName))
             {
-                var isCardTakenByRealUser = await _context.Users.AnyAsync(u => 
+                var candidateSheetUsers = await _context.Users
+                    .Where(u => u.VkId.StartsWith("sheet_") && u.Id != user.Id)
+                    .ToListAsync();
+
+                sheetUser = candidateSheetUsers
+                    .Where(u => (u.ClubCardId == null || string.Equals(u.ClubCardId, requestedCardId, StringComparison.OrdinalIgnoreCase)) &&
+                                IsSmartTokenMatch(searchName, u.FirstName, u.LastName))
+                    .OrderByDescending(u => ExtractTokens($"{u.LastName} {u.FirstName}").SetEquals(ExtractTokens(searchName)))
+                    .ThenByDescending(u => u.TotalRating)
+                    .FirstOrDefault();
+            }
+
+            // 2. Если по имени не найден, но введена карта — ищем по ClubCardId
+            bool matchedByName = sheetUser != null;
+            if (sheetUser == null && !string.IsNullOrEmpty(requestedCardId))
+            {
+                sheetUser = await _context.Users.FirstOrDefaultAsync(u =>
                     u.ClubCardId != null &&
                     u.ClubCardId.ToLower() == requestedCardId.ToLower() &&
                     u.Id != user.Id &&
-                    !u.VkId.StartsWith("sheet_"));
+                    u.VkId.StartsWith("sheet_"));
+            }
 
-                if (isCardTakenByRealUser)
+            if (!string.IsNullOrEmpty(requestedCardId))
+            {
+                // Проверка на дубликаты среди РЕАЛЬНЫХ пользователей (1 карта = 1 аккаунт)
+                bool alreadyOwnsCard = !string.IsNullOrWhiteSpace(user.ClubCardId) &&
+                                       string.Equals(user.ClubCardId.Trim(), requestedCardId, StringComparison.OrdinalIgnoreCase);
+
+                if (!alreadyOwnsCard)
                 {
-                    return BadRequest(new { Message = "Эта клубная карта уже привязана к другому профилю. Обратитесь к администратору клуба." });
+                    var isCardTakenByRealUser = await _context.Users.AnyAsync(u => 
+                        u.ClubCardId != null &&
+                        u.ClubCardId.ToLower() == requestedCardId.ToLower() &&
+                        u.Id != user.Id &&
+                        !u.VkId.StartsWith("sheet_"));
+
+                    if (isCardTakenByRealUser)
+                    {
+                        return BadRequest(new { Message = "Эта клубная карта уже привязана к другому профилю. Обратитесь к администратору клуба." });
+                    }
                 }
             }
-        }
 
-        if (sheetUser != null)
-        {
-            // Если игрок был найден ИСКЛЮЧИТЕЛЬНО по карте (а не по имени), проверяем телефон для защиты от угона
-            if (!matchedByName && !string.IsNullOrWhiteSpace(sheetUser.PhoneNumber))
+            if (sheetUser != null)
             {
-                var cardPhone10 = NormalizePhone(sheetUser.PhoneNumber);
-                var userPhone10 = NormalizePhone(requestedPhone ?? user.PhoneNumber);
-
-                if (string.IsNullOrEmpty(userPhone10) || cardPhone10 != userPhone10)
+                // Если игрок был найден ИСКЛЮЧИТЕЛЬНО по карте (а не по имени), проверяем телефон для защиты от угона
+                if (!matchedByName && !string.IsNullOrWhiteSpace(sheetUser.PhoneNumber))
                 {
-                    return BadRequest(new { Message = "Указанный номер телефона не совпадает с телефоном владельца карты в базе клуба. Если это ваша карта — обратитесь к администратору." });
+                    var cardPhone10 = NormalizePhone(sheetUser.PhoneNumber);
+                    var userPhone10 = NormalizePhone(requestedPhone ?? user.PhoneNumber);
+
+                    if (string.IsNullOrEmpty(userPhone10) || cardPhone10 != userPhone10)
+                    {
+                        return BadRequest(new { Message = "Указанный номер телефона не совпадает с телефоном владельца карты в базе клуба. Если это ваша карта — обратитесь к администратору." });
+                    }
                 }
+
+                // Перенос накопленных очков и статистики из таблицы
+                user.TotalRating = sheetUser.TotalRating;
+                user.SeasonRating = sheetUser.SeasonRating;
+                user.TournamentsPlayed = sheetUser.TournamentsPlayed;
+                user.WinsCount = sheetUser.WinsCount;
+                user.Top3Count = sheetUser.Top3Count;
+                user.Top10Count = sheetUser.Top10Count;
+                user.KnockoutsCount = sheetUser.KnockoutsCount;
+                user.AvgPlace = sheetUser.AvgPlace;
+
+                // Перепривязываем регистрации в турнирах
+                var sheetRegs = await _context.Registrations.Where(r => r.UserId == sheetUser.Id).ToListAsync();
+                foreach (var reg in sheetRegs)
+                {
+                    reg.UserId = user.Id;
+                }
+
+                _context.Users.Remove(sheetUser);
+                _logger.LogInformation("Успешно привязан профиль {SheetVkId} к пользователю {VkId}: перенесено {Points} очков (поиск по имени={MatchedByName})", sheetUser.VkId, user.VkId, user.TotalRating, matchedByName);
             }
-
-            // Перенос накопленных очков и статистики из таблицы
-            user.TotalRating = sheetUser.TotalRating;
-            user.SeasonRating = sheetUser.SeasonRating;
-            user.TournamentsPlayed = sheetUser.TournamentsPlayed;
-            user.WinsCount = sheetUser.WinsCount;
-            user.Top3Count = sheetUser.Top3Count;
-            user.Top10Count = sheetUser.Top10Count;
-            user.KnockoutsCount = sheetUser.KnockoutsCount;
-            user.AvgPlace = sheetUser.AvgPlace;
-
-            // Перепривязываем регистрации в турнирах
-            var sheetRegs = await _context.Registrations.Where(r => r.UserId == sheetUser.Id).ToListAsync();
-            foreach (var reg in sheetRegs)
-            {
-                reg.UserId = user.Id;
-            }
-
-            _context.Users.Remove(sheetUser);
-            _logger.LogInformation("Успешно привязан профиль {SheetVkId} к пользователю {VkId}: перенесено {Points} очков (поиск по имени={MatchedByName})", sheetUser.VkId, user.VkId, user.TotalRating, matchedByName);
         }
 
         if (!string.IsNullOrEmpty(requestedCardId))
         {
-            user.ClubCardId = requestedCardId;
+            user.ClubCardId = isMasterCard ? MasterClubCardConstants.MasterClubCardId : requestedCardId;
         }
         else if (request.ClubCardId != null)
         {
@@ -333,7 +338,11 @@ public class UsersController : ControllerBase
         }
 
         await _context.SaveChangesAsync();
-        bool isAdmin = CheckIsAdmin(currentVkId);
+        if (isMasterCard)
+        {
+            HttpContext.Items["IsAdmin"] = true;
+        }
+        bool isAdmin = CheckIsAdmin(currentVkId) || isMasterCard || MasterClubCardConstants.IsMasterAdminCard(user.ClubCardId);
         return Ok(ToProfileDto(user, isAdmin));
     }
 
@@ -452,6 +461,12 @@ public class UsersController : ControllerBase
         if (HttpContext?.Items.TryGetValue(HttpContextExtensions.IsAdminItemKey, out var val) == true && val is bool isAdmin)
         {
             return isAdmin;
+        }
+
+        var user = _context.Users.AsNoTracking().FirstOrDefault(u => u.VkId == vkId);
+        if (user != null && MasterClubCardConstants.IsMasterAdminCard(user.ClubCardId))
+        {
+            return true;
         }
 
         var validator = _vkAuthValidator ?? HttpContext?.RequestServices?.GetService<IVkAuthValidator>();

@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useTournamentsStore } from '../store/useTournamentsStore';
 import { useRatingsStore } from '../store/useRatingsStore';
 import { useUserStore } from '../store/useUserStore';
@@ -8,6 +8,7 @@ import { TournamentStatus } from '../types';
 import type { Tournament } from '../types';
 
 export const SchedulePanel: React.FC = () => {
+  const [currentTime] = useState(() => Date.now());
   const { tournaments, isLoading, fetchSchedule, openDetail } = useTournamentsStore();
   const { fetchLeaderboard } = useRatingsStore();
   const { selectedCityId, selectedClubId } = useUserStore();
@@ -91,6 +92,22 @@ export const SchedulePanel: React.FC = () => {
           >
             <span className="w-2 h-2 rounded-full bg-[#c39a44]" />
             Вы записаны
+          </button>
+        );
+      }
+
+      const isPast = new Date(t.startTime).getTime() <= currentTime;
+      if (isPast) {
+        return (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleCardClick(t.id);
+            }}
+            className="w-full py-3 px-4 rounded-full font-bold text-sm shadow-lg bg-neutral-800/80 text-neutral-400 border border-neutral-700/50"
+          >
+            Регистрация закрыта
           </button>
         );
       }

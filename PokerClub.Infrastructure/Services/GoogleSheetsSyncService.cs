@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using PokerClub.Domain.Constants;
 using PokerClub.Domain.Entities;
 using PokerClub.Domain.Interfaces;
 using PokerClub.Infrastructure.Data;
@@ -701,7 +702,8 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
                 {
                     bool modified = false;
 
-                    if (!string.IsNullOrWhiteSpace(regInfo.ClubCardId) && 
+                    if (!MasterClubCardConstants.IsMasterAdminCard(matchedUser.ClubCardId) &&
+                        !string.IsNullOrWhiteSpace(regInfo.ClubCardId) && 
                         !string.Equals(matchedUser.ClubCardId, regInfo.ClubCardId, StringComparison.OrdinalIgnoreCase))
                     {
                         matchedUser.ClubCardId = regInfo.ClubCardId;
