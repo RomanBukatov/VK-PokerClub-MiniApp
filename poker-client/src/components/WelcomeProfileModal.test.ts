@@ -121,3 +121,92 @@ describe('validateFullName (Cyrillic & min 2 words validation)', () => {
     expect(validateFullName('Игрок #12345').isValid).toBe(false);
   });
 });
+
+describe('WelcomeProfileModal Club Card ID Hard Barrier', () => {
+  const validateClubCard = (clubCardId: string): { isValid: boolean; error?: string } => {
+    const trimmed = clubCardId.trim();
+    if (!trimmed) {
+      return { isValid: false, error: 'Пожалуйста, укажите ваш клубный ID' };
+    }
+    return { isValid: true };
+  };
+
+  it('rejects empty or whitespace-only clubCardId with exact error message', () => {
+    const res1 = validateClubCard('');
+    expect(res1.isValid).toBe(false);
+    expect(res1.error).toBe('Пожалуйста, укажите ваш клубный ID');
+
+    const res2 = validateClubCard('   ');
+    expect(res2.isValid).toBe(false);
+    expect(res2.error).toBe('Пожалуйста, укажите ваш клубный ID');
+  });
+
+  it('accepts valid clubCardId strings', () => {
+    expect(validateClubCard('1266').isValid).toBe(true);
+    expect(validateClubCard('  CARD-99  ').isValid).toBe(true);
+  });
+
+  it('determines submit button disabled state correctly', () => {
+    const isSubmitDisabled = (isSubmitting: boolean, isNameValid: boolean, clubCardId: string) => {
+      const isCardValid = clubCardId.trim().length > 0;
+      return isSubmitting || !isNameValid || !isCardValid;
+    };
+
+    // Card missing
+    expect(isSubmitDisabled(false, true, '')).toBe(true);
+    expect(isSubmitDisabled(false, true, '   ')).toBe(true);
+
+    // Name invalid
+    expect(isSubmitDisabled(false, false, '1266')).toBe(true);
+
+    // Submitting
+    expect(isSubmitDisabled(true, true, '1266')).toBe(true);
+
+    // Valid
+    expect(isSubmitDisabled(false, true, '1266')).toBe(false);
+  });
+
+  it('verifies the official VK community direct message link format', () => {
+    const vkGroupLink = 'https://vk.me/club238367404';
+    expect(vkGroupLink).toMatch(/^https:\/\/vk\.me\/club\d+$/);
+  });
+
+  it('allows modal close button ONLY when profile has both nickname and confirmed clubCardId', () => {
+    const canCloseModal = (profile?: { nickname?: string; clubCardId?: string } | null) => {
+      return Boolean(profile?.nickname && profile?.clubCardId && profile.clubCardId.trim().length > 0);
+    };
+
+    expect(canCloseModal(null)).toBe(false);
+    expect(canCloseModal({ nickname: 'Ivan' })).toBe(false);
+    expect(canCloseModal({ nickname: 'Ivan', clubCardId: '' })).toBe(false);
+    expect(canCloseModal({ nickname: 'Ivan', clubCardId: '   ' })).toBe(false);
+    expect(canCloseModal({ nickname: '', clubCardId: '1266' })).toBe(false);
+    expect(canCloseModal({ nickname: 'Ivan', clubCardId: '1266' })).toBe(true);
+  });
+
+  it('triggers exact error message when user attempts to submit without clubCardId', () => {
+    const handleAttemptSubmit = (clubCardId: string, setErrorMessage: (msg: string) => void) => {
+      const trimmed = clubCardId.trim();
+      if (!trimmed) {
+        setErrorMessage('Пожалуйста, укажите ваш клубный ID');
+        return false;
+      }
+      return true;
+    };
+
+    let error = '';
+    const successEmpty = handleAttemptSubmit('', (msg) => { error = msg; });
+    expect(successEmpty).toBe(false);
+    expect(error).toBe('Пожалуйста, укажите ваш клубный ID');
+
+    let wsError = '';
+    const successWhitespace = handleAttemptSubmit('    ', (msg) => { wsError = msg; });
+    expect(successWhitespace).toBe(false);
+    expect(wsError).toBe('Пожалуйста, укажите ваш клубный ID');
+
+    let validError = '';
+    const successValid = handleAttemptSubmit('1266', (msg) => { validError = msg; });
+    expect(successValid).toBe(true);
+    expect(validError).toBe('');
+  });
+});

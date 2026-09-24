@@ -91,7 +91,7 @@ public class UsersControllerTests
         httpContext.Request.Headers["X-Test-Vk-Id"] = "888";
         controller.ControllerContext = new ControllerContext { HttpContext = httpContext };
 
-        var request = new UpdateProfileRequest(Nickname: "ab"); // < 3 chars
+        var request = new UpdateProfileRequest(Nickname: "ab", ClubCardId: "123"); // < 3 chars
 
         var actionResult = await controller.UpdateProfile(request);
         Assert.IsType<BadRequestObjectResult>(actionResult.Result);
@@ -147,27 +147,15 @@ public class UsersControllerTests
     }
 
     [Fact]
-    public async Task UpdateProfile_WithoutCard_SucceedsWithZeroPointsAndNewbieStatus()
+    public async Task UpdateProfile_WithoutCard_ReturnsBadRequest400()
     {
         using var context = CreateInMemoryDbContext();
-        // В базе есть игрок из таблицы с очками, но без карты
-        var sheetUser = new User
-        {
-            VkId = "sheet_2_xyz999",
-            FirstName = "Василий",
-            LastName = "Лукашенко",
-            TotalRating = 500,
-            ClubCardId = "999"
-        };
-        context.Users.Add(sheetUser);
-        await context.SaveChangesAsync();
-
         var controller = new UsersController(context, NullLogger<UsersController>.Instance);
         var httpContext = new DefaultHttpContext();
         httpContext.Request.Headers["X-Test-Vk-Id"] = "newbie_user_1";
         controller.ControllerContext = new ControllerContext { HttpContext = httpContext };
 
-        // Новичок регистрируется без карты
+        // 1. Попытка обновить профиль с ClubCardId = null
         var request = new UpdateProfileRequest(
             FullName: "Лукашенко Василий",
             Nickname: "Newbie_Vasya",
@@ -176,18 +164,23 @@ public class UsersControllerTests
         );
 
         var actionResult = await controller.UpdateProfile(request);
-        var okResult = Assert.IsType<OkObjectResult>(actionResult.Result);
-        var profile = Assert.IsType<UserProfileDto>(okResult.Value);
+        var badRequestResult = Assert.IsType<BadRequestObjectResult>(actionResult.Result);
+        var message = badRequestResult.Value?.GetType().GetProperty("message")?.GetValue(badRequestResult.Value)?.ToString()
+            ?? badRequestResult.Value?.GetType().GetProperty("Message")?.GetValue(badRequestResult.Value)?.ToString();
+        Assert.Contains("Клубный ID обязателен для регистрации", message);
 
-        Assert.Equal(0, profile.TotalRating);
-        Assert.Equal(0, profile.SeasonRating);
-        Assert.Equal("Новичок", profile.Status);
-        Assert.Null(profile.ClubCardId);
-
-        // Старый sheetUser не затронут
-        var sheetInDb = await context.Users.FirstOrDefaultAsync(u => u.VkId == "sheet_2_xyz999");
-        Assert.NotNull(sheetInDb);
-        Assert.Equal(500, sheetInDb.TotalRating);
+        // 2. Попытка обновить профиль с пустым/пробельным ClubCardId
+        var whitespaceRequest = new UpdateProfileRequest(
+            FullName: "Лукашенко Василий",
+            Nickname: "Newbie_Vasya",
+            PhoneNumber: "+7 (915) 000-11-22",
+            ClubCardId: "   "
+        );
+        var wsActionResult = await controller.UpdateProfile(whitespaceRequest);
+        var wsBadRequestResult = Assert.IsType<BadRequestObjectResult>(wsActionResult.Result);
+        var wsMessage = wsBadRequestResult.Value?.GetType().GetProperty("message")?.GetValue(wsBadRequestResult.Value)?.ToString()
+            ?? wsBadRequestResult.Value?.GetType().GetProperty("Message")?.GetValue(wsBadRequestResult.Value)?.ToString();
+        Assert.Contains("Клубный ID обязателен для регистрации", wsMessage);
     }
 
     [Fact]
@@ -364,7 +357,8 @@ public class UsersControllerTests
 
         var request = new UpdateProfileRequest(
             FullName: "Иван",
-            Nickname: "IvanSuper"
+            Nickname: "IvanSuper",
+            ClubCardId: "123"
         );
 
         var actionResult = await controller.UpdateProfile(request);
@@ -531,6 +525,7 @@ public class UsersControllerTests
         var actionResult = await controller.UpdateProfile(new UpdateProfileRequest
         {
             Nickname = "AdminHero",
+            ClubCardId = "ADMIN-1",
             AcceptedTerms = true
         });
         var okResult = Assert.IsType<OkObjectResult>(actionResult.Result);

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { User, Phone, CreditCard, Sparkles, X, AlertCircle } from 'lucide-react';
+import { User, Phone, CreditCard, Sparkles, X, AlertCircle, MessageCircle } from 'lucide-react';
 import { useUserStore } from '../store/useUserStore';
-import { triggerHaptic } from '../utils/vkBridge';
+import { triggerHaptic, openExternalUrl } from '../utils/vkBridge';
 import { formatPhoneNumber } from '../utils/formatters';
 import { validateFullName, NAME_VALIDATION_ERROR } from '../utils/nameValidator';
 
@@ -64,6 +64,7 @@ const ProfileModalContent: React.FC = () => {
 
   const nameValidation = validateFullName(fullName);
   const isNameValid = nameValidation.isValid;
+  const isCardValid = clubCardId.trim().length > 0;
   const showNameError = !isNameValid && (fullName.trim().length > 0 || isFullNameTouched || error === NAME_VALIDATION_ERROR);
 
   // Обработка Backspace перед нецифровыми символами-разделителями
@@ -155,6 +156,13 @@ const ProfileModalContent: React.FC = () => {
       return;
     }
 
+    const trimmedCardId = clubCardId.trim();
+    if (!trimmedCardId) {
+      setError('Пожалуйста, укажите ваш клубный ID');
+      triggerHaptic('heavy');
+      return;
+    }
+
     setIsSubmitting(true);
     triggerHaptic('medium');
 
@@ -169,7 +177,7 @@ const ProfileModalContent: React.FC = () => {
         firstName,
         lastName,
         phoneNumber: trimmedPhone || undefined,
-        clubCardId: clubCardId.trim() || undefined,
+        clubCardId: trimmedCardId,
       });
       triggerHaptic('light');
     } catch (err: unknown) {
@@ -201,8 +209,8 @@ const ProfileModalContent: React.FC = () => {
             </div>
           </div>
 
-          {/* Кнопка закрытия, если профиль уже частично сохранен */}
-          {profile?.nickname && (
+          {/* Кнопка закрытия, если профиль уже частично сохранен и есть клубный ID */}
+          {profile?.nickname && profile?.clubCardId?.trim() && (
             <button
               type="button"
               onClick={() => setIsProfileModalOpen(false)}
@@ -220,7 +228,7 @@ const ProfileModalContent: React.FC = () => {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form noValidate onSubmit={handleSubmit} className="space-y-4">
           {/* Игровой никнейм */}
           <div>
             <label className="block text-[11px] font-bold uppercase tracking-wider text-[#8fa89b] mb-1.5">
@@ -308,35 +316,69 @@ const ProfileModalContent: React.FC = () => {
             </p>
           </div>
 
-          {/* Клубный ID (опционально) */}
+          {/* Клубный ID / Номер карты */}
           <div>
             <label className="block text-[11px] font-bold uppercase tracking-wider text-[#8fa89b] mb-1.5">
-              Клубный ID / Номер карты <span className="text-white/40 text-[10px] lowercase">(опционально)</span>
+              Клубный ID / Номер карты <span className="text-[#c39a44]">*</span>
             </label>
             <div className="relative">
               <CreditCard className="w-4 h-4 text-white/30 absolute left-4 top-3.5" />
               <input
                 type="text"
+                required
                 maxLength={20}
                 placeholder="Например: 1266"
                 value={clubCardId}
-                onChange={(e) => setClubCardId(e.target.value)}
+                onChange={(e) => {
+                  setClubCardId(e.target.value);
+                  if (error && (error.includes('клубный ID') || error.includes('карт') || error.includes('карты') || error.includes('ID'))) {
+                    setError(null);
+                  }
+                }}
                 className={`w-full bg-black/40 border ${
-                  error && (error.includes('карт') || error.includes('карты')) ? 'border-red-500/80 focus:border-red-400' : 'border-white/10 focus:border-[#c39a44]'
+                  error && (error.includes('карт') || error.includes('карты') || error.includes('клубный ID') || error.includes('ID'))
+                    ? 'border-red-500/80 focus:border-red-400'
+                    : 'border-white/10 focus:border-[#c39a44]'
                 } rounded-2xl py-3 pl-11 pr-4 text-sm font-semibold text-white placeholder-white/20 focus:outline-none transition-all`}
               />
             </div>
-            <p className="text-[10px] text-[#606a66] mt-1">
-              Моментально привяжет ваши очки из Google Sheets «МК РЕЙТИНГ»
-            </p>
+
+            {/* Блок-подсказка в фирменном стиле */}
+            <div className="mt-2.5 p-3 rounded-2xl bg-[#092219]/90 border border-[#c39a44]/30 space-y-2">
+              <p className="text-xs text-[#a4c9b7] leading-relaxed">
+                Еще нет клубной карты? Напишите нам в группу ВКонтакте, и администратор выдаст вам персональный ID за 1 минуту.
+              </p>
+              <a
+                href="https://vk.me/club238367404"
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => {
+                  e.preventDefault();
+                  triggerHaptic('light');
+                  openExternalUrl('https://vk.me/club238367404');
+                }}
+                className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-[#c39a44]/20 to-[#c39a44]/10 hover:from-[#c39a44]/30 hover:to-[#c39a44]/20 border border-[#c39a44]/40 hover:border-[#c39a44] text-[#e5c06e] hover:text-white font-bold text-xs flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
+              >
+                <MessageCircle className="w-4 h-4 shrink-0 text-[#c39a44]" />
+                <span>Получить ID в группе ВК</span>
+              </a>
+            </div>
           </div>
 
           {/* Кнопка отправки */}
-          <div className="pt-2">
+          <div
+            className="pt-2"
+            onClick={() => {
+              if (!isCardValid) {
+                setError('Пожалуйста, укажите ваш клубный ID');
+                triggerHaptic('heavy');
+              }
+            }}
+          >
             <button
               type="submit"
-              disabled={isSubmitting || !isNameValid}
-              className="w-full py-3.5 px-5 rounded-2xl font-extrabold text-sm bg-gradient-to-r from-[#d8af56] to-[#b38833] text-black shadow-lg shadow-[#c39a44]/30 hover:brightness-105 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={isSubmitting || !isNameValid || !isCardValid}
+              className="w-full py-3.5 px-5 rounded-2xl font-extrabold text-sm bg-gradient-to-r from-[#d8af56] to-[#b38833] text-black shadow-lg shadow-[#c39a44]/30 hover:brightness-105 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
             >
               {isSubmitting ? 'Сохранение...' : 'Сохранить и войти в игру'}
             </button>

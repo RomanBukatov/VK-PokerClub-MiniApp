@@ -133,6 +133,11 @@ public class UsersController : ControllerBase
             return Unauthorized(new { Message = "Пользователь не авторизован." });
         }
 
+        if (string.IsNullOrWhiteSpace(request.ClubCardId))
+        {
+            return BadRequest(new { message = "Клубный ID обязателен для регистрации и привязки профиля. Получите его в группе клуба." });
+        }
+
         if (!string.IsNullOrWhiteSpace(request.Nickname))
         {
             var trimmedNick = request.Nickname.Trim();

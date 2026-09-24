@@ -3,7 +3,7 @@ import { ChevronLeft, CheckCircle2, AlertCircle, MapPin, Clock, Info, Users, Tro
 import { useTournamentsStore } from '../store/useTournamentsStore';
 import { useUserStore } from '../store/useUserStore';
 import { formatCurrency } from '../utils/formatters';
-import { triggerHaptic, requestGroupMessagesPermission } from '../utils/vkBridge';
+import { triggerHaptic, requestGroupMessagesPermission, openExternalUrl } from '../utils/vkBridge';
 import { TournamentStatus } from '../types';
 import { CURRENT_BRANDING, getEffectiveVkGroupId } from '../config/branding';
 import { PlayerAvatar } from '../components/PlayerAvatar';
@@ -56,14 +56,16 @@ export const checkProfileCompleteness = (
   const rawPhone = (profile?.phoneNumber || '').replace(/\D/g, '');
   const hasPhone = rawPhone.length >= 10;
 
+  const hasClubCard = Boolean(profile?.clubCardId && profile.clubCardId.trim().length > 0);
   const isProfileComplete = !isGuestUser && hasRealName && hasPhone;
-  const shouldShowClubCardBanner = !profile?.clubCardId || !profile.clubCardId.trim();
+  const shouldShowClubCardBanner = !hasClubCard;
 
   return {
     isProfileComplete,
     isGuestUser,
     hasRealName,
     hasPhone,
+    hasClubCard,
     shouldShowClubCardBanner,
   };
 };
@@ -93,16 +95,21 @@ export const TournamentDetailModal: React.FC = () => {
   const participantsCount = t.participants ? t.participants.length : (t.registeredCount || 0);
   const isSeatsFull = participantsCount >= maxSeats;
 
-  const { isProfileComplete, shouldShowClubCardBanner } = checkProfileCompleteness(vkUser, profile);
+  const { isProfileComplete, hasClubCard, shouldShowClubCardBanner } = checkProfileCompleteness(vkUser, profile);
   const hasAdminRole = checkCanViewVkId(vkUser, storeHasAdminRole, profile);
 
   const groupId = getEffectiveVkGroupId();
   const communityMessagesUrl = groupId > 0
-    ? `https://vk.com/im?sel=-${groupId}`
-    : CURRENT_BRANDING.socialLinks?.vkGroup || 'https://vk.com';
+    ? `https://vk.me/club${groupId}`
+    : 'https://vk.me/club238367404';
 
   const handleRegister = async () => {
     if (isRegistering || isActionLoading) return;
+    if (!hasClubCard) {
+      triggerHaptic('heavy');
+      setIsProfileModalOpen(true);
+      return;
+    }
     if (!isProfileComplete) {
       triggerHaptic('heavy');
       setIsProfileModalOpen(true);
@@ -219,6 +226,23 @@ export const TournamentDetailModal: React.FC = () => {
     }
 
     if (t.status === TournamentStatus.RegistrationOpen) {
+      if (!hasClubCard) {
+        return (
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic('medium');
+              setIsProfileModalOpen(true);
+            }}
+            data-testid="get-club-card-button"
+            className="w-full py-4 px-6 rounded-full bg-gradient-to-r from-[#d8af56] to-[#b38833] text-black font-extrabold text-base shadow-xl shadow-[#c39a44]/30 hover:brightness-105 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+          >
+            <CreditCard className="w-5 h-5 shrink-0" />
+            <span>Получить клубный ID для записи</span>
+          </button>
+        );
+      }
+
       return (
         <button
           type="button"
@@ -322,22 +346,33 @@ export const TournamentDetailModal: React.FC = () => {
 
         {/* Баннер проверки наличия клубного ID */}
         {!isRegistered && shouldShowClubCardBanner && (
-          <div className="p-3.5 rounded-2xl bg-[#0a231b] border border-[#c39a44]/50 text-white text-xs flex items-start gap-3 shadow-md animate-fade-in">
+          <div 
+            onClick={() => { triggerHaptic('medium'); setIsProfileModalOpen(true); }}
+            className="p-3.5 rounded-2xl bg-[#0a231b] border border-[#c39a44]/50 text-white text-xs flex items-start gap-3 shadow-md animate-fade-in cursor-pointer hover:bg-[#0d2e23] transition-all"
+          >
             <CreditCard className="w-4 h-4 text-[#c39a44] shrink-0 mt-0.5" />
             <div className="flex-1 space-y-1">
               <div className="font-semibold text-[#e5c06e] leading-snug">
                 Для регистрации необходим клубный ID. Напишите в сообщения сообщества для получения карты.
               </div>
-              <a
-                href={communityMessagesUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={(e) => e.stopPropagation()}
-                className="inline-flex items-center gap-1 text-[11px] font-bold text-[#c39a44] hover:text-[#e5c06e] underline transition-colors pt-0.5"
-              >
-                <span>Написать в сообщения сообщества</span>
-                <span className="text-[10px]">↗</span>
-              </a>
+              <div className="flex items-center justify-between pt-0.5">
+                <a
+                  href={communityMessagesUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    triggerHaptic('light');
+                    openExternalUrl(communityMessagesUrl);
+                  }}
+                  className="inline-flex items-center gap-1 text-[11px] font-bold text-[#c39a44] hover:text-[#e5c06e] underline transition-colors"
+                >
+                  <span>Получить ID в группе ВК</span>
+                  <span className="text-[10px]">↗</span>
+                </a>
+                <span className="text-[11px] font-bold text-[#c39a44] underline">Указать ID</span>
+              </div>
             </div>
           </div>
         )}

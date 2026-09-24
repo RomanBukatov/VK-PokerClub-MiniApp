@@ -176,3 +176,19 @@ export const requestGroupMessagesPermission = async (groupId: number = 238367404
   }
 };
 
+export const openExternalUrl = (url: string) => {
+  try {
+    const tgWebApp = typeof window !== 'undefined' ? window.Telegram?.WebApp : undefined;
+    if (tgWebApp && typeof (tgWebApp as unknown as { openLink?: (u: string) => void }).openLink === 'function') {
+      (tgWebApp as unknown as { openLink: (u: string) => void }).openLink(url);
+      return;
+    }
+  } catch (err) {
+    console.warn('Telegram openLink failed, fallback to window.open:', err);
+  }
+
+  if (typeof window !== 'undefined') {
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }
+};
+

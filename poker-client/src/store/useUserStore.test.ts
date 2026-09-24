@@ -541,4 +541,102 @@ describe('useUserStore logout and reset', () => {
 
     expect(useUserStore.getState().isLoading).toBe(false);
   });
+
+  describe('Club Card ID Barrier in fetchProfile and acceptTerms', () => {
+    it('forces isProfileModalOpen: true on fetchProfile when user has no clubCardId', async () => {
+      useUserStore.getState().logout();
+      const originalGetMe = usersApi.getMe;
+      usersApi.getMe = async () => ({
+        id: 50,
+        vkId: '12345',
+        firstName: 'Иван',
+        lastName: 'Иванов',
+        nickname: 'Ivan50',
+        phoneNumber: '+7 (999) 111-22-33',
+        acceptedTermsAt: '2026-09-20T10:00:00Z',
+        clubCardId: undefined, // no card!
+        totalRating: 0,
+        status: 'Newbie',
+        tournamentsPlayed: 0,
+        winsCount: 0,
+        top3Count: 0,
+        top10Count: 0,
+        knockoutsCount: 0,
+        avgPlace: 0,
+        createdAt: '2026-01-01',
+      });
+
+      try {
+        await useUserStore.getState().fetchProfile();
+        const state = useUserStore.getState();
+        expect(state.isProfileModalOpen).toBe(true);
+      } finally {
+        usersApi.getMe = originalGetMe;
+      }
+    });
+
+    it('forces isProfileModalOpen: true on fetchProfile when clubCardId is whitespace', async () => {
+      useUserStore.getState().logout();
+      const originalGetMe = usersApi.getMe;
+      usersApi.getMe = async () => ({
+        id: 51,
+        vkId: '12346',
+        firstName: 'Иван',
+        lastName: 'Иванов',
+        nickname: 'Ivan51',
+        phoneNumber: '+7 (999) 111-22-33',
+        acceptedTermsAt: '2026-09-20T10:00:00Z',
+        clubCardId: '   ', // whitespace card!
+        totalRating: 0,
+        status: 'Newbie',
+        tournamentsPlayed: 0,
+        winsCount: 0,
+        top3Count: 0,
+        top10Count: 0,
+        knockoutsCount: 0,
+        avgPlace: 0,
+        createdAt: '2026-01-01',
+      });
+
+      try {
+        await useUserStore.getState().fetchProfile();
+        const state = useUserStore.getState();
+        expect(state.isProfileModalOpen).toBe(true);
+      } finally {
+        usersApi.getMe = originalGetMe;
+      }
+    });
+
+    it('keeps isProfileModalOpen: false on fetchProfile when user has valid clubCardId, nickname, and phone', async () => {
+      useUserStore.getState().logout();
+      const originalGetMe = usersApi.getMe;
+      usersApi.getMe = async () => ({
+        id: 52,
+        vkId: '12347',
+        firstName: 'Иван',
+        lastName: 'Иванов',
+        nickname: 'Ivan52',
+        phoneNumber: '+7 (999) 111-22-33',
+        acceptedTermsAt: '2026-09-20T10:00:00Z',
+        clubCardId: '1266', // valid card!
+        totalRating: 100,
+        status: 'Player',
+        tournamentsPlayed: 2,
+        winsCount: 1,
+        top3Count: 1,
+        top10Count: 2,
+        knockoutsCount: 3,
+        avgPlace: 2.0,
+        createdAt: '2026-01-01',
+      });
+
+      try {
+        await useUserStore.getState().fetchProfile();
+        const state = useUserStore.getState();
+        expect(state.isProfileModalOpen).toBe(false);
+      } finally {
+        usersApi.getMe = originalGetMe;
+      }
+    });
+  });
 });

@@ -119,18 +119,54 @@ describe('TournamentDetailModal and Tournament Security & Barriers', () => {
         { fullName: 'Алексей Петров', phoneNumber: '+79991112233', clubCardId: '' }
       );
       expect(withoutCard.shouldShowClubCardBanner).toBe(true);
+      expect(withoutCard.hasClubCard).toBe(false);
 
       const withWhitespaceCard = checkProfileCompleteness(
         { id: 100, first_name: 'Алексей', last_name: 'Петров' },
         { fullName: 'Алексей Петров', phoneNumber: '+79991112233', clubCardId: '   ' }
       );
       expect(withWhitespaceCard.shouldShowClubCardBanner).toBe(true);
+      expect(withWhitespaceCard.hasClubCard).toBe(false);
 
       const withValidCard = checkProfileCompleteness(
         { id: 100, first_name: 'Алексей', last_name: 'Петров' },
         { fullName: 'Алексей Петров', phoneNumber: '+79991112233', clubCardId: '1266' }
       );
       expect(withValidCard.shouldShowClubCardBanner).toBe(false);
+      expect(withValidCard.hasClubCard).toBe(true);
+    });
+
+    it('requires club card before allowing tournament registration action', () => {
+      // Helper simulating button label logic in TournamentDetailModal
+      const getActionButtonProps = (hasClubCard: boolean, isProfileComplete: boolean) => {
+        if (!hasClubCard) {
+          return { label: 'Получить клубный ID для записи', canRegister: false };
+        }
+        if (!isProfileComplete) {
+          return { label: 'Заполнить профиль для записи', canRegister: false };
+        }
+        return { label: 'Зарегистрироваться', canRegister: true };
+      };
+
+      expect(getActionButtonProps(false, true)).toEqual({
+        label: 'Получить клубный ID для записи',
+        canRegister: false,
+      });
+
+      expect(getActionButtonProps(false, false)).toEqual({
+        label: 'Получить клубный ID для записи',
+        canRegister: false,
+      });
+
+      expect(getActionButtonProps(true, false)).toEqual({
+        label: 'Заполнить профиль для записи',
+        canRegister: false,
+      });
+
+      expect(getActionButtonProps(true, true)).toEqual({
+        label: 'Зарегистрироваться',
+        canRegister: true,
+      });
     });
   });
 

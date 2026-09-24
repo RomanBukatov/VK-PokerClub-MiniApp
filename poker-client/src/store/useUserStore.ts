@@ -296,8 +296,9 @@ export const useUserStore = create<UserState>((set, get) => ({
       if (!hasAcceptedTerms) {
         set({ isLegalModalOpen: true });
       } else {
+        const hasClubCard = Boolean(profile.clubCardId && profile.clubCardId.trim().length > 0);
         const hasCompletedProfileLocally = typeof window !== 'undefined' && localStorage.getItem('poker_profile_completed') === 'true';
-        const isProfileComplete = Boolean(profile.nickname && profile.phoneNumber && (profile.fullName || profile.firstName)) || hasCompletedProfileLocally;
+        const isProfileComplete = hasClubCard && (Boolean(profile.nickname && profile.phoneNumber && (profile.fullName || profile.firstName)) || hasCompletedProfileLocally);
         if (!isProfileComplete) {
           set({ isProfileModalOpen: true });
         }
@@ -414,8 +415,9 @@ export const useUserStore = create<UserState>((set, get) => ({
 
     // Проверяем, нужно ли показать анкету после принятия оферты
     const { profile } = get();
+    const hasClubCard = Boolean(profile?.clubCardId && profile.clubCardId.trim().length > 0);
     const hasCompletedProfileLocally = typeof window !== 'undefined' && localStorage.getItem('poker_profile_completed') === 'true';
-    const isProfileComplete = Boolean(profile?.nickname && profile?.phoneNumber && (profile?.fullName || profile?.firstName)) || hasCompletedProfileLocally;
+    const isProfileComplete = hasClubCard && (Boolean(profile?.nickname && profile?.phoneNumber && (profile?.fullName || profile?.firstName)) || hasCompletedProfileLocally);
     if (!isProfileComplete) {
       set({ isProfileModalOpen: true });
     } else {
