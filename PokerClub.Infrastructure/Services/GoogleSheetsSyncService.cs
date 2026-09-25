@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -291,6 +292,10 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
                     {
                         _logger.LogWarning("Лист «{SheetName}» вернул содержимое общего рейтинга вместо запрошенного листа (gviz вернул gid=0). Считаем лист не найденным.", sheetName);
                     }
+                    else if (IsPlayersSheetName(sheetName) && !IsPlayersSheetCsv(content))
+                    {
+                        _logger.LogWarning("Лист «{SheetName}» вернул другой лист (проверка заголовков не совпадает с листом игроков). Считаем лист не найденным.", sheetName);
+                    }
                     else
                     {
                         _logger.LogInformation("Лист «{SheetName}» успешно загружен через gviz API.", sheetName);
@@ -333,6 +338,10 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
                         {
                             _logger.LogWarning("Запасной экспорт листа «{SheetName}» (gid={Gid}) вернул содержимое общего рейтинга. Считаем лист не найденным.", sheetName, gid);
                         }
+                        else if (IsPlayersSheetName(sheetName) && !IsPlayersSheetCsv(fallbackContent))
+                        {
+                            _logger.LogWarning("Запасной экспорт листа «{SheetName}» (gid={Gid}) вернул другой лист (проверка заголовков не совпадает с листом игроков).", sheetName, gid);
+                        }
                         else
                         {
                             _logger.LogInformation("Лист «{SheetName}» успешно загружен по запасному URL (gid={Gid}).", sheetName, gid);
@@ -368,6 +377,14 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
         if (string.IsNullOrWhiteSpace(sheetName)) return false;
         return IsRatingSheetName(sheetName) || 
                string.Equals(sheetName, _seasonSheetName, StringComparison.OrdinalIgnoreCase);
+    }
+
+    public bool IsPlayersSheetName(string? sheetName)
+    {
+        if (string.IsNullOrWhiteSpace(sheetName)) return false;
+        return string.Equals(sheetName, PlayersSheetName, StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(sheetName, _playersSheetName, StringComparison.OrdinalIgnoreCase) ||
+               sheetName.Contains("игрок", StringComparison.OrdinalIgnoreCase);
     }
 
     public static bool IsRatingSheetName(string? sheetName)
@@ -509,18 +526,154 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
     public record SheetPlayerCardInfo(
         string CardId,
         string FullName,
-        string? Status
+        string? Status,
+        string? PhoneNumber = null
     );
+
+    /// <summary>
+    /// Извлекает и нормализует номер телефона до 10 цифр (например, из "Телефон: 89221648828" или "+7 904 847-31-61").
+    /// </summary>
+    public static string? ExtractAndNormalizePhoneNumber(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+
+        var cleaned = raw.Replace('\u00A0', ' ').Trim();
+
+        // 1. Поиск номера после явных телефонных маркеров ("тел", "телефон", "phone", "т.")
+        var labeledMatch = Regex.Match(cleaned, @"(?:тел(?:ефон)?|phone|т\.?)\s*[:=\-]?\s*([+\d\s\-\(\)\.]{9,25})", RegexOptions.IgnoreCase);
+        if (labeledMatch.Success)
+        {
+            var labeledDigits = new string(labeledMatch.Groups[1].Value.Where(char.IsDigit).ToArray());
+            if (labeledDigits.Length == 11 && (labeledDigits[0] == '7' || labeledDigits[0] == '8'))
+            {
+                return labeledDigits[1..];
+            }
+            if (labeledDigits.Length == 10)
+            {
+                return labeledDigits;
+            }
+            if (labeledDigits.Length > 11 && (labeledDigits.StartsWith("7") || labeledDigits.StartsWith("8")))
+            {
+                return labeledDigits.Substring(1, 10);
+            }
+        }
+
+        // 2. Точный поиск телефонного номера через Regex (на случай наличия дат или номеров карт в комментарии)
+        var match = Regex.Match(cleaned, @"(?:\+?[78][\s\-\(\.]*)?(?:9\d{2}|[348]\d{2})[\s\-\)\.]*\d{3}[\s\-\.]*\d{2}[\s\-\.]*\d{2}");
+        if (match.Success)
+        {
+            var matchDigits = new string(match.Value.Where(char.IsDigit).ToArray());
+            if (matchDigits.Length == 11 && (matchDigits[0] == '7' || matchDigits[0] == '8'))
+            {
+                return matchDigits[1..];
+            }
+            if (matchDigits.Length == 10)
+            {
+                return matchDigits;
+            }
+        }
+
+        // 3. Общий случай: извлекаем все цифры из строки
+        var digits = new string(cleaned.Where(char.IsDigit).ToArray());
+
+        if (digits.Length == 11 && (digits.StartsWith("7") || digits.StartsWith("8")))
+        {
+            return digits[1..];
+        }
+
+        if (digits.Length == 10)
+        {
+            return digits;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Проверяет, является ли переданный CSV листом «Игроки» (по заголовкам колонок).
+    /// </summary>
+    public static bool IsPlayersSheetCsv(string? csvContent)
+    {
+        if (string.IsNullOrWhiteSpace(csvContent)) return false;
+        if (!IsValidCsvContent(csvContent)) return false;
+
+        // Отклоняем, если контент содержит характерные заголовки таблицы рейтинга
+        if (IsRatingSheetCsv(csvContent) ||
+            csvContent.Contains("Сумма очков", StringComparison.OrdinalIgnoreCase) ||
+            csvContent.Contains("ОБЩИЙ РЕЙТИНГ", StringComparison.OrdinalIgnoreCase) ||
+            csvContent.Contains("Нокаутов", StringComparison.OrdinalIgnoreCase) ||
+            csvContent.Contains("Среднее место", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        // Отклоняем, если контент содержит характерные заголовки таблицы регистраций турниров
+        if (csvContent.Contains("ДАТА / ТУРНИР", StringComparison.OrdinalIgnoreCase) ||
+            csvContent.Contains("РЕГИСТРАЦИИ", StringComparison.OrdinalIgnoreCase) ||
+            csvContent.Contains("БАЙ-ИН", StringComparison.OrdinalIgnoreCase) ||
+            csvContent.Contains("СТЕК", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var rows = ParseCsv(csvContent);
+        if (rows.Count == 0) return false;
+
+        // Проверка заголовков в первых нескольких строках
+        foreach (var row in rows.Take(5))
+        {
+            if (row.Count == 0) continue;
+
+            var col0 = row[0].Replace('\u00A0', ' ').Trim();
+            var col1 = row.Count > 1 ? row[1].Replace('\u00A0', ' ').Trim() : "";
+
+            bool col0IsCardHeader = col0.Contains("id", StringComparison.OrdinalIgnoreCase) ||
+                                    col0.Contains("номер", StringComparison.OrdinalIgnoreCase) ||
+                                    col0.Contains("карт", StringComparison.OrdinalIgnoreCase) ||
+                                    col0.Contains("№", StringComparison.OrdinalIgnoreCase) ||
+                                    string.Equals(col0, "игрок", StringComparison.OrdinalIgnoreCase);
+
+            bool col1IsNameHeader = string.Equals(col1, "фио", StringComparison.OrdinalIgnoreCase) ||
+                                    string.Equals(col1, "имя", StringComparison.OrdinalIgnoreCase) ||
+                                    string.Equals(col1, "игрок", StringComparison.OrdinalIgnoreCase) ||
+                                    string.Equals(col1, "фио игрока", StringComparison.OrdinalIgnoreCase) ||
+                                    col1.Contains("фио", StringComparison.OrdinalIgnoreCase) ||
+                                    col1.Contains("имя", StringComparison.OrdinalIgnoreCase);
+
+            if (col0IsCardHeader && (col1IsNameHeader || row.Count == 1))
+            {
+                return true;
+            }
+
+            bool hasId = row.Any(c => c.Contains("id", StringComparison.OrdinalIgnoreCase) || c.Contains("карт", StringComparison.OrdinalIgnoreCase));
+            bool hasStatusOrPhone = row.Any(c => c.Contains("статус", StringComparison.OrdinalIgnoreCase) || c.Contains("телефон", StringComparison.OrdinalIgnoreCase));
+            if (hasId && hasStatusOrPhone)
+            {
+                return true;
+            }
+        }
+
+        // Если заголовков нет, но первая строка явно похожа на валидную карту клуба
+        var firstRow = rows[0];
+        if (firstRow.Count >= 1)
+        {
+            var firstVal = firstRow[0].Replace('\u00A0', ' ').Trim().TrimStart('№', '#').Trim();
+            if (firstVal.Length > 0 && firstVal.Length <= 10 && firstVal.All(char.IsLetterOrDigit) &&
+                !firstVal.Contains('.') && !firstVal.Contains('/') && !firstVal.Contains(':'))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     public static List<SheetPlayerCardInfo> ParsePlayersSheet(string csvContent)
     {
         var result = new List<SheetPlayerCardInfo>();
         if (string.IsNullOrWhiteSpace(csvContent)) return result;
 
-        // Если передан CSV общего рейтинга (например, при gviz возврате gid=0), не парсим как карты
-        if (IsRatingSheetCsv(csvContent) || 
-            csvContent.Contains("ОБЩИЙ РЕЙТИНГ", StringComparison.OrdinalIgnoreCase) ||
-            csvContent.Contains("Сумма очков", StringComparison.OrdinalIgnoreCase))
+        if (!IsPlayersSheetCsv(csvContent))
         {
             return result;
         }
@@ -530,14 +683,19 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
         {
             if (row.Count < 1) continue;
 
-            var col0 = row[0].Trim();
-            var col1 = row.Count > 1 ? row[1].Trim() : "";
-            var col4 = row.Count > 4 ? row[4].Trim() : null;
+            var col0 = row[0].Replace('\u00A0', ' ').Trim().TrimStart('№', '#').Trim();
+            var col1 = row.Count > 1 ? row[1].Replace('\u00A0', ' ').Trim() : "";
+            var col2 = row.Count > 2 ? row[2].Replace('\u00A0', ' ').Trim() : null;
+            var col3 = row.Count > 3 ? row[3].Replace('\u00A0', ' ').Trim() : null;
+            var col4 = row.Count > 4 ? row[4].Replace('\u00A0', ' ').Trim() : null;
+            var col5 = row.Count > 5 ? row[5].Replace('\u00A0', ' ').Trim() : null;
 
             // Пропускаем строку заголовка
             if (col0.Contains("id", StringComparison.OrdinalIgnoreCase) ||
                 col0.Contains("номер", StringComparison.OrdinalIgnoreCase) ||
                 col0.Contains("карт", StringComparison.OrdinalIgnoreCase) ||
+                col0.Contains("№", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(col0, "игрок", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(col1, "фио", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(col1, "имя", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(col1, "игрок", StringComparison.OrdinalIgnoreCase) ||
@@ -548,12 +706,89 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
 
             if (string.IsNullOrWhiteSpace(col0)) continue;
 
+            // Игнорируем невалидные плейсхолдеры для карты
+            if (string.Equals(col0, "-", StringComparison.Ordinal) ||
+                string.Equals(col0, "нет", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(col0, "б/н", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(col0, "none", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(col0, "null", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(col0, "0", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
             if (!IsCardStatusValid(col4))
             {
                 continue;
             }
 
-            result.Add(new SheetPlayerCardInfo(col0, col1, col4));
+            // Извлечение телефона:
+            // 1) В первую очередь из колонки [5] Комментарий (структура по фото заказчика)
+            var phone = ExtractAndNormalizePhoneNumber(col5);
+
+            // 2) Если в [5] телефона нет, проверяем колонку [3] ("Телефон" в 6-колоночной структуре по фото)
+            if (string.IsNullOrWhiteSpace(phone) && !string.IsNullOrWhiteSpace(col3))
+            {
+                phone = ExtractAndNormalizePhoneNumber(col3);
+            }
+
+            // 3) Если в [3] телефона нет, проверяем колонку [2] (в 5-колоночной структуре "Телефон" был в [2])
+            if (string.IsNullOrWhiteSpace(phone) && !string.IsNullOrWhiteSpace(col2))
+            {
+                phone = ExtractAndNormalizePhoneNumber(col2);
+            }
+
+            result.Add(new SheetPlayerCardInfo(col0, col1, col4, phone));
+        }
+
+        return result;
+    }
+
+    public static HashSet<string> ParseBlockedCardIds(string csvContent)
+    {
+        var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(csvContent)) return result;
+        if (!IsPlayersSheetCsv(csvContent)) return result;
+
+        var parsedRows = ParseCsv(csvContent);
+        foreach (var row in parsedRows)
+        {
+            if (row.Count < 1) continue;
+
+            var col0 = row[0].Replace('\u00A0', ' ').Trim().TrimStart('№', '#').Trim();
+            var col1 = row.Count > 1 ? row[1].Replace('\u00A0', ' ').Trim() : "";
+            var col4 = row.Count > 4 ? row[4].Replace('\u00A0', ' ').Trim() : null;
+
+            // Пропускаем строку заголовка
+            if (col0.Contains("id", StringComparison.OrdinalIgnoreCase) ||
+                col0.Contains("номер", StringComparison.OrdinalIgnoreCase) ||
+                col0.Contains("карт", StringComparison.OrdinalIgnoreCase) ||
+                col0.Contains("№", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(col0, "игрок", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(col1, "фио", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(col1, "имя", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(col1, "игрок", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(col1, "фио игрока", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(col0)) continue;
+
+            if (string.Equals(col0, "-", StringComparison.Ordinal) ||
+                string.Equals(col0, "нет", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(col0, "б/н", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(col0, "none", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(col0, "null", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(col0, "0", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (!IsCardStatusValid(col4))
+            {
+                result.Add(col0);
+            }
         }
 
         return result;
@@ -568,7 +803,9 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
 
         var s = status.Trim().ToLowerInvariant();
         if (s.Contains("блок") || s.Contains("заблокир") || s.Contains("бан") ||
-            s.Contains("утер") || s.Contains("аннул") || s.Contains("неактив") || s.Contains("не актив"))
+            s.Contains("утер") || s.Contains("аннул") || s.Contains("неактив") || s.Contains("не актив") ||
+            s.Contains("черн") || s.Contains("чс") || s.Contains("архив") ||
+            s.Contains("приостанов") || s.Contains("стоп"))
         {
             return false;
         }
@@ -592,7 +829,9 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
         string? playersCsvContent,
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(seasonRatingCsvContent) && string.IsNullOrWhiteSpace(totalRatingCsvContent))
+        if (string.IsNullOrWhiteSpace(seasonRatingCsvContent) && 
+            string.IsNullOrWhiteSpace(totalRatingCsvContent) &&
+            string.IsNullOrWhiteSpace(playersCsvContent))
         {
             return new GoogleSheetsSyncResult(false, 0, 0, 0, "CSV контент пуст.");
         }
@@ -609,8 +848,10 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
         var hasSeasonSheet = !string.IsNullOrWhiteSpace(seasonRatingCsvContent);
         var seasonRows = ParseRatingSheet(seasonRatingCsvContent ?? "");
         var totalRows = ParseRatingSheet(totalRatingCsvContent ?? "");
+        var playersRows = ParsePlayersSheet(playersCsvContent ?? "");
+        var blockedCardIds = ParseBlockedCardIds(playersCsvContent ?? "");
 
-        if (seasonRows.Count == 0 && totalRows.Count == 0)
+        if (seasonRows.Count == 0 && totalRows.Count == 0 && playersRows.Count == 0 && blockedCardIds.Count == 0)
         {
             return new GoogleSheetsSyncResult(false, 0, 0, 0, "Не удалось распознать строки в CSV.");
         }
@@ -642,7 +883,9 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
                 bool confirmedInReg = regMap.TryGetValue(norm, out var reg) && 
                                      !string.IsNullOrWhiteSpace(reg.ClubCardId) &&
                                      string.Equals(reg.ClubCardId.Trim(), u.ClubCardId.Trim(), StringComparison.OrdinalIgnoreCase);
-                if (!confirmedInReg)
+                bool confirmedInPlayers = playersRows.Any(p => 
+                    string.Equals(p.CardId.TrimStart('№', '#').Trim(), u.ClubCardId.Trim(), StringComparison.OrdinalIgnoreCase));
+                if (!confirmedInReg && !confirmedInPlayers)
                 {
                     u.ClubCardId = null;
                     processedUsers.Add(u);
@@ -658,7 +901,9 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
                 bool confirmedInReg = regMap.TryGetValue(norm, out var reg) && 
                                      !string.IsNullOrWhiteSpace(reg.ClubCardId) &&
                                      string.Equals(reg.ClubCardId.Trim(), u.ClubCardId.Trim(), StringComparison.OrdinalIgnoreCase);
-                if (!confirmedInReg)
+                bool confirmedInPlayers = playersRows.Any(p => 
+                    string.Equals(p.CardId.TrimStart('№', '#').Trim(), u.ClubCardId.Trim(), StringComparison.OrdinalIgnoreCase));
+                if (!confirmedInReg && !confirmedInPlayers)
                 {
                     u.ClubCardId = null;
                     processedUsers.Add(u);
@@ -929,53 +1174,189 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
         }
 
         // 4. Загрузка и привязка клубных карт из листа «Игроки» (белый список карт клуба)
-        var playersRows = ParsePlayersSheet(playersCsvContent ?? "");
+        if (blockedCardIds.Count > 0)
+        {
+            foreach (var blockedCard in blockedCardIds)
+            {
+                var stubsToRemove = existingUsers
+                    .Where(u => (u.VkId.StartsWith("sheet_card_") || u.VkId.StartsWith("card_")) &&
+                                u.ClubCardId != null &&
+                                string.Equals(u.ClubCardId.Trim(), blockedCard, StringComparison.OrdinalIgnoreCase) &&
+                                u.TotalRating == 0 && u.TournamentsPlayed == 0)
+                    .ToList();
+
+                foreach (var stub in stubsToRemove)
+                {
+                    _context.Users.Remove(stub);
+                    existingUsers.Remove(stub);
+                    processedUsers.Remove(stub);
+                    createdUsers.Remove(stub);
+                    updatedUsers.Remove(stub);
+                }
+            }
+        }
+
         if (playersRows.Count > 0)
         {
             foreach (var playerCard in playersRows)
             {
                 if (string.IsNullOrWhiteSpace(playerCard.CardId)) continue;
-                var trimmedCard = playerCard.CardId.Trim();
+                var trimmedCard = playerCard.CardId.Trim().TrimStart('№', '#').Trim();
+                if (string.IsNullOrWhiteSpace(trimmedCard)) continue;
 
-                // 1. Ищем существующего пользователя по ClubCardId
-                var matchedUser = existingUsers.FirstOrDefault(u => 
+                // 1. Ищем существующего пользователя по ФИО (например, уже создан из листа рейтинга)
+                User? matchedByName = !string.IsNullOrWhiteSpace(playerCard.FullName)
+                    ? FindMatchingUserByName(existingUsers, playerCard.FullName)
+                    : null;
+
+                // 2. Ищем существующего пользователя по ClubCardId
+                var matchedByCard = existingUsers.FirstOrDefault(u => 
                     !string.IsNullOrWhiteSpace(u.ClubCardId) && 
                     string.Equals(u.ClubCardId.Trim(), trimmedCard, StringComparison.OrdinalIgnoreCase));
 
-                if (matchedUser != null && matchedUser.VkId.StartsWith("sheet_card_") && !string.IsNullOrWhiteSpace(playerCard.FullName))
+                // Если игрок найден по ФИО (из рейтинга или ранее созданный):
+                if (matchedByName != null)
                 {
-                    var parts = playerCard.FullName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-                    string lName = parts.Length > 0 ? parts[0] : playerCard.FullName;
-                    string fName = parts.Length > 1 ? string.Join(" ", parts.Skip(1)) : "Игрок";
-                    if (matchedUser.FirstName != fName || matchedUser.LastName != lName)
-                    {
-                        matchedUser.FirstName = fName;
-                        matchedUser.LastName = lName;
-                        processedUsers.Add(matchedUser);
-                        if (!createdUsers.Contains(matchedUser)) updatedUsers.Add(matchedUser);
-                    }
-                }
+                    bool modified = false;
 
-                // 2. Если по карте не найден, ищем по имени среди пользователей без карты
-                if (matchedUser == null && !string.IsNullOrWhiteSpace(playerCard.FullName))
-                {
-                    var matchedByName = FindMatchingUserByName(existingUsers, playerCard.FullName);
-                    if (matchedByName != null && 
-                        string.IsNullOrWhiteSpace(matchedByName.ClubCardId) && 
-                        !MasterClubCardConstants.IsMasterAdminCard(matchedByName.ClubCardId))
+                    // Привязываем ClubCardId (не перезаписывая мастер-карту админа)
+                    if (!MasterClubCardConstants.IsMasterAdminCard(matchedByName.ClubCardId))
                     {
-                        matchedByName.ClubCardId = trimmedCard;
-                        processedUsers.Add(matchedByName);
-                        if (!createdUsers.Contains(matchedByName))
+                        if (string.IsNullOrWhiteSpace(matchedByName.ClubCardId) ||
+                            ((matchedByName.VkId.StartsWith("sheet_") || matchedByName.VkId.StartsWith("card_")) && 
+                             !string.Equals(matchedByName.ClubCardId.Trim(), trimmedCard, StringComparison.OrdinalIgnoreCase)))
                         {
-                            updatedUsers.Add(matchedByName);
+                            matchedByName.ClubCardId = trimmedCard;
+                            modified = true;
                         }
-                        matchedUser = matchedByName;
+                    }
+
+                    // Привязываем нормализованный телефон
+                    if (!string.IsNullOrWhiteSpace(playerCard.PhoneNumber))
+                    {
+                        if (string.IsNullOrWhiteSpace(matchedByName.PhoneNumber) ||
+                            matchedByName.PhoneNumber.Count(char.IsDigit) < 5 ||
+                            ((matchedByName.VkId.StartsWith("sheet_") || matchedByName.VkId.StartsWith("card_")) && 
+                             !string.Equals(matchedByName.PhoneNumber, playerCard.PhoneNumber, StringComparison.OrdinalIgnoreCase)))
+                        {
+                            matchedByName.PhoneNumber = playerCard.PhoneNumber;
+                            modified = true;
+                        }
+                    }
+
+                    // Если у пользователя заглушечные имена "Игрок", обновляем из листа «Игроки»
+                    if (!string.IsNullOrWhiteSpace(playerCard.FullName) && 
+                        (matchedByName.VkId.StartsWith("sheet_") || matchedByName.VkId.StartsWith("card_")) &&
+                        (matchedByName.FirstName == "Игрок" || string.IsNullOrWhiteSpace(matchedByName.LastName)))
+                    {
+                        var parts = playerCard.FullName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                        string lName = parts.Length > 0 ? parts[0] : playerCard.FullName;
+                        string fName = parts.Length > 1 ? string.Join(" ", parts.Skip(1)) : "Игрок";
+                        matchedByName.LastName = lName;
+                        matchedByName.FirstName = fName;
+                        modified = true;
+                    }
+
+                    // Если был отдельный stub-пользователь с этой же картой, удаляем его во избежание дубликатов
+                    if (matchedByCard != null && matchedByCard.Id != matchedByName.Id &&
+                        (matchedByCard.VkId.StartsWith("sheet_card_") || matchedByCard.VkId.StartsWith("card_")) &&
+                        matchedByCard.TotalRating == 0 && matchedByCard.TournamentsPlayed == 0)
+                    {
+                        var dupRegs = await _context.Registrations.Where(r => r.UserId == matchedByCard.Id).ToListAsync(cancellationToken);
+                        foreach (var r in dupRegs)
+                        {
+                            r.UserId = matchedByName.Id;
+                        }
+
+                        _context.Users.Remove(matchedByCard);
+                        existingUsers.Remove(matchedByCard);
+                        processedUsers.Remove(matchedByCard);
+                        createdUsers.Remove(matchedByCard);
+                        updatedUsers.Remove(matchedByCard);
+                    }
+
+                    if (modified)
+                    {
+                        processedUsers.Add(matchedByName);
+                        if (!createdUsers.Contains(matchedByName)) updatedUsers.Add(matchedByName);
+                    }
+
+                    // Если пользователь по имени найден, но у него уже другая карта (и мы ее не меняем),
+                    // а самой карты trimmedCard еще нет в базе — создаем для нее stub-пользователя в белом списке
+                    if (!string.Equals(matchedByName.ClubCardId?.Trim(), trimmedCard, StringComparison.OrdinalIgnoreCase) &&
+                        matchedByCard == null &&
+                        !existingUsers.Any(u => string.Equals(u.ClubCardId?.Trim(), trimmedCard, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        var nameParts = playerCard.FullName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                        string lastName = nameParts.Length > 0 ? nameParts[0] : playerCard.FullName;
+                        string firstName = nameParts.Length > 1 ? string.Join(" ", nameParts.Skip(1)) : "Игрок";
+
+                        var uid = Guid.NewGuid().ToString("N")[..8];
+                        var newVkId = $"sheet_card_{trimmedCard}_{uid}";
+                        if (newVkId.Length > 50) newVkId = newVkId[..50];
+
+                        var stubForCard = new User
+                        {
+                            VkId = newVkId,
+                            FirstName = firstName,
+                            LastName = lastName,
+                            ClubCardId = trimmedCard,
+                            PhoneNumber = playerCard.PhoneNumber,
+                            TotalRating = 0,
+                            SeasonRating = 0,
+                            TournamentsPlayed = 0,
+                            WinsCount = 0,
+                            Top3Count = 0,
+                            Top10Count = 0,
+                            KnockoutsCount = 0,
+                            AvgPlace = 0.0,
+                            CreatedAt = DateTime.UtcNow
+                        };
+
+                        _context.Users.Add(stubForCard);
+                        existingUsers.Add(stubForCard);
+                        processedUsers.Add(stubForCard);
+                        createdUsers.Add(stubForCard);
                     }
                 }
+                // 3. Если по имени не найден, но найден по ClubCardId
+                else if (matchedByCard != null)
+                {
+                    bool modified = false;
 
-                // 3. Если такого игрока/карты нет в базе, создаем нового пользователя в белом списке
-                if (matchedUser == null)
+                    // Если это stub-пользователь из листа карт, обновляем ФИО
+                    if ((matchedByCard.VkId.StartsWith("sheet_card_") || matchedByCard.VkId.StartsWith("card_")) && 
+                        !string.IsNullOrWhiteSpace(playerCard.FullName))
+                    {
+                        var parts = playerCard.FullName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                        string lName = parts.Length > 0 ? parts[0] : playerCard.FullName;
+                        string fName = parts.Length > 1 ? string.Join(" ", parts.Skip(1)) : "Игрок";
+                        if (matchedByCard.FirstName != fName || matchedByCard.LastName != lName)
+                        {
+                            matchedByCard.FirstName = fName;
+                            matchedByCard.LastName = lName;
+                            modified = true;
+                        }
+                    }
+
+                    // Обновляем телефон
+                    if (!string.IsNullOrWhiteSpace(playerCard.PhoneNumber) &&
+                        (string.IsNullOrWhiteSpace(matchedByCard.PhoneNumber) ||
+                         ((matchedByCard.VkId.StartsWith("sheet_") || matchedByCard.VkId.StartsWith("card_")) && 
+                          !string.Equals(matchedByCard.PhoneNumber, playerCard.PhoneNumber, StringComparison.OrdinalIgnoreCase))))
+                    {
+                        matchedByCard.PhoneNumber = playerCard.PhoneNumber;
+                        modified = true;
+                    }
+
+                    if (modified)
+                    {
+                        processedUsers.Add(matchedByCard);
+                        if (!createdUsers.Contains(matchedByCard)) updatedUsers.Add(matchedByCard);
+                    }
+                }
+                // 4. Если такого игрока/карты нет в базе, создаем нового пользователя в белом списке
+                else
                 {
                     var nameParts = playerCard.FullName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
                     string lastName = nameParts.Length > 0 ? nameParts[0] : playerCard.FullName;
@@ -991,6 +1372,7 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
                         FirstName = firstName,
                         LastName = lastName,
                         ClubCardId = trimmedCard,
+                        PhoneNumber = playerCard.PhoneNumber,
                         TotalRating = 0,
                         SeasonRating = 0,
                         TournamentsPlayed = 0,

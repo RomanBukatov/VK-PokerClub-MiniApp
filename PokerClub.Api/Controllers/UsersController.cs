@@ -235,12 +235,12 @@ public class UsersController : ControllerBase
             if (!string.IsNullOrWhiteSpace(searchName))
             {
                 var candidateSheetUsers = await _context.Users
-                    .Where(u => u.VkId.StartsWith("sheet_") && u.Id != user.Id)
+                    .Where(u => (u.VkId.StartsWith("sheet_") || u.VkId.StartsWith("card_")) && u.Id != user.Id)
                     .ToListAsync();
 
                 // Исключаем кандидатов, чья клубная карта уже занята другим РЕАЛЬНЫМ пользователем
                 var realUserCards = await _context.Users
-                    .Where(u => !u.VkId.StartsWith("sheet_") && u.Id != user.Id && u.ClubCardId != null)
+                    .Where(u => !u.VkId.StartsWith("sheet_") && !u.VkId.StartsWith("card_") && u.Id != user.Id && u.ClubCardId != null)
                     .Select(u => u.ClubCardId!.ToLower())
                     .ToListAsync();
                 var realUserCardSet = new HashSet<string>(realUserCards, StringComparer.OrdinalIgnoreCase);
@@ -263,7 +263,7 @@ public class UsersController : ControllerBase
                     u.ClubCardId != null &&
                     u.ClubCardId.ToLower() == requestedCardId.ToLower() &&
                     u.Id != user.Id &&
-                    u.VkId.StartsWith("sheet_"));
+                    (u.VkId.StartsWith("sheet_") || u.VkId.StartsWith("card_")));
             }
 
             if (!string.IsNullOrEmpty(requestedCardId))
@@ -296,7 +296,8 @@ public class UsersController : ControllerBase
                         u.ClubCardId != null &&
                         u.ClubCardId.ToLower() == requestedCardId.ToLower() &&
                         u.Id != user.Id &&
-                        !u.VkId.StartsWith("sheet_"));
+                        !u.VkId.StartsWith("sheet_") &&
+                        !u.VkId.StartsWith("card_"));
 
                     if (isCardTakenByRealUser)
                     {
@@ -307,7 +308,7 @@ public class UsersController : ControllerBase
                     // Если карта привязана к другому sheet_* пользователю, который НЕ является пустышкой белого списка
                     // и у которого карта не является ошибочно записанным местом в рейтинге — это конфликт!
                     var duplicateSheetCards = await _context.Users
-                        .Where(u => u.VkId.StartsWith("sheet_") &&
+                        .Where(u => (u.VkId.StartsWith("sheet_") || u.VkId.StartsWith("card_")) &&
                                     u.Id != user.Id &&
                                     (sheetUser == null || u.Id != sheetUser.Id) &&
                                     u.ClubCardId != null &&
@@ -319,7 +320,7 @@ public class UsersController : ControllerBase
                         bool isCorruptedRankCard = (dup.SheetRank.HasValue && string.Equals(dup.ClubCardId?.Trim(), dup.SheetRank.Value.ToString(), StringComparison.OrdinalIgnoreCase)) ||
                                                    (dup.TournamentsPlayed > 0 && string.Equals(dup.ClubCardId?.Trim(), dup.TournamentsPlayed.ToString(), StringComparison.OrdinalIgnoreCase));
 
-                        bool isCardStub = dup.VkId.StartsWith("sheet_card_", StringComparison.OrdinalIgnoreCase) && dup.TotalRating == 0 && dup.TournamentsPlayed == 0;
+                        bool isCardStub = (dup.VkId.StartsWith("sheet_card_", StringComparison.OrdinalIgnoreCase) || dup.VkId.StartsWith("card_", StringComparison.OrdinalIgnoreCase)) && dup.TotalRating == 0 && dup.TournamentsPlayed == 0;
 
                         if (!isCardStub && !isCorruptedRankCard)
                         {
@@ -374,7 +375,7 @@ public class UsersController : ControllerBase
                 if (!string.IsNullOrEmpty(requestedCardId))
                 {
                     var duplicateSheetCards = await _context.Users
-                        .Where(u => u.VkId.StartsWith("sheet_") &&
+                        .Where(u => (u.VkId.StartsWith("sheet_") || u.VkId.StartsWith("card_")) &&
                                     u.Id != user.Id &&
                                     u.Id != sheetUser.Id &&
                                     u.ClubCardId != null &&
@@ -390,7 +391,7 @@ public class UsersController : ControllerBase
                         {
                             dup.ClubCardId = null;
                         }
-                        else if (dup.VkId.StartsWith("sheet_card_", StringComparison.OrdinalIgnoreCase) && dup.TotalRating == 0 && dup.TournamentsPlayed == 0)
+                        else if ((dup.VkId.StartsWith("sheet_card_", StringComparison.OrdinalIgnoreCase) || dup.VkId.StartsWith("card_", StringComparison.OrdinalIgnoreCase)) && dup.TotalRating == 0 && dup.TournamentsPlayed == 0)
                         {
                             var dupRegs = await _context.Registrations.Where(r => r.UserId == dup.Id).ToListAsync();
                             foreach (var r in dupRegs)

@@ -14,7 +14,7 @@ public static class DbInitializer
         }
 
         // Не удаляем тестового администратора и реальных игроков из Google Sheets
-        if (user.VkId == "123456789" || user.VkId.StartsWith("sheet_", StringComparison.OrdinalIgnoreCase))
+        if (user.VkId == "123456789" || user.VkId.StartsWith("sheet_", StringComparison.OrdinalIgnoreCase) || user.VkId.StartsWith("card_", StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }

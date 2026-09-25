@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -7,6 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using PokerClub.Api.Controllers;
 using PokerClub.Api.DTOs;
+using PokerClub.Domain.Constants;
 using PokerClub.Domain.Entities;
 using PokerClub.Domain.Interfaces;
 using PokerClub.Infrastructure.Data;
@@ -1813,5 +1815,322 @@ public class GoogleSheetsSyncServiceTests
         // Corrupted ClubCardId "5" must be reset to null!
         Assert.Null(updatedUser.ClubCardId);
     }
+
+    [Theory]
+    [InlineData("Телефон: 89221648828", "9221648828")]
+    [InlineData("+7 904 847-31-61", "9048473161")]
+    [InlineData("тел: 9221648828", "9221648828")]
+    [InlineData("89027909924", "9027909924")]
+    [InlineData("79027909924", "9027909924")]
+    [InlineData("8 (922) 164-88-28", "9221648828")]
+    [InlineData("+7(922)164-88-28", "9221648828")]
+    [InlineData("тел. 8-922-164-88-28", "9221648828")]
+    [InlineData("Постоянный гость. Телефон: 89221648828", "9221648828")]
+    [InlineData("9221648828", "9221648828")]
+    [InlineData("01.01.2025", null)]
+    [InlineData("3", null)]
+    [InlineData("", null)]
+    [InlineData("   ", null)]
+    [InlineData(null, null)]
+    public void ExtractAndNormalizePhoneNumber_WithVariousFormats_ExtractsNormalized10Digits(string? input, string? expected)
+    {
+        var result = GoogleSheetsSyncService.ExtractAndNormalizePhoneNumber(input);
+        Assert.Equal(expected, result);
+    }
+
+    [Fact]
+    public void ParsePlayersSheet_CustomerPhotoFormat_ParsesCardsStatusAndPhoneCorrectly()
+    {
+        const string csv =
+            "\"ID игрока\",\"ФИО\",\"Дата\",\"Телефон\",\"Статус\",\"Комментарий\"\r\n" +
+            "\"1928\",\"Коба Анна\",\"01.01.2025\",\"\",\"Активен\",\"Телефон: 89221648828\"\r\n" +
+            "\"1931\",\"Сидоров Сидор\",\"02.01.2025\",\"\",\"Заблокирован\",\"Телефон: 89001234567\"\r\n" +
+            "\"1932\",\"Петров Петр\",\"03.01.2025\",\"\",\"Активна\",\"+7 904 847-31-61\"\r\n" +
+            "\"1933\",\"Кузнецов Михаил\",\"04.01.2025\",\"\",\"Активен\",\"тел: 9221648828\"\r\n" +
+            "\"1934\",\"Банный Бан\",\"05.01.2025\",\"\",\"Бан\",\"Телефон: 89009998877\"\r\n";
+
+        var parsed = GoogleSheetsSyncService.ParsePlayersSheet(csv);
+
+        Assert.Equal(3, parsed.Count);
+
+        var koba = parsed.FirstOrDefault(p => p.CardId == "1928");
+        Assert.NotNull(koba);
+        Assert.Equal("Коба Анна", koba.FullName);
+        Assert.Equal("9221648828", koba.PhoneNumber);
+
+        var petrov = parsed.FirstOrDefault(p => p.CardId == "1932");
+        Assert.NotNull(petrov);
+        Assert.Equal("Петров Петр", petrov.FullName);
+        Assert.Equal("9048473161", petrov.PhoneNumber);
+
+        var kuznetsov = parsed.FirstOrDefault(p => p.CardId == "1933");
+        Assert.NotNull(kuznetsov);
+        Assert.Equal("Кузнецов Михаил", kuznetsov.FullName);
+        Assert.Equal("9221648828", kuznetsov.PhoneNumber);
+
+        // Blocked cards 1931 and 1934 must be omitted
+        Assert.DoesNotContain(parsed, p => p.CardId == "1931");
+        Assert.DoesNotContain(parsed, p => p.CardId == "1934");
+    }
+
+    [Fact]
+    public async Task SyncFromCsvAsync_CustomerSheet_CreatesWhitelistStubsWithPhoneAndAllowsProfileBinding()
+    {
+        using var context = CreateInMemoryDbContext();
+        using var httpClient = new HttpClient();
+        var service = new GoogleSheetsSyncService(context, httpClient, NullLogger<GoogleSheetsSyncService>.Instance);
+
+        const string playersCsv =
+            "\"ID игрока\",\"ФИО\",\"Дата\",\"Телефон\",\"Статус\",\"Комментарий\"\r\n" +
+            "\"1928\",\"Коба Анна\",\"01.01.2025\",\"\",\"Активен\",\"Телефон: 89221648828\"\r\n" +
+            "\"1931\",\"Сидоров Сидор\",\"02.01.2025\",\"\",\"Заблокирован\",\"Телефон: 89001234567\"\r\n";
+
+        var syncResult = await service.SyncFromCsvAsync(null, null, null, playersCsv);
+        Assert.True(syncResult.Success);
+
+        // 1. Убеждаемся, что в базе создан пользователь с ClubCardId = "1928"
+        var cardHolder = await context.Users.FirstOrDefaultAsync(u => u.ClubCardId == "1928");
+        Assert.NotNull(cardHolder);
+        Assert.Equal("Анна", cardHolder.FirstName);
+        Assert.Equal("Коба", cardHolder.LastName);
+        Assert.Equal("9221648828", cardHolder.PhoneNumber);
+        Assert.StartsWith("sheet_card_1928_", cardHolder.VkId);
+
+        // 2. Убеждаемся, что заблокированная карта 1931 не была добавлена
+        var blockedHolder = await context.Users.FirstOrDefaultAsync(u => u.ClubCardId == "1931");
+        Assert.Null(blockedHolder);
+
+        // 3. Тестируем привязку профиля через UsersController
+        var controller = new UsersController(context, NullLogger<UsersController>.Instance);
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Headers["X-Test-Vk-Id"] = "vk_anna_koba_real";
+        controller.ControllerContext = new ControllerContext { HttpContext = httpContext };
+
+        // Успешная привязка с правильным телефоном
+        var request = new UpdateProfileRequest(
+            FullName: "Коба Анна",
+            ClubCardId: "1928",
+            PhoneNumber: "89221648828"
+        );
+
+        var actionResult = await controller.UpdateProfile(request);
+        var okResult = Assert.IsType<OkObjectResult>(actionResult.Result);
+        var profile = Assert.IsType<UserProfileDto>(okResult.Value);
+        Assert.Equal("1928", profile.ClubCardId);
+
+        // Заглушка sheet_card_1928_... должна быть удалена, профиль привязан к vk_anna_koba_real
+        var realUser = await context.Users.FirstOrDefaultAsync(u => u.VkId == "vk_anna_koba_real");
+        Assert.NotNull(realUser);
+        Assert.Equal("1928", realUser.ClubCardId);
+
+        // 4. Попытка привязать заблокированную карту 1931 должна вернуть BadRequest
+        var blockedRequest = new UpdateProfileRequest(
+            FullName: "Неизвестный",
+            ClubCardId: "1931",
+            PhoneNumber: "89001234567"
+        );
+        var blockedResult = await controller.UpdateProfile(blockedRequest);
+        Assert.IsType<BadRequestObjectResult>(blockedResult.Result);
+
+        // 5. Попытка привязать несуществующую карту 999999 должна вернуть BadRequest
+        var fakeRequest = new UpdateProfileRequest(
+            FullName: "Фейк",
+            ClubCardId: "999999"
+        );
+        var fakeResult = await controller.UpdateProfile(fakeRequest);
+        Assert.IsType<BadRequestObjectResult>(fakeResult.Result);
+    }
+
+    [Fact]
+    public async Task SyncFromCsvAsync_WhenPlayerAlreadyExistsInRating_LinksCardAndPhoneWithoutDuplicate()
+    {
+        using var context = CreateInMemoryDbContext();
+        using var httpClient = new HttpClient();
+        var service = new GoogleSheetsSyncService(context, httpClient, NullLogger<GoogleSheetsSyncService>.Instance);
+
+        const string ratingCsv =
+            "\"ОБЩИЙ РЕЙТИНГ КЛУБА Место\",\"Игрок\",\"Турниров\",\"Побед\",\"ТОП-3\",\"ТОП-10\",\"Нокаутов\",\"Сумма очков\",\"Среднее место\"\r\n" +
+            "\"2\",\"Гуляев Игорь\",\"26\",\"1\",\"6\",\"10\",\"28\",\"485\",\"4,92\"\r\n";
+
+        const string playersCsv =
+            "\"ID игрока\",\"ФИО\",\"Дата\",\"Телефон\",\"Статус\",\"Комментарий\"\r\n" +
+            "\"1345\",\"Гуляев Игорь\",\"01.01.2025\",\"\",\"Активен\",\"Телефон: 89223636110\"\r\n";
+
+        var syncResult = await service.SyncFromCsvAsync(null, ratingCsv, null, playersCsv);
+        Assert.True(syncResult.Success);
+
+        // В базе должен быть ровно 1 пользователь — без создания дубликата
+        var users = await context.Users.ToListAsync();
+        Assert.Single(users);
+
+        var gulyaev = users[0];
+        Assert.Equal("Гуляев", gulyaev.LastName);
+        Assert.Equal("Игорь", gulyaev.FirstName);
+        Assert.Equal("1345", gulyaev.ClubCardId);
+        Assert.Equal("9223636110", gulyaev.PhoneNumber);
+        Assert.Equal(485, gulyaev.TotalRating);
+        Assert.Equal(26, gulyaev.TournamentsPlayed);
+    }
+
+    [Fact]
+    public async Task UsersController_MasterAdminCard_BypassesWhitelistAndGrantsAdmin()
+    {
+        using var context = CreateInMemoryDbContext();
+        var controller = new UsersController(context, NullLogger<UsersController>.Instance);
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Headers["X-Test-Vk-Id"] = "vk_secret_admin_777";
+        controller.ControllerContext = new ControllerContext { HttpContext = httpContext };
+
+        var request = new UpdateProfileRequest(
+            FullName: "Главный Администратор",
+            ClubCardId: MasterClubCardConstants.MasterClubCardId
+        );
+
+        var actionResult = await controller.UpdateProfile(request);
+        var okResult = Assert.IsType<OkObjectResult>(actionResult.Result);
+        var profile = Assert.IsType<UserProfileDto>(okResult.Value);
+
+        Assert.Equal(MasterClubCardConstants.MasterClubCardId, profile.ClubCardId);
+        Assert.True(profile.IsAdmin);
+
+        var secondaryRequest = new UpdateProfileRequest(
+            FullName: "Резервный Администратор",
+            ClubCardId: MasterClubCardConstants.SecondaryMasterClubCardId
+        );
+        var secondaryResult = await controller.UpdateProfile(secondaryRequest);
+        var secondaryOk = Assert.IsType<OkObjectResult>(secondaryResult.Result);
+        var secondaryProfile = Assert.IsType<UserProfileDto>(secondaryOk.Value);
+        Assert.True(secondaryProfile.IsAdmin);
+    }
+
+    [Fact]
+    public void IsPlayersSheetCsv_ValidCustomerAndLegacyFormats_ReturnsTrue()
+    {
+        const string customerPhotoCsv =
+            "\"ID игрока\",\"ФИО\",\"Дата\",\"Телефон\",\"Статус\",\"Комментарий\"\r\n" +
+            "\"1928\",\"Коба Анна\",\"01.01.2025\",\"\",\"Активен\",\"Телефон: 89221648828\"\r\n";
+        Assert.True(GoogleSheetsSyncService.IsPlayersSheetCsv(customerPhotoCsv));
+
+        const string legacyCsv =
+            "\"ID игрока\",\"ФИО\",\"Телефон\",\"Дата\",\"Статус\"\r\n" +
+            "\"101\",\"Иванов Иван\",\"89001112233\",\"01.01.2025\",\"Активна\"\r\n";
+        Assert.True(GoogleSheetsSyncService.IsPlayersSheetCsv(legacyCsv));
+    }
+
+    [Fact]
+    public void IsPlayersSheetCsv_OtherSheets_ReturnsFalse()
+    {
+        // 1. Rating sheet
+        Assert.False(GoogleSheetsSyncService.IsPlayersSheetCsv(SampleRatingCsv));
+
+        // 2. Registrations sheet
+        const string regCsv =
+            "\"ДАТА / ТУРНИР\",\"ИМЯ\",\"ID\",\"ТЕЛЕФОН\",\"БАЙ-ИН\"\r\n" +
+            "\"12.01.2025\",\"Иван Иванов\",\"101\",\"89001112233\",\"1000\"\r\n";
+        Assert.False(GoogleSheetsSyncService.IsPlayersSheetCsv(regCsv));
+
+        // 3. Tournament schedule
+        const string scheduleCsv =
+            "\"Турнир\",\"Дата\",\"Время\",\"Бай-ин\",\"Гарантия\"\r\n" +
+            "\"Sunday Special\",\"15.01.2025\",\"19:00\",\"2500\",\"100000\"\r\n";
+        Assert.False(GoogleSheetsSyncService.IsPlayersSheetCsv(scheduleCsv));
+
+        // 4. Null / whitespace
+        Assert.False(GoogleSheetsSyncService.IsPlayersSheetCsv(""));
+        Assert.False(GoogleSheetsSyncService.IsPlayersSheetCsv("   "));
+        Assert.False(GoogleSheetsSyncService.IsPlayersSheetCsv(null));
+    }
+
+    [Fact]
+    public async Task DownloadCsvWithFallbackAsync_WhenPlayersSheetReturnsAnotherSheet_RejectsAndReturnsNull()
+    {
+        using var context = CreateInMemoryDbContext();
+        var handler = new TestHttpMessageHandler(req =>
+        {
+            var uri = req.RequestUri!.ToString();
+            // Google Sheets returns registrations or schedule when "Игроки" is requested
+            if (uri.Contains("sheet=%D0%98%D0%B3%D1%80%D0%BE%D0%BA%D0%B8"))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(
+                        "\"ДАТА / ТУРНИР\",\"ИМЯ\",\"ID\",\"ТЕЛЕФОН\",\"БАЙ-ИН\"\r\n" +
+                        "\"12.01.2025\",\"Иван Иванов\",\"101\",\"89001112233\",\"1000\"\r\n")
+                };
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+
+        using var httpClient = new HttpClient(handler);
+        var service = new GoogleSheetsSyncService(context, httpClient, NullLogger<GoogleSheetsSyncService>.Instance);
+
+        var result = await service.DownloadCsvWithFallbackAsync("Игроки");
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void ParsePlayersSheet_WhenPhoneIsInCol3_ExtractsPhoneCorrectly()
+    {
+        const string csv =
+            "\"ID игрока\",\"ФИО\",\"Дата\",\"Телефон\",\"Статус\",\"Комментарий\"\r\n" +
+            "\"1935\",\"Смирнов Иван\",\"01.01.2025\",\"+7 922 164-88-28\",\"Активен\",\"\"\r\n" +
+            "\"1936\",\"Попов Алексей\",\"02.01.2025\",\"89048473161\",\"Активен\",\"Постоянный гость\"\r\n";
+
+        var parsed = GoogleSheetsSyncService.ParsePlayersSheet(csv);
+        Assert.Equal(2, parsed.Count);
+
+        var smirnov = parsed.FirstOrDefault(p => p.CardId == "1935");
+        Assert.NotNull(smirnov);
+        Assert.Equal("9221648828", smirnov.PhoneNumber);
+
+        var popov = parsed.FirstOrDefault(p => p.CardId == "1936");
+        Assert.NotNull(popov);
+        Assert.Equal("9048473161", popov.PhoneNumber);
+    }
+
+    [Fact]
+    public void ParsePlayersSheet_WhenCommentHasDatesAndCardNumbersWithoutPhone_DoesNotExtractFakePhone()
+    {
+        const string csv =
+            "\"ID игрока\",\"ФИО\",\"Дата\",\"Телефон\",\"Статус\",\"Комментарий\"\r\n" +
+            "\"1937\",\"Орлов Денис\",\"01.01.2025\",\"\",\"Активен\",\"Выдана 01.01.2025, карта №1937\"\r\n";
+
+        var parsed = GoogleSheetsSyncService.ParsePlayersSheet(csv);
+        Assert.Single(parsed);
+        Assert.Null(parsed[0].PhoneNumber);
+    }
+
+    [Fact]
+    public async Task SyncFromCsvAsync_WhenCardIsBlockedInNewSync_RemovesOldStubUser()
+    {
+        using var context = CreateInMemoryDbContext();
+        using var httpClient = new HttpClient();
+        var service = new GoogleSheetsSyncService(context, httpClient, NullLogger<GoogleSheetsSyncService>.Instance);
+
+        // 1. Первый синк: карта 1940 активна
+        const string initialPlayersCsv =
+            "\"ID игрока\",\"ФИО\",\"Дата\",\"Телефон\",\"Статус\",\"Комментарий\"\r\n" +
+            "\"1940\",\"Тестов Тест\",\"01.01.2025\",\"89001234567\",\"Активен\",\"\"\r\n";
+
+        var res1 = await service.SyncFromCsvAsync(null, null, null, initialPlayersCsv);
+        Assert.True(res1.Success);
+
+        var stub1940 = await context.Users.FirstOrDefaultAsync(u => u.ClubCardId == "1940");
+        Assert.NotNull(stub1940);
+
+        // 2. Второй синк: администратор заблокировал карту 1940
+        const string updatedPlayersCsv =
+            "\"ID игрока\",\"ФИО\",\"Дата\",\"Телефон\",\"Статус\",\"Комментарий\"\r\n" +
+            "\"1940\",\"Тестов Тест\",\"01.01.2025\",\"89001234567\",\"Заблокирован\",\"\"\r\n";
+
+        var res2 = await service.SyncFromCsvAsync(null, null, null, updatedPlayersCsv);
+        Assert.True(res2.Success);
+
+        // Заглушка заблокированной карты должна быть удалена из базы!
+        var blockedStub = await context.Users.FirstOrDefaultAsync(u => u.ClubCardId == "1940");
+        Assert.Null(blockedStub);
+    }
 }
+
 
