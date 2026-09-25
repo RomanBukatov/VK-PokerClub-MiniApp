@@ -37,6 +37,36 @@ public class GoogleSheetsBackgroundSyncService : BackgroundService
     {
         _logger.LogInformation("GoogleSheetsBackgroundSyncService запущен с интервалом {Interval} мин.", _period.TotalMinutes);
 
+        // Немедленный разовый запуск синхронизации на старте приложения (без 5-минутного ожидания)
+        try
+        {
+            _logger.LogInformation("Первоначальный запуск синхронизации Google Sheets на старте...");
+            using var initialScope = _scopeFactory.CreateScope();
+            var initialSyncService = initialScope.ServiceProvider.GetRequiredService<IGoogleSheetsSyncService>();
+            var initialResult = await initialSyncService.SyncAsync(stoppingToken);
+
+            if (initialResult.Success)
+            {
+                _logger.LogInformation(
+                    "Первоначальная синхронизация Google Sheets успешно завершена: обработано {Processed}, обновлено {Updated}, создано {Created}.",
+                    initialResult.TotalProcessed, initialResult.UpdatedCount, initialResult.CreatedCount);
+
+                ResetLeaderboardCache();
+            }
+            else
+            {
+                _logger.LogWarning("Первоначальная синхронизация Google Sheets завершилась с ошибкой: {Message}", initialResult.Message);
+            }
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            return;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Ошибка при выполнении первоначальной синхронизации Google Sheets на старте.");
+        }
+
         using var timer = new PeriodicTimer(_period);
 
         while (!stoppingToken.IsCancellationRequested)

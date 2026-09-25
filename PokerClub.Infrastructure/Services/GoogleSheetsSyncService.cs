@@ -287,13 +287,22 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
                 var content = await response.Content.ReadAsStringAsync(cancellationToken);
                 if (IsValidCsvContent(content))
                 {
-                    _logger.LogInformation("Лист «{SheetName}» успешно загружен через gviz API.", sheetName);
-                    return content;
+                    if (!IsExpectedRatingSheet(sheetName) && (IsRatingSheetCsv(content) || content.Contains("ОБЩИЙ РЕЙТИНГ", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        _logger.LogWarning("Лист «{SheetName}» вернул содержимое общего рейтинга вместо запрошенного листа (gviz вернул gid=0). Считаем лист не найденным.", sheetName);
+                    }
+                    else
+                    {
+                        _logger.LogInformation("Лист «{SheetName}» успешно загружен через gviz API.", sheetName);
+                        return content;
+                    }
                 }
-
-                _logger.LogError(
-                    "Лист «{SheetName}» вернул HTTP {StatusCode}, но содержимое не является валидным CSV. URL: {Url}, Ответ: {ResponseBody}",
-                    sheetName, $"{(int)response.StatusCode} ({response.StatusCode})", gvizUrl, TruncateResponse(content));
+                else
+                {
+                    _logger.LogError(
+                        "Лист «{SheetName}» вернул HTTP {StatusCode}, но содержимое не является валидным CSV. URL: {Url}, Ответ: {ResponseBody}",
+                        sheetName, $"{(int)response.StatusCode} ({response.StatusCode})", gvizUrl, TruncateResponse(content));
+                }
             }
             else
             {
@@ -320,13 +329,22 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
                     var fallbackContent = await fallbackResponse.Content.ReadAsStringAsync(cancellationToken);
                     if (IsValidCsvContent(fallbackContent))
                     {
-                        _logger.LogInformation("Лист «{SheetName}» успешно загружен по запасному URL (gid={Gid}).", sheetName, gid);
-                        return fallbackContent;
+                        if (!IsExpectedRatingSheet(sheetName) && (IsRatingSheetCsv(fallbackContent) || fallbackContent.Contains("ОБЩИЙ РЕЙТИНГ", StringComparison.OrdinalIgnoreCase)))
+                        {
+                            _logger.LogWarning("Запасной экспорт листа «{SheetName}» (gid={Gid}) вернул содержимое общего рейтинга. Считаем лист не найденным.", sheetName, gid);
+                        }
+                        else
+                        {
+                            _logger.LogInformation("Лист «{SheetName}» успешно загружен по запасному URL (gid={Gid}).", sheetName, gid);
+                            return fallbackContent;
+                        }
                     }
-
-                    _logger.LogError(
-                        "Запасной экспорт листа «{SheetName}» по gid={Gid} вернул HTTP {StatusCode}, но содержимое не является валидным CSV. URL: {Url}, Ответ: {ResponseBody}",
-                        sheetName, gid, $"{(int)fallbackResponse.StatusCode} ({fallbackResponse.StatusCode})", exportUrl, TruncateResponse(fallbackContent));
+                    else
+                    {
+                        _logger.LogError(
+                            "Запасной экспорт листа «{SheetName}» по gid={Gid} вернул HTTP {StatusCode}, но содержимое не является валидным CSV. URL: {Url}, Ответ: {ResponseBody}",
+                            sheetName, gid, $"{(int)fallbackResponse.StatusCode} ({fallbackResponse.StatusCode})", exportUrl, TruncateResponse(fallbackContent));
+                    }
                 }
                 else
                 {
@@ -343,6 +361,25 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
         }
 
         return null;
+    }
+
+    public bool IsExpectedRatingSheet(string? sheetName)
+    {
+        if (string.IsNullOrWhiteSpace(sheetName)) return false;
+        return IsRatingSheetName(sheetName) || 
+               string.Equals(sheetName, _seasonSheetName, StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static bool IsRatingSheetName(string? sheetName)
+    {
+        if (string.IsNullOrWhiteSpace(sheetName)) return false;
+        return string.Equals(sheetName, TotalRatingSheetName, StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(sheetName, AutumnSeasonSheetName, StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(sheetName, SeasonRatingSheetName, StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(sheetName, LegacySeasonRatingSheetName, StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(sheetName, DefaultSeasonName, StringComparison.OrdinalIgnoreCase) ||
+               sheetName.Contains("рейтинг", StringComparison.OrdinalIgnoreCase) ||
+               sheetName.Contains("сезон", StringComparison.OrdinalIgnoreCase);
     }
 
     public static bool IsHtmlContent(string? content)
@@ -480,6 +517,14 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
         var result = new List<SheetPlayerCardInfo>();
         if (string.IsNullOrWhiteSpace(csvContent)) return result;
 
+        // Если передан CSV общего рейтинга (например, при gviz возврате gid=0), не парсим как карты
+        if (IsRatingSheetCsv(csvContent) || 
+            csvContent.Contains("ОБЩИЙ РЕЙТИНГ", StringComparison.OrdinalIgnoreCase) ||
+            csvContent.Contains("Сумма очков", StringComparison.OrdinalIgnoreCase))
+        {
+            return result;
+        }
+
         var parsedRows = ParseCsv(csvContent);
         foreach (var row in parsedRows)
         {
@@ -604,6 +649,22 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
                     updatedUsers.Add(u);
                 }
             }
+
+            // Очистка ошибочных ClubCardId, равных SheetRank (месту в рейтинге)
+            if (u.SheetRank.HasValue && !string.IsNullOrWhiteSpace(u.ClubCardId) &&
+                string.Equals(u.ClubCardId.Trim(), u.SheetRank.Value.ToString(), StringComparison.OrdinalIgnoreCase))
+            {
+                var norm = NormalizeNameKey($"{u.FirstName} {u.LastName}");
+                bool confirmedInReg = regMap.TryGetValue(norm, out var reg) && 
+                                     !string.IsNullOrWhiteSpace(reg.ClubCardId) &&
+                                     string.Equals(reg.ClubCardId.Trim(), u.ClubCardId.Trim(), StringComparison.OrdinalIgnoreCase);
+                if (!confirmedInReg)
+                {
+                    u.ClubCardId = null;
+                    processedUsers.Add(u);
+                    updatedUsers.Add(u);
+                }
+            }
         }
 
         // 1. Обработка Общего рейтинга (пишет в TotalRating)
@@ -642,7 +703,7 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
                 }
 
                 if (matchedUser.ClubCardId != null && 
-                    matchedUser.ClubCardId == row.TournamentsPlayed.ToString() && 
+                    ((matchedUser.ClubCardId == row.TournamentsPlayed.ToString()) || (matchedUser.ClubCardId == row.Place.ToString())) && 
                     !regMap.ContainsKey(NormalizeNameKey(row.PlayerName)))
                 {
                     matchedUser.ClubCardId = null;
@@ -745,6 +806,13 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
                 if (matchedUser.PhoneNumber != null && matchedUser.PhoneNumber.Count(char.IsDigit) < 5)
                 {
                     matchedUser.PhoneNumber = null;
+                }
+
+                if (matchedUser.ClubCardId != null && 
+                    ((matchedUser.ClubCardId == row.TournamentsPlayed.ToString()) || (matchedUser.ClubCardId == row.Place.ToString())) && 
+                    !regMap.ContainsKey(NormalizeNameKey(row.PlayerName)))
+                {
+                    matchedUser.ClubCardId = null;
                 }
 
                 // ВНИМАНИЕ: НИ В КОЕМ СЛУЧАЕ НЕ ПРИСВАИВАТЬ ClubCardId И PhoneNumber ИЗ ЭТОГО ЛИСТА!

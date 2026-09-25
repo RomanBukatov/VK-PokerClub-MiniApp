@@ -1742,5 +1742,76 @@ public class GoogleSheetsSyncServiceTests
         Assert.Single(parsed);
         Assert.Equal("1001", parsed[0].CardId);
     }
+
+    [Fact]
+    public async Task DownloadCsvWithFallbackAsync_WhenNonRatingSheetReturnsRatingSheetContent_ReturnsNull()
+    {
+        using var context = CreateInMemoryDbContext();
+        var handler = new TestHttpMessageHandler(req =>
+        {
+            var uri = req.RequestUri!.ToString();
+            // Google Sheets returns sheet 0 (Total Rating) when "Игроки" is requested
+            if (uri.Contains("sheet=%D0%98%D0%B3%D1%80%D0%BE%D0%BA%D0%B8"))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(SampleRatingCsv)
+                };
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+
+        using var httpClient = new HttpClient(handler);
+        var service = new GoogleSheetsSyncService(context, httpClient, NullLogger<GoogleSheetsSyncService>.Instance);
+
+        var result = await service.DownloadCsvWithFallbackAsync("Игроки");
+
+        // Must reject rating content when requesting non-rating sheet and return null
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void ParsePlayersSheet_WhenGivenRatingSheetCsv_ReturnsEmptyListAndDoesNotParsePlacesAsCards()
+    {
+        var result = GoogleSheetsSyncService.ParsePlayersSheet(SampleRatingCsv);
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public async Task SyncFromCsvAsync_CleansCorruptedClubCardIdMatchingSheetRank()
+    {
+        using var context = CreateInMemoryDbContext();
+        // User with corrupted ClubCardId matching SheetRank (e.g. rank 5 with card "5")
+        var userWithCorruptedCard = new User
+        {
+            VkId = "sheet_5_corrupted",
+            FirstName = "Игорь",
+            LastName = "Гуляев",
+            TotalRating = 504,
+            SheetRank = 5,
+            ClubCardId = "5",
+            TournamentsPlayed = 26
+        };
+        context.Users.Add(userWithCorruptedCard);
+        await context.SaveChangesAsync();
+
+        using var httpClient = new HttpClient();
+        var service = new GoogleSheetsSyncService(context, httpClient, NullLogger<GoogleSheetsSyncService>.Instance);
+
+        const string ratingCsv = 
+            "\"ОБЩИЙ РЕЙТИНГ КЛУБА Место\",\"Игрок\",\"Турниров\",\"Побед\",\"ТОП-3\",\"ТОП-10\",\"Нокаутов\",\"Сумма очков\",\"Среднее место\"\r\n" +
+            "\"5\",\"Гуляев Игорь\",\"26\",\"1\",\"6\",\"10\",\"28\",\"504\",\"4,92\"\r\n";
+
+        var result = await service.SyncFromCsvAsync(ratingCsv);
+        Assert.True(result.Success);
+
+        var updatedUser = await context.Users.FirstOrDefaultAsync(u => u.LastName == "Гуляев");
+        Assert.NotNull(updatedUser);
+        Assert.Equal(504, updatedUser.TotalRating);
+        Assert.Equal(5, updatedUser.SheetRank);
+        // Corrupted ClubCardId "5" must be reset to null!
+        Assert.Null(updatedUser.ClubCardId);
+    }
 }
 

@@ -1071,5 +1071,384 @@ public class UsersControllerTests
         Assert.Equal("Vassily_Pro", profile.Nickname);
         Assert.Equal("1060", profile.ClubCardId);
     }
+
+    [Fact]
+    public async Task UpdateProfile_IgorGulyaev_VerifiedInRatingWithCard1080_SucceedsAndCarriesOverPoints504()
+    {
+        using var context = CreateInMemoryDbContext();
+
+        // 1. В базе находится профиль sheet_* Игоря Гуляева из Google Sheets с 504 очками
+        // и ошибочным ClubCardId = "5" (из-за бага смещения места в рейтинг-листе)
+        var sheetUser = new User
+        {
+            VkId = "sheet_5_montecarlo_rating",
+            FirstName = "Игорь",
+            LastName = "Гуляев",
+            TotalRating = 504,
+            SeasonRating = 485,
+            SheetRank = 5,
+            ClubCardId = "5", // Ошибочно записанный ранг
+            TournamentsPlayed = 26,
+            WinsCount = 1,
+            Top3Count = 6,
+            Top10Count = 10,
+            KnockoutsCount = 28,
+            AvgPlace = 4.92,
+            CreatedAt = DateTime.UtcNow.AddDays(-10)
+        };
+        context.Users.Add(sheetUser);
+        await context.SaveChangesAsync();
+
+        var controller = new UsersController(context, NullLogger<UsersController>.Instance);
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Headers["X-Test-Vk-Id"] = "vk_real_igor_gulyaev";
+        controller.ControllerContext = new ControllerContext { HttpContext = httpContext };
+
+        // 2. Реальный игрок Игорь Гуляев вводит свои реальные данные:
+        // ФИО: Гуляев Игорь, Никнейм: Мэйби_Бэйби, Телефон: +7 (904) 847-31-61, Карта: 1080
+        var request = new UpdateProfileRequest(
+            FullName: "Гуляев Игорь",
+            Nickname: "Мэйби_Бэйби",
+            PhoneNumber: "+7 (904) 847-31-61",
+            ClubCardId: "1080",
+            AcceptedTerms: true
+        );
+
+        var actionResult = await controller.UpdateProfile(request);
+
+        // Должен вернуть 200 OK (не блокироваться cardExists и не отсекаться по ложному ClubCardId = "5")
+        var okResult = Assert.IsType<OkObjectResult>(actionResult.Result);
+        var profile = Assert.IsType<UserProfileDto>(okResult.Value);
+
+        // Проверяем, что реальная клубная карта 1080 успешно привязана
+        Assert.Equal("1080", profile.ClubCardId);
+        Assert.Equal("Мэйби_Бэйби", profile.Nickname);
+        Assert.Equal("+7 (904) 847-31-61", profile.PhoneNumber);
+        Assert.Equal("Гуляев Игорь", profile.FullName);
+
+        // Проверяем перенос накопленных 504 очков и статистики
+        Assert.Equal(504, profile.TotalRating);
+        Assert.Equal(485, profile.SeasonRating);
+        Assert.Equal(5, profile.SheetRank);
+        Assert.Equal(26, profile.TournamentsPlayed);
+        Assert.Equal(1, profile.WinsCount);
+        Assert.Equal(6, profile.Top3Count);
+        Assert.Equal(10, profile.Top10Count);
+        Assert.Equal(28, profile.KnockoutsCount);
+        Assert.Equal(4.92, profile.AvgPlace);
+
+        // Проверяем, что временный sheetUser удален из базы
+        var remainingSheetUser = await context.Users.FirstOrDefaultAsync(u => u.VkId == "sheet_5_montecarlo_rating");
+        Assert.Null(remainingSheetUser);
+
+        // Проверяем данные в БД
+        var dbUser = await context.Users.FirstOrDefaultAsync(u => u.VkId == "vk_real_igor_gulyaev");
+        Assert.NotNull(dbUser);
+        Assert.Equal("1080", dbUser.ClubCardId);
+        Assert.Equal(504, dbUser.TotalRating);
+        Assert.Equal(5, dbUser.SheetRank);
+    }
+
+    [Fact]
+    public async Task UpdateProfile_UnverifiedPlayerEnteringUnknownCard_ReturnsBadRequest400()
+    {
+        using var context = CreateInMemoryDbContext();
+
+        var controller = new UsersController(context, NullLogger<UsersController>.Instance);
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Headers["X-Test-Vk-Id"] = "vk_unknown_stranger";
+        controller.ControllerContext = new ControllerContext { HttpContext = httpContext };
+
+        // Неизвестный пользователь (которого нет в рейтинге клуба) вводит несуществующую карту
+        var request = new UpdateProfileRequest(
+            FullName: "Незнакомцев Петр",
+            Nickname: "Stranger",
+            PhoneNumber: "+7 (900) 000-00-00",
+            ClubCardId: "9999"
+        );
+
+        var actionResult = await controller.UpdateProfile(request);
+        var badRequest = Assert.IsType<BadRequestObjectResult>(actionResult.Result);
+        var messageProp = badRequest.Value?.GetType().GetProperty("Message")?.GetValue(badRequest.Value)?.ToString()
+            ?? badRequest.Value?.GetType().GetProperty("message")?.GetValue(badRequest.Value)?.ToString();
+        Assert.Contains("Клубный ID не найден в базе Monte Carlo", messageProp);
+    }
+
+    [Fact]
+    public async Task UpdateProfile_WhenCardAlreadyBoundToVerifiedRealUser_BlocksDuplicateRegistration()
+    {
+        using var context = CreateInMemoryDbContext();
+
+        // Игорь Гуляев уже зарегистрирован с картой 1080
+        var igor = new User
+        {
+            VkId = "vk_real_igor",
+            FirstName = "Игорь",
+            LastName = "Гуляев",
+            ClubCardId = "1080",
+            TotalRating = 504
+        };
+        context.Users.Add(igor);
+        await context.SaveChangesAsync();
+
+        var controller = new UsersController(context, NullLogger<UsersController>.Instance);
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Headers["X-Test-Vk-Id"] = "vk_impostor";
+        controller.ControllerContext = new ControllerContext { HttpContext = httpContext };
+
+        // Другой пользователь пытается указать ту же карту 1080
+        var request = new UpdateProfileRequest(
+            FullName: "Самозванец Иван",
+            Nickname: "Impostor",
+            PhoneNumber: "+7 (900) 111-22-33",
+            ClubCardId: "1080"
+        );
+
+        var actionResult = await controller.UpdateProfile(request);
+        var badRequest = Assert.IsType<BadRequestObjectResult>(actionResult.Result);
+        var messageProp = badRequest.Value?.GetType().GetProperty("Message")?.GetValue(badRequest.Value)?.ToString();
+        Assert.Equal("Эта клубная карта уже привязана к другому профилю. Обратитесь к администратору клуба.", messageProp);
+    }
+
+    [Fact]
+    public async Task UpdateProfile_PrioritizesRatedSheetUserOverZeroPointCardStub()
+    {
+        using var context = CreateInMemoryDbContext();
+
+        // 1. Заглушка карты с 0 очков из белого списка
+        var cardStub = new User
+        {
+            VkId = "sheet_card_1080_stub",
+            FirstName = "Игорь",
+            LastName = "Гуляев",
+            ClubCardId = "1080",
+            TotalRating = 0,
+            TournamentsPlayed = 0
+        };
+
+        // 2. Настоящий профиль из рейтинга с 504 очками (но ошибочной картой 5)
+        var ratingProfile = new User
+        {
+            VkId = "sheet_5_igor",
+            FirstName = "Игорь",
+            LastName = "Гуляев",
+            ClubCardId = "5",
+            SheetRank = 5,
+            TotalRating = 504,
+            SeasonRating = 485,
+            TournamentsPlayed = 26
+        };
+
+        context.Users.AddRange(cardStub, ratingProfile);
+        await context.SaveChangesAsync();
+
+        var controller = new UsersController(context, NullLogger<UsersController>.Instance);
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Headers["X-Test-Vk-Id"] = "vk_real_igor_stub_test";
+        controller.ControllerContext = new ControllerContext { HttpContext = httpContext };
+
+        var request = new UpdateProfileRequest(
+            FullName: "Гуляев Игорь",
+            Nickname: "Maybe_Baby",
+            ClubCardId: "1080"
+        );
+
+        var actionResult = await controller.UpdateProfile(request);
+        var okResult = Assert.IsType<OkObjectResult>(actionResult.Result);
+        var profile = Assert.IsType<UserProfileDto>(okResult.Value);
+
+        // Должен перенестись профиль с 504 очками, а не заглушка с 0 очков!
+        Assert.Equal(504, profile.TotalRating);
+        Assert.Equal(485, profile.SeasonRating);
+        Assert.Equal("1080", profile.ClubCardId);
+
+        // Заглушка cardStub должна быть удалена, а рейтинг ratingProfile перенесен в новый профиль
+        var dbCardStub = await context.Users.FirstOrDefaultAsync(u => u.VkId == "sheet_card_1080_stub");
+        Assert.Null(dbCardStub);
+
+        var dbRatingProfile = await context.Users.FirstOrDefaultAsync(u => u.VkId == "sheet_5_igor");
+        Assert.Null(dbRatingProfile);
+
+        var realUser = await context.Users.FirstOrDefaultAsync(u => u.VkId == "vk_real_igor_stub_test");
+        Assert.NotNull(realUser);
+        Assert.Equal(504, realUser.TotalRating);
+        Assert.Equal("1080", realUser.ClubCardId);
+    }
+
+    [Fact]
+    public async Task UpdateProfile_WhenCardBelongsToAnotherSheetRatingPlayer_ReturnsBadRequestAndDoesNotDeleteOtherPlayer()
+    {
+        using var context = CreateInMemoryDbContext();
+
+        // Другой рейтинговый игрок имеет карту 1080
+        var anotherRatedPlayer = new User
+        {
+            VkId = "sheet_77_alex",
+            FirstName = "Алексей",
+            LastName = "Иванов",
+            ClubCardId = "1080",
+            TotalRating = 300,
+            TournamentsPlayed = 15
+        };
+
+        // Текущий игрок в рейтинге с картой null
+        var currentRatedPlayer = new User
+        {
+            VkId = "sheet_5_igor",
+            FirstName = "Игорь",
+            LastName = "Гуляев",
+            ClubCardId = null,
+            SheetRank = 5,
+            TotalRating = 504,
+            TournamentsPlayed = 26
+        };
+
+        context.Users.AddRange(anotherRatedPlayer, currentRatedPlayer);
+        await context.SaveChangesAsync();
+
+        var controller = new UsersController(context, NullLogger<UsersController>.Instance);
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Headers["X-Test-Vk-Id"] = "vk_real_igor";
+        controller.ControllerContext = new ControllerContext { HttpContext = httpContext };
+
+        var request = new UpdateProfileRequest(
+            FullName: "Гуляев Игорь",
+            Nickname: "Maybe_Baby",
+            ClubCardId: "1080"
+        );
+
+        var actionResult = await controller.UpdateProfile(request);
+        var badRequest = Assert.IsType<BadRequestObjectResult>(actionResult.Result);
+        var messageProp = badRequest.Value?.GetType().GetProperty("Message")?.GetValue(badRequest.Value)?.ToString();
+
+        Assert.Equal("Эта клубная карта уже привязана к другому профилю. Обратитесь к администратору клуба.", messageProp);
+
+        // Другой рейтинговый игрок НЕ должен быть удален из БД!
+        var stillExistingAlex = await context.Users.FirstOrDefaultAsync(u => u.VkId == "sheet_77_alex");
+        Assert.NotNull(stillExistingAlex);
+        Assert.Equal(300, stillExistingAlex.TotalRating);
+    }
+
+    [Fact]
+    public async Task UpdateProfile_WhenDuplicateSheetHasCorruptedRankCard_CleansCorruptedCardWithoutDeletingUser()
+    {
+        using var context = CreateInMemoryDbContext();
+
+        // Игрок на месте 1080, у которого из-за бага смещения ранга стоит ClubCardId = "1080"
+        var playerRank1080 = new User
+        {
+            VkId = "sheet_1080_player",
+            FirstName = "Константин",
+            LastName = "Смирнов",
+            SheetRank = 1080,
+            ClubCardId = "1080",
+            TotalRating = 12,
+            TournamentsPlayed = 1
+        };
+
+        // Игорь Гуляев (ранг 5, карта "5")
+        var igorSheet = new User
+        {
+            VkId = "sheet_5_igor",
+            FirstName = "Игорь",
+            LastName = "Гуляев",
+            SheetRank = 5,
+            ClubCardId = "5",
+            TotalRating = 504,
+            TournamentsPlayed = 26
+        };
+
+        context.Users.AddRange(playerRank1080, igorSheet);
+        await context.SaveChangesAsync();
+
+        var controller = new UsersController(context, NullLogger<UsersController>.Instance);
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Headers["X-Test-Vk-Id"] = "vk_real_igor";
+        controller.ControllerContext = new ControllerContext { HttpContext = httpContext };
+
+        var request = new UpdateProfileRequest(
+            FullName: "Гуляев Игорь",
+            Nickname: "Maybe_Baby",
+            ClubCardId: "1080"
+        );
+
+        var actionResult = await controller.UpdateProfile(request);
+        var okResult = Assert.IsType<OkObjectResult>(actionResult.Result);
+        var profile = Assert.IsType<UserProfileDto>(okResult.Value);
+
+        Assert.Equal(504, profile.TotalRating);
+        Assert.Equal("1080", profile.ClubCardId);
+
+        // Игрок с рангом 1080 НЕ удален, но его ошибочный номер карты сброшен в null!
+        var remainingPlayer1080 = await context.Users.FirstOrDefaultAsync(u => u.VkId == "sheet_1080_player");
+        Assert.NotNull(remainingPlayer1080);
+        Assert.Null(remainingPlayer1080.ClubCardId);
+        Assert.Equal(12, remainingPlayer1080.TotalRating);
+    }
+
+    [Fact]
+    public async Task UpdateProfile_WhenCandidateCardAlreadyClaimedByRealUser_ExcludesCandidateFromMatching()
+    {
+        using var context = CreateInMemoryDbContext();
+
+        // Реальный пользователь уже владеет картой 1060
+        var realLukashenko = new User
+        {
+            VkId = "vk_lukashenko",
+            FirstName = "Василий",
+            LastName = "Лукашенко",
+            ClubCardId = "1060",
+            TotalRating = 486
+        };
+
+        // Кандидат 1: "Иван Иванов" с картой 1060 (которая уже занята Василием Лукашенко)
+        var candidateWithTakenCard = new User
+        {
+            VkId = "sheet_100_ivan_taken",
+            FirstName = "Иван",
+            LastName = "Иванов",
+            ClubCardId = "1060",
+            TotalRating = 100
+        };
+
+        // Кандидат 2: "Иван Иванов" без карты (валидный незанятый профиль)
+        var candidateFree = new User
+        {
+            VkId = "sheet_101_ivan_free",
+            FirstName = "Иван",
+            LastName = "Иванов",
+            ClubCardId = null,
+            TotalRating = 50
+        };
+
+        context.Users.AddRange(realLukashenko, candidateWithTakenCard, candidateFree);
+        await context.SaveChangesAsync();
+
+        var controller = new UsersController(context, NullLogger<UsersController>.Instance);
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Headers["X-Test-Vk-Id"] = "vk_new_ivan";
+        controller.ControllerContext = new ControllerContext { HttpContext = httpContext };
+
+        var request = new UpdateProfileRequest(
+            FullName: "Иванов Иван",
+            Nickname: "IvanFree",
+            ClubCardId: "1099" // Вводит свою свободную карту
+        );
+
+        var actionResult = await controller.UpdateProfile(request);
+        var okResult = Assert.IsType<OkObjectResult>(actionResult.Result);
+        var profile = Assert.IsType<UserProfileDto>(okResult.Value);
+
+        // Кандидат с картой, занятой Лукашенко (100 очков), должен быть отфильтрован,
+        // а выбран свободный кандидат (50 очков)!
+        Assert.Equal(50, profile.TotalRating);
+        Assert.Equal("1099", profile.ClubCardId);
+
+        var dbCandidateFree = await context.Users.FirstOrDefaultAsync(u => u.VkId == "sheet_101_ivan_free");
+        Assert.Null(dbCandidateFree);
+
+        var dbCandidateTaken = await context.Users.FirstOrDefaultAsync(u => u.VkId == "sheet_100_ivan_taken");
+        Assert.NotNull(dbCandidateTaken);
+    }
 }
 

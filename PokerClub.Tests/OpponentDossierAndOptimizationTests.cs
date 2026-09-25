@@ -403,6 +403,33 @@ public class OpponentDossierAndOptimizationTests
     }
 
     [Fact]
+    public async Task GoogleSheetsBackgroundSyncService_ExecutesImmediateSyncOnStart_WithoutWaitingForPeriodTick()
+    {
+        var services = new ServiceCollection();
+        var mockSyncService = new MockGoogleSheetsSyncService(shouldSucceed: true);
+        services.AddSingleton<IGoogleSheetsSyncService>(mockSyncService);
+
+        var serviceProvider = services.BuildServiceProvider();
+        var scopeFactory = serviceProvider.GetRequiredService<IServiceScopeFactory>();
+
+        // Set period to 1 hour so timer ticks will definitely not happen within milliseconds
+        var syncWorker = new GoogleSheetsBackgroundSyncService(
+            scopeFactory,
+            NullLogger<GoogleSheetsBackgroundSyncService>.Instance,
+            new LeaderboardCacheResetToken(),
+            new MemoryCache(new MemoryCacheOptions()),
+            TimeSpan.FromHours(1));
+
+        using var cts = new CancellationTokenSource();
+        await syncWorker.StartAsync(cts.Token);
+        // Short delay to allow startup task to complete
+        await Task.Delay(50);
+        await syncWorker.StopAsync(CancellationToken.None);
+
+        Assert.True(mockSyncService.CallCount >= 1, "SyncAsync must be called immediately upon startup without waiting 1 hour!");
+    }
+
+    [Fact]
     public async Task GoogleSheetsBackgroundSyncService_HandlesNetworkExceptionGracefully()
     {
         var services = new ServiceCollection();

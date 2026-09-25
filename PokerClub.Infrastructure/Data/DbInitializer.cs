@@ -57,6 +57,24 @@ public static class DbInitializer
             await context.SaveChangesAsync();
         }
 
+        // Очистка испорченных ClubCardId для всех sheet_* пользователей,
+        // у которых ClubCardId совпадает с их рейтинговым местом (SheetRank) или числом сыгранных турниров
+        var corruptedSheetUsers = allUsers.Where(u =>
+            u.VkId.StartsWith("sheet_", StringComparison.OrdinalIgnoreCase) &&
+            !string.IsNullOrWhiteSpace(u.ClubCardId) &&
+            ((u.SheetRank.HasValue && string.Equals(u.ClubCardId.Trim(), u.SheetRank.Value.ToString(), StringComparison.OrdinalIgnoreCase)) ||
+             (u.TournamentsPlayed > 0 && string.Equals(u.ClubCardId.Trim(), u.TournamentsPlayed.ToString(), StringComparison.OrdinalIgnoreCase)))
+        ).ToList();
+
+        if (corruptedSheetUsers.Count > 0)
+        {
+            foreach (var u in corruptedSheetUsers)
+            {
+                u.ClubCardId = null;
+            }
+            await context.SaveChangesAsync();
+        }
+
         // Тестовый администратор: гарантируем рейтинг 0, чтобы не перекрывать реальных лидеров
         var admin = await context.Users.FirstOrDefaultAsync(u => u.VkId == "123456789");
         if (admin != null && (admin.TotalRating > 0 || admin.SeasonRating > 0))

@@ -531,4 +531,59 @@ public class LeaderboardAndCleanupTests
         var tournaments = await context.Tournaments.ToListAsync();
         Assert.Empty(tournaments);
     }
+
+    [Fact]
+    public async Task CleanFakeUsersAsync_ResetsCorruptedClubCardIdMatchingSheetRank()
+    {
+        using var context = CreateInMemoryDbContext();
+
+        // Пользователь с ошибочно записанным ClubCardId = "5", равным SheetRank = 5
+        var userWithCorruptedCard = new User
+        {
+            VkId = "sheet_5_igor",
+            FirstName = "Игорь",
+            LastName = "Гуляев",
+            TotalRating = 504,
+            SheetRank = 5,
+            ClubCardId = "5"
+        };
+
+        // Пользователь с ошибочно записанным ClubCardId = "22", равным TournamentsPlayed = 22
+        var userWithTournamentsCard = new User
+        {
+            VkId = "sheet_7_tournaments",
+            FirstName = "Сергей",
+            LastName = "Иванов",
+            TotalRating = 100,
+            SheetRank = 7,
+            TournamentsPlayed = 22,
+            ClubCardId = "22"
+        };
+
+        // Пользователь с настоящей картой, не совпадающей с рангом
+        var userWithValidCard = new User
+        {
+            VkId = "sheet_1_vasya",
+            FirstName = "Василий",
+            LastName = "Лукашенко",
+            TotalRating = 486,
+            SheetRank = 1,
+            TournamentsPlayed = 22,
+            ClubCardId = "1060"
+        };
+
+        context.Users.AddRange(userWithCorruptedCard, userWithTournamentsCard, userWithValidCard);
+        await context.SaveChangesAsync();
+
+        await DbInitializer.CleanFakeUsersAsync(context);
+
+        var updatedIgor = await context.Users.FirstAsync(u => u.VkId == "sheet_5_igor");
+        Assert.Null(updatedIgor.ClubCardId); // Сброшено в null
+
+        var updatedSergey = await context.Users.FirstAsync(u => u.VkId == "sheet_7_tournaments");
+        Assert.Null(updatedSergey.ClubCardId); // Сброшено в null
+
+        var updatedVasya = await context.Users.FirstAsync(u => u.VkId == "sheet_1_vasya");
+        Assert.Equal("1060", updatedVasya.ClubCardId); // Сохранено
+    }
 }

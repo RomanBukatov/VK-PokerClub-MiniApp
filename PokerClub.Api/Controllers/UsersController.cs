@@ -238,11 +238,20 @@ public class UsersController : ControllerBase
                     .Where(u => u.VkId.StartsWith("sheet_") && u.Id != user.Id)
                     .ToListAsync();
 
+                // Исключаем кандидатов, чья клубная карта уже занята другим РЕАЛЬНЫМ пользователем
+                var realUserCards = await _context.Users
+                    .Where(u => !u.VkId.StartsWith("sheet_") && u.Id != user.Id && u.ClubCardId != null)
+                    .Select(u => u.ClubCardId!.ToLower())
+                    .ToListAsync();
+                var realUserCardSet = new HashSet<string>(realUserCards, StringComparer.OrdinalIgnoreCase);
+
                 sheetUser = candidateSheetUsers
-                    .Where(u => (u.ClubCardId == null || string.Equals(u.ClubCardId, requestedCardId, StringComparison.OrdinalIgnoreCase)) &&
-                                IsSmartTokenMatch(searchName, u.FirstName, u.LastName))
+                    .Where(u => IsSmartTokenMatch(searchName, u.FirstName, u.LastName) &&
+                                (string.IsNullOrWhiteSpace(u.ClubCardId) || !realUserCardSet.Contains(u.ClubCardId.Trim())))
                     .OrderByDescending(u => ExtractTokens($"{u.LastName} {u.FirstName}").SetEquals(ExtractTokens(searchName)))
+                    .ThenByDescending(u => u.TotalRating > 0 || u.SeasonRating > 0 || u.TournamentsPlayed > 0)
                     .ThenByDescending(u => u.TotalRating)
+                    .ThenByDescending(u => !string.IsNullOrEmpty(requestedCardId) && string.Equals(u.ClubCardId, requestedCardId, StringComparison.OrdinalIgnoreCase))
                     .FirstOrDefault();
             }
 
@@ -259,14 +268,22 @@ public class UsersController : ControllerBase
 
             if (!string.IsNullOrEmpty(requestedCardId))
             {
-                // Проверка на валидность клубной карты по базе Monte Carlo (белый список карт)
-                var cardExists = await _context.Users.AnyAsync(u =>
-                    u.ClubCardId != null &&
-                    u.ClubCardId.ToLower() == requestedCardId.ToLower());
-
-                if (!cardExists)
+                // Проверка на валидность клубной карты по базе Monte Carlo (белый список карт).
+                // Авто-подтверждение для верифицированных игроков клуба:
+                // Если пользователь подтвержден по ФИО через рейтинг (matchedByName == true),
+                // то он уже является проверенным игроком клуба Monte Carlo!
+                // Его карта requestedCardId (например, 1080) принимается и привязывается к его профилю.
+                // Проверку cardExists применять только если пользователь НЕ подтвержден по имени в рейтинге.
+                if (!matchedByName)
                 {
-                    return BadRequest(new { Message = "Клубный ID не найден в базе Monte Carlo. Напишите в сообщения сообщества для получения карты." });
+                    var cardExists = await _context.Users.AnyAsync(u =>
+                        u.ClubCardId != null &&
+                        u.ClubCardId.ToLower() == requestedCardId.ToLower());
+
+                    if (!cardExists)
+                    {
+                        return BadRequest(new { Message = "Клубный ID не найден в базе Monte Carlo. Напишите в сообщения сообщества для получения карты." });
+                    }
                 }
 
                 // Проверка на дубликаты среди РЕАЛЬНЫХ пользователей (1 карта = 1 аккаунт)
@@ -284,6 +301,30 @@ public class UsersController : ControllerBase
                     if (isCardTakenByRealUser)
                     {
                         return BadRequest(new { Message = "Эта клубная карта уже привязана к другому профилю. Обратитесь к администратору клуба." });
+                    }
+
+                    // Проверка дубликатов среди sheet_* пользователей:
+                    // Если карта привязана к другому sheet_* пользователю, который НЕ является пустышкой белого списка
+                    // и у которого карта не является ошибочно записанным местом в рейтинге — это конфликт!
+                    var duplicateSheetCards = await _context.Users
+                        .Where(u => u.VkId.StartsWith("sheet_") &&
+                                    u.Id != user.Id &&
+                                    (sheetUser == null || u.Id != sheetUser.Id) &&
+                                    u.ClubCardId != null &&
+                                    u.ClubCardId.ToLower() == requestedCardId.ToLower())
+                        .ToListAsync();
+
+                    foreach (var dup in duplicateSheetCards)
+                    {
+                        bool isCorruptedRankCard = (dup.SheetRank.HasValue && string.Equals(dup.ClubCardId?.Trim(), dup.SheetRank.Value.ToString(), StringComparison.OrdinalIgnoreCase)) ||
+                                                   (dup.TournamentsPlayed > 0 && string.Equals(dup.ClubCardId?.Trim(), dup.TournamentsPlayed.ToString(), StringComparison.OrdinalIgnoreCase));
+
+                        bool isCardStub = dup.VkId.StartsWith("sheet_card_", StringComparison.OrdinalIgnoreCase) && dup.TotalRating == 0 && dup.TournamentsPlayed == 0;
+
+                        if (!isCardStub && !isCorruptedRankCard)
+                        {
+                            return BadRequest(new { Message = "Эта клубная карта уже привязана к другому профилю. Обратитесь к администратору клуба." });
+                        }
                     }
                 }
             }
@@ -313,6 +354,12 @@ public class UsersController : ControllerBase
                 user.KnockoutsCount = sheetUser.KnockoutsCount;
                 user.AvgPlace = sheetUser.AvgPlace;
 
+                if (string.IsNullOrWhiteSpace(inputFullName))
+                {
+                    if (!string.IsNullOrWhiteSpace(sheetUser.LastName)) user.LastName = sheetUser.LastName;
+                    if (!string.IsNullOrWhiteSpace(sheetUser.FirstName)) user.FirstName = sheetUser.FirstName;
+                }
+
                 // Перепривязываем регистрации в турнирах
                 var sheetRegs = await _context.Registrations.Where(r => r.UserId == sheetUser.Id).ToListAsync();
                 foreach (var reg in sheetRegs)
@@ -322,6 +369,38 @@ public class UsersController : ControllerBase
 
                 _context.Users.Remove(sheetUser);
                 _logger.LogInformation("Успешно привязан профиль {SheetVkId} к пользователю {VkId}: перенесено {Points} очков (поиск по имени={MatchedByName})", sheetUser.VkId, user.VkId, user.TotalRating, matchedByName);
+
+                // Очистка дублирующих sheet_* профилей-заглушек с этой же картой (если были)
+                if (!string.IsNullOrEmpty(requestedCardId))
+                {
+                    var duplicateSheetCards = await _context.Users
+                        .Where(u => u.VkId.StartsWith("sheet_") &&
+                                    u.Id != user.Id &&
+                                    u.Id != sheetUser.Id &&
+                                    u.ClubCardId != null &&
+                                    u.ClubCardId.ToLower() == requestedCardId.ToLower())
+                        .ToListAsync();
+
+                    foreach (var dup in duplicateSheetCards)
+                    {
+                        bool isCorruptedRankCard = (dup.SheetRank.HasValue && string.Equals(dup.ClubCardId?.Trim(), dup.SheetRank.Value.ToString(), StringComparison.OrdinalIgnoreCase)) ||
+                                                   (dup.TournamentsPlayed > 0 && string.Equals(dup.ClubCardId?.Trim(), dup.TournamentsPlayed.ToString(), StringComparison.OrdinalIgnoreCase));
+
+                        if (isCorruptedRankCard)
+                        {
+                            dup.ClubCardId = null;
+                        }
+                        else if (dup.VkId.StartsWith("sheet_card_", StringComparison.OrdinalIgnoreCase) && dup.TotalRating == 0 && dup.TournamentsPlayed == 0)
+                        {
+                            var dupRegs = await _context.Registrations.Where(r => r.UserId == dup.Id).ToListAsync();
+                            foreach (var r in dupRegs)
+                            {
+                                r.UserId = user.Id;
+                            }
+                            _context.Users.Remove(dup);
+                        }
+                    }
+                }
             }
         }
 
@@ -335,7 +414,12 @@ public class UsersController : ControllerBase
         }
         else if (sheetUser != null && !string.IsNullOrEmpty(sheetUser.ClubCardId) && string.IsNullOrEmpty(user.ClubCardId))
         {
-            user.ClubCardId = sheetUser.ClubCardId;
+            bool isCorruptedCard = (sheetUser.SheetRank.HasValue && string.Equals(sheetUser.ClubCardId.Trim(), sheetUser.SheetRank.Value.ToString(), StringComparison.OrdinalIgnoreCase)) ||
+                                   (sheetUser.TournamentsPlayed > 0 && string.Equals(sheetUser.ClubCardId.Trim(), sheetUser.TournamentsPlayed.ToString(), StringComparison.OrdinalIgnoreCase));
+            if (!isCorruptedCard)
+            {
+                user.ClubCardId = sheetUser.ClubCardId;
+            }
         }
 
         if (!string.IsNullOrWhiteSpace(request.AvatarUrl))
