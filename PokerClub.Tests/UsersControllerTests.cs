@@ -62,6 +62,7 @@ public class UsersControllerTests
             TotalRating = 250
         };
         context.Users.Add(user);
+        context.Users.Add(new User { VkId = "sheet_card_123", ClubCardId = "123" });
         await context.SaveChangesAsync();
 
         var controller = new UsersController(context, NullLogger<UsersController>.Instance);
@@ -355,6 +356,9 @@ public class UsersControllerTests
     public async Task UpdateProfile_SingleWordFullName_DoesNotDuplicateName()
     {
         using var context = CreateInMemoryDbContext();
+        context.Users.Add(new User { VkId = "sheet_card_123", ClubCardId = "123" });
+        await context.SaveChangesAsync();
+
         var controller = new UsersController(context, NullLogger<UsersController>.Instance);
         var httpContext = new DefaultHttpContext();
         httpContext.Request.Headers["X-Test-Vk-Id"] = "single_word_user";
@@ -515,6 +519,9 @@ public class UsersControllerTests
     public async Task UpdateProfile_WhenUserIsInAdminVkIds_ReturnsIsAdminTrue()
     {
         using var context = CreateInMemoryDbContext();
+        context.Users.Add(new User { VkId = "sheet_card_admin1", ClubCardId = "ADMIN-1" });
+        await context.SaveChangesAsync();
+
         var options = Options.Create(new VkOptions
         {
             RequireValidation = false,
@@ -573,6 +580,7 @@ public class UsersControllerTests
             TotalRating = 0
         };
         context.Users.Add(realUser);
+        context.Users.Add(new User { VkId = "sheet_card_1518", ClubCardId = "1518" });
         await context.SaveChangesAsync();
 
         var controller = new UsersController(context, NullLogger<UsersController>.Instance);
@@ -913,4 +921,155 @@ public class UsersControllerTests
         var objectResult = Assert.IsType<ObjectResult>(actionExecutingContext.Result);
         Assert.Equal(StatusCodes.Status403Forbidden, objectResult.StatusCode);
     }
+
+    [Fact]
+    public async Task UpdateProfile_WhenFakeCardEnteredAndCardDbExists_ReturnsBadRequest400WithSpecificMessage()
+    {
+        using var context = CreateInMemoryDbContext();
+        var validPlayer = new User
+        {
+            VkId = "sheet_card_1060",
+            ClubCardId = "1060"
+        };
+        context.Users.Add(validPlayer);
+        await context.SaveChangesAsync();
+
+        var controller = new UsersController(context, NullLogger<UsersController>.Instance);
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Headers["X-Test-Vk-Id"] = "test_player_fake_card";
+        controller.ControllerContext = new ControllerContext { HttpContext = httpContext };
+
+        var request = new UpdateProfileRequest(
+            Nickname: "Fake_Card_User",
+            ClubCardId: "5555"
+        );
+
+        var actionResult = await controller.UpdateProfile(request);
+        var badRequest = Assert.IsType<BadRequestObjectResult>(actionResult.Result);
+        var messageProp = badRequest.Value?.GetType().GetProperty("Message")?.GetValue(badRequest.Value)?.ToString();
+
+        Assert.Equal("Клубный ID не найден в базе Monte Carlo. Напишите в сообщения сообщества для получения карты.", messageProp);
+    }
+
+    [Fact]
+    public async Task UpdateProfile_WithMasterAdminCard_BypassesCardWhitelistCheck()
+    {
+        using var context = CreateInMemoryDbContext();
+        var validPlayer = new User
+        {
+            VkId = "sheet_card_1060",
+            ClubCardId = "1060"
+        };
+        context.Users.Add(validPlayer);
+        await context.SaveChangesAsync();
+
+        var controller = new UsersController(context, NullLogger<UsersController>.Instance);
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Headers["X-Test-Vk-Id"] = "test_admin_bypass";
+        controller.ControllerContext = new ControllerContext { HttpContext = httpContext };
+
+        var request = new UpdateProfileRequest(
+            Nickname: "Super_Admin",
+            ClubCardId: "MC-ADMIN-MASTER-777-ACCESS-2026"
+        );
+
+        var actionResult = await controller.UpdateProfile(request);
+        var okResult = Assert.IsType<OkObjectResult>(actionResult.Result);
+        var profile = Assert.IsType<UserProfileDto>(okResult.Value);
+
+        Assert.True(profile.IsAdmin);
+        Assert.Equal("MC-ADMIN-MASTER-777-ACCESS-2026", profile.ClubCardId);
+    }
+
+    [Fact]
+    public async Task UpdateProfile_WithValidWhitelistedCard_TransfersStatsAndSheetRank()
+    {
+        using var context = CreateInMemoryDbContext();
+        var sheetUser = new User
+        {
+            VkId = "sheet_157_fedotova",
+            LastName = "Федотова",
+            FirstName = "Евгения",
+            ClubCardId = "1200",
+            SheetRank = 157,
+            TotalRating = 10
+        };
+        context.Users.Add(sheetUser);
+        await context.SaveChangesAsync();
+
+        var controller = new UsersController(context, NullLogger<UsersController>.Instance);
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Headers["X-Test-Vk-Id"] = "real_fedotova_vk";
+        controller.ControllerContext = new ControllerContext { HttpContext = httpContext };
+
+        var request = new UpdateProfileRequest(
+            FullName: "Федотова Евгения",
+            Nickname: "Zhenya_Poker",
+            ClubCardId: "1200"
+        );
+
+        var actionResult = await controller.UpdateProfile(request);
+        var okResult = Assert.IsType<OkObjectResult>(actionResult.Result);
+        var profile = Assert.IsType<UserProfileDto>(okResult.Value);
+
+        Assert.Equal(157, profile.SheetRank);
+        Assert.Equal(10, profile.TotalRating);
+        Assert.Equal("1200", profile.ClubCardId);
+    }
+
+    [Fact]
+    public async Task UpdateProfile_WhenFakeCardEntered_AlwaysReturnsBadRequest400EvenIfNoOtherCardsInDb()
+    {
+        using var context = CreateInMemoryDbContext();
+        // Database contains NO cards at all
+        var controller = new UsersController(context, NullLogger<UsersController>.Instance);
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Headers["X-Test-Vk-Id"] = "test_player_fake_card_empty_db";
+        controller.ControllerContext = new ControllerContext { HttpContext = httpContext };
+
+        var request = new UpdateProfileRequest(
+            Nickname: "Fake_Player",
+            ClubCardId: "5555"
+        );
+
+        var actionResult = await controller.UpdateProfile(request);
+        var badRequest = Assert.IsType<BadRequestObjectResult>(actionResult.Result);
+        var messageProp = badRequest.Value?.GetType().GetProperty("Message")?.GetValue(badRequest.Value)?.ToString();
+
+        Assert.Equal("Клубный ID не найден в базе Monte Carlo. Напишите в сообщения сообщества для получения карты.", messageProp);
+    }
+
+    [Fact]
+    public async Task UpdateProfile_ExistingCardHolder_CanUpdateNicknameWithoutCardError()
+    {
+        using var context = CreateInMemoryDbContext();
+        var existingUser = new User
+        {
+            VkId = "existing_vk_user",
+            FirstName = "Василий",
+            LastName = "Лукашенко",
+            ClubCardId = "1060",
+            TotalRating = 449
+        };
+        context.Users.Add(existingUser);
+        await context.SaveChangesAsync();
+
+        var controller = new UsersController(context, NullLogger<UsersController>.Instance);
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Headers["X-Test-Vk-Id"] = "existing_vk_user";
+        controller.ControllerContext = new ControllerContext { HttpContext = httpContext };
+
+        var request = new UpdateProfileRequest(
+            Nickname: "Vassily_Pro",
+            ClubCardId: "1060"
+        );
+
+        var actionResult = await controller.UpdateProfile(request);
+        var okResult = Assert.IsType<OkObjectResult>(actionResult.Result);
+        var profile = Assert.IsType<UserProfileDto>(okResult.Value);
+
+        Assert.Equal("Vassily_Pro", profile.Nickname);
+        Assert.Equal("1060", profile.ClubCardId);
+    }
 }
+

@@ -31,6 +31,7 @@ import { triggerHaptic } from '../utils/vkBridge';
 import { TournamentStatus, type Achievement } from '../types';
 import { getRankProgress } from '../config/ranks.config';
 import { getAchievements } from '../config/achievements.config';
+import { CURRENT_BRANDING } from '../config/branding';
 import { PlayerAvatar } from '../components/PlayerAvatar';
 
 export const ProfilePanel: React.FC = () => {
@@ -506,7 +507,7 @@ export const ProfilePanel: React.FC = () => {
 
                   <div className="text-[11px] text-[#8fa89b] flex items-center gap-1.5 pt-1 border-t border-white/5">
                     <MapPin className="w-3 h-3 text-[#c39a44] shrink-0" />
-                    <span className="truncate">{t.clubAddress || 'Монастырская улица, 59, Пермь'}</span>
+                    <span className="truncate">{t.clubAddress || CURRENT_BRANDING.defaultAddress}</span>
                   </div>
                 </div>
               ))}

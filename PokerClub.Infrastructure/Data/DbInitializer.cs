@@ -66,6 +66,15 @@ public static class DbInitializer
             await context.SaveChangesAsync();
         }
 
+        // Гарантируем актуальный адрес клуба Monte Carlo
+        var monteCarloClub = await context.Clubs.FirstOrDefaultAsync(c => c.Name == "Monte Carlo");
+        if (monteCarloClub != null && (string.IsNullOrWhiteSpace(monteCarloClub.Address) ||
+            monteCarloClub.Address.Contains("Монастырск", StringComparison.OrdinalIgnoreCase)))
+        {
+            monteCarloClub.Address = "ул. Куйбышева, 7, кафе «Гости»";
+            await context.SaveChangesAsync();
+        }
+
         // Гарантируем DEFAULT 0 для колонки TotalRating и наличие StartingStack в PostgreSQL
         if (context.Database.IsRelational())
         {
@@ -89,6 +98,14 @@ public static class DbInitializer
             try
             {
                 await context.Database.ExecuteSqlRawAsync("ALTER TABLE \"Users\" ADD COLUMN IF NOT EXISTS \"AcceptedTermsAt\" timestamp with time zone NULL;");
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                await context.Database.ExecuteSqlRawAsync("ALTER TABLE \"Users\" ADD COLUMN IF NOT EXISTS \"SheetRank\" integer NULL;");
             }
             catch
             {
@@ -130,12 +147,35 @@ public static class DbInitializer
 
         try
         {
+            await context.Database.ExecuteSqlRawAsync("ALTER TABLE \"Users\" ADD COLUMN IF NOT EXISTS \"SheetRank\" integer NULL;");
+        }
+        catch (Exception)
+        {
+        }
+
+        try
+        {
             await context.Database.ExecuteSqlRawAsync(@"
                 INSERT INTO ""__EFMigrationsHistory"" (""MigrationId"", ""ProductVersion"")
                 SELECT '20260923163546_AddStartingStackToTournament', '10.0.8'
                 WHERE EXISTS (
                     SELECT 1 FROM information_schema.columns 
                     WHERE table_name = 'Tournaments' AND column_name = 'StartingStack'
+                )
+                ON CONFLICT (""MigrationId"") DO NOTHING;");
+        }
+        catch
+        {
+        }
+
+        try
+        {
+            await context.Database.ExecuteSqlRawAsync(@"
+                INSERT INTO ""__EFMigrationsHistory"" (""MigrationId"", ""ProductVersion"")
+                SELECT '20260924170000_AddSheetRankToUser', '10.0.8'
+                WHERE EXISTS (
+                    SELECT 1 FROM information_schema.columns 
+                    WHERE table_name = 'Users' AND column_name = 'SheetRank'
                 )
                 ON CONFLICT (""MigrationId"") DO NOTHING;");
         }
@@ -202,7 +242,7 @@ public static class DbInitializer
         {
             CityId = perm.Id,
             Name = "Monte Carlo",
-            Address = "Монастырская улица, 59, Пермь",
+            Address = "ул. Куйбышева, 7, кафе «Гости»",
             IsActive = true
         };
         await context.Clubs.AddAsync(monteCarlo);

@@ -2284,6 +2284,78 @@ public class TournamentServiceTests
         Assert.True(true);
     }
 
+    [Fact]
+    public void BuildRegistrationConfirmationMessage_WithDefaultMonteCarloClub_FormatsExactTemplate()
+    {
+        var city = new City { Name = "Пермь", Slug = "perm", IsActive = true };
+        var club = new Club { Name = "Monte Carlo", Address = "ул. Куйбышева, 7, кафе «Гости»", City = city, IsActive = true };
+        // 25 сентября 2026 14:00 UTC = 19:00 в Перми (UTC+5)
+        var utcStartTime = new DateTime(2026, 9, 25, 14, 0, 0, DateTimeKind.Utc);
+        var tournament = new Tournament
+        {
+            Club = club,
+            Title = "🏆💣 GRAND OPENING BOMB POT",
+            BuyIn = 2000,
+            MaxSeats = 30,
+            StartTime = utcStartTime,
+            Status = TournamentStatus.RegistrationOpen
+        };
+
+        var message = TournamentService.BuildRegistrationConfirmationMessage(tournament);
+
+        Assert.Contains("♠️ Вы успешно зарегистрированы на турнир «🏆💣 GRAND OPENING BOMB POT»!", message);
+        Assert.Contains("📅 Дата: 25.09", message);
+        Assert.Contains("🕗 Начало турнира: 19:00", message);
+        Assert.Contains("🕕 Сбор гостей и регистрация на турнир: с 18:30", message);
+        Assert.Contains("📍 Адрес: ул. Куйбышева, 7, кафе «Гости».\nВход с улицы Монастырской — в первую арку.", message);
+        Assert.Contains("🍽 Меню клуба:\nhttps://vk.ru/wall-238367404_5", message);
+        Assert.Contains("💨 Кальян для игроков — всего 300 ₽.", message);
+        Assert.Contains("💵 Обратите внимание: вся оплата в клубе производится только наличными.", message);
+        Assert.Contains("Ждём вас за столом Monte Carlo! ♠️", message);
+    }
+
+    [Fact]
+    public void BuildRegistrationConfirmationMessage_WithCustomClubAddress_OutputsCustomAddress()
+    {
+        var city = new City { Name = "Екатеринбург", Slug = "ekb", IsActive = true };
+        var club = new Club { Name = "Ekb Spot", Address = "ул. Малышева, 44", City = city, IsActive = true };
+        var utcStartTime = new DateTime(2026, 10, 1, 15, 0, 0, DateTimeKind.Utc);
+        var tournament = new Tournament
+        {
+            Club = club,
+            Title = "Weekend Cup",
+            BuyIn = 5000,
+            MaxSeats = 40,
+            StartTime = utcStartTime,
+            Status = TournamentStatus.RegistrationOpen
+        };
+
+        var message = TournamentService.BuildRegistrationConfirmationMessage(tournament);
+
+        Assert.Contains("♠️ Вы успешно зарегистрированы на турнир «Weekend Cup»!", message);
+        Assert.Contains("📍 Адрес: ул. Малышева, 44.", message);
+    }
+
+    [Fact]
+    public void BuildRegistrationConfirmationMessage_WithQuotedTitle_CleansQuotes()
+    {
+        var city = new City { Name = "Пермь", Slug = "perm", IsActive = true };
+        var club = new Club { Name = "Monte Carlo", Address = "Монастырская 59", City = city, IsActive = true };
+        var tournament = new Tournament
+        {
+            Club = club,
+            Title = "«Bounty Hunter»",
+            StartTime = new DateTime(2026, 9, 25, 14, 0, 0, DateTimeKind.Utc),
+            Status = TournamentStatus.RegistrationOpen
+        };
+
+        var message = TournamentService.BuildRegistrationConfirmationMessage(tournament);
+
+        Assert.Contains("♠️ Вы успешно зарегистрированы на турнир «Bounty Hunter»!", message);
+        Assert.DoesNotContain("««", message);
+        Assert.DoesNotContain("»»", message);
+    }
+
     private class TestHttpMessageHandler : HttpMessageHandler
     {
         private readonly Func<HttpRequestMessage, HttpResponseMessage> _handler;

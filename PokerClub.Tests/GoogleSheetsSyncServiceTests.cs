@@ -1642,5 +1642,105 @@ public class GoogleSheetsSyncServiceTests
         var emptyMapping = GoogleSheetsSyncService.ParseRegistrationsMapping(registrationsCsvWithoutPhones);
         Assert.Empty(emptyMapping);
     }
+
+    [Fact]
+    public void ParsePlayersSheet_ValidAndBlockedCards_FiltersCorrectly()
+    {
+        const string playersCsv =
+            "\"ID игрока\",\"ФИО\",\"Телефон\",\"Дата\",\"Статус\"\r\n" +
+            "\"101\",\"Иванов Иван Иванович\",\"89001112233\",\"01.01.2025\",\"Активна\"\r\n" +
+            "\"102\",\"Петров Петр\",\"89002223344\",\"02.01.2025\",\"\"\r\n" +
+            "\"103\",\"Сидоров Сидор\",\"89003334455\",\"03.01.2025\",\"Заблокирована\"\r\n" +
+            "\"104\",\"Смирнов Алексей\",\"89004445566\",\"04.01.2025\",\"Утеряна\"\r\n" +
+            "\"105\",\"Кузнецов Михаил\",\"89005556677\",\"05.01.2025\",\"Неактивна\"\r\n" +
+            "\"106\",\"Федорова Анна\",\"89006667788\",\"06.01.2025\",\"Бан\"\r\n";
+
+        var parsed = GoogleSheetsSyncService.ParsePlayersSheet(playersCsv);
+
+        Assert.Equal(2, parsed.Count);
+        Assert.Contains(parsed, p => p.CardId == "101" && p.FullName == "Иванов Иван Иванович");
+        Assert.Contains(parsed, p => p.CardId == "102" && p.FullName == "Петров Петр");
+    }
+
+    [Fact]
+    public async Task SyncFromCsv_PreservesExactSheetRankFromColumn0()
+    {
+        using var context = CreateInMemoryDbContext();
+        using var httpClient = new HttpClient();
+        var service = new GoogleSheetsSyncService(context, httpClient, NullLogger<GoogleSheetsSyncService>.Instance);
+
+        const string ratingCsv =
+            "\"ОБЩИЙ РЕЙТИНГ КЛУБА Место\",\"Игрок\",\"Турниров\",\"Побед\",\"ТОП-3\",\"ТОП-10\",\"Нокаутов\",\"Сумма очков\",\"Среднее место\"\r\n" +
+            "\"157\",\"Федотова Евгения\",\"1\",\"0\",\"0\",\"0\",\"0\",\"10\",\"15,00\"\r\n";
+
+        var result = await service.SyncFromCsvAsync(ratingCsv);
+        Assert.True(result.Success);
+
+        var user = await context.Users.FirstOrDefaultAsync(u => u.LastName == "Федотова");
+        Assert.NotNull(user);
+        Assert.Equal(157, user.SheetRank);
+        Assert.Equal(10, user.TotalRating);
+    }
+
+    [Fact]
+    public async Task SyncFromCsv_WithPlayersSheet_ImportsCardsAndCreatesWhitelistHolders()
+    {
+        using var context = CreateInMemoryDbContext();
+        using var httpClient = new HttpClient();
+        var service = new GoogleSheetsSyncService(context, httpClient, NullLogger<GoogleSheetsSyncService>.Instance);
+
+        const string ratingCsv =
+            "\"ОБЩИЙ РЕЙТИНГ КЛУБА Место\",\"Игрок\",\"Турниров\",\"Побед\",\"ТОП-3\",\"ТОП-10\",\"Нокаутов\",\"Сумма очков\",\"Среднее место\"\r\n" +
+            "\"1\",\"Лукашенко Василий\",\"22\",\"2\",\"5\",\"10\",\"40\",\"486\",\"7,36\"\r\n";
+
+        const string playersCsv =
+            "\"ID игрока\",\"ФИО\",\"Телефон\",\"Дата\",\"Статус\"\r\n" +
+            "\"1060\",\"Лукашенко Василий\",\"89027909924\",\"01.01.2025\",\"Активна\"\r\n" +
+            "\"2001\",\"Новый Игрок Белого Списка\",\"\",\"01.01.2025\",\"\"\r\n";
+
+        var result = await service.SyncFromCsvAsync(ratingCsv, null, null, playersCsv);
+        Assert.True(result.Success);
+
+        // Лукашенко получил карту 1060 из листа «Игроки»
+        var lukashenko = await context.Users.FirstOrDefaultAsync(u => u.LastName == "Лукашенко");
+        Assert.NotNull(lukashenko);
+        Assert.Equal("1060", lukashenko.ClubCardId);
+        Assert.Equal(1, lukashenko.SheetRank);
+
+        // Для карты 2001 создан плейсхолдер белого списка
+        var holder = await context.Users.FirstOrDefaultAsync(u => u.ClubCardId == "2001");
+        Assert.NotNull(holder);
+        Assert.StartsWith("sheet_card_2001_", holder.VkId);
+    }
+
+    [Fact]
+    public void ParsePlayersSheet_WithSingleColumnCardId_ParsesCardCorrectly()
+    {
+        const string csv =
+            "\"ID игрока\",\"ФИО\",\"Телефон\",\"Дата\",\"Статус\"\r\n" +
+            "\"3050\"\r\n" +
+            "\"3051\",\"Петров Петр\"\r\n";
+
+        var parsed = GoogleSheetsSyncService.ParsePlayersSheet(csv);
+        Assert.Equal(2, parsed.Count);
+        Assert.Contains(parsed, p => p.CardId == "3050" && p.FullName == "");
+        Assert.Contains(parsed, p => p.CardId == "3051" && p.FullName == "Петров Петр");
+    }
+
+    [Fact]
+    public void ParsePlayersSheet_WithBlockedAndAnnulledStatus_ExcludesBlockedCards()
+    {
+        const string csv =
+            "\"ID игрока\",\"ФИО\",\"Телефон\",\"Дата\",\"Статус\"\r\n" +
+            "\"1001\",\"Игрок 1\",\"\",\"\",\"Активна\"\r\n" +
+            "\"1002\",\"Игрок 2\",\"\",\"\",\"Заблокирована\"\r\n" +
+            "\"1003\",\"Игрок 3\",\"\",\"\",\"Утеряна\"\r\n" +
+            "\"1004\",\"Игрок 4\",\"\",\"\",\"Аннулирована\"\r\n" +
+            "\"1005\",\"Игрок 5\",\"\",\"\",\"Не активна\"\r\n";
+
+        var parsed = GoogleSheetsSyncService.ParsePlayersSheet(csv);
+        Assert.Single(parsed);
+        Assert.Equal("1001", parsed[0].CardId);
+    }
 }
 

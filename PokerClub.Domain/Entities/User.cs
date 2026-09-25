@@ -9,6 +9,7 @@ public class User
     public string? AvatarUrl { get; set; }
     public int SeasonRating { get; set; } = 0;
     public int TotalRating { get; set; } = 0;
+    public int? SheetRank { get; set; }
     public string? Nickname { get; set; }
     public string? PhoneNumber { get; set; }
     public string? ClubCardId { get; set; }

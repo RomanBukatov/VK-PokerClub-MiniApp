@@ -23,6 +23,8 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
     public const string TotalRatingGid = "0";
     public const string RegistrationsSheetName = "РЕГИСТРАЦИИ";
     public const string? RegistrationsGid = null;
+    public const string PlayersSheetName = "Игроки";
+    public const string? PlayersGid = null;
     public const string DefaultSeasonName = "Осень 2026";
 
     private static string _activeSeasonName = DefaultSeasonName;
@@ -38,6 +40,7 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
     public const string SeasonRatingCsvUrl = $"https://docs.google.com/spreadsheets/d/{DefaultSpreadsheetId}/gviz/tq?tqx=out:csv&sheet=%D0%9E%D1%81%D0%B5%D0%BD%D0%BD%D0%B8%D0%B9%20%D1%81%D0%B5%D0%B7%D0%BE%D0%BD%202026";
     public const string TotalRatingCsvUrl = $"https://docs.google.com/spreadsheets/d/{DefaultSpreadsheetId}/gviz/tq?tqx=out:csv&sheet=%D0%9E%D0%B1%D1%89%D0%B8%D0%B9%20%D1%80%D0%B5%D0%B9%D1%82%D0%B8%D0%BD%D0%B3";
     public const string RegistrationsCsvUrl = $"https://docs.google.com/spreadsheets/d/{DefaultSpreadsheetId}/gviz/tq?tqx=out:csv&sheet=%D0%A0%D0%95%D0%93%D0%98%D0%A1%D0%A2%D0%A0%D0%90%D0%A6%D0%98%D0%98";
+    public const string PlayersCsvUrl = $"https://docs.google.com/spreadsheets/d/{DefaultSpreadsheetId}/gviz/tq?tqx=out:csv&sheet=%D0%98%D0%B3%D1%80%D0%BE%D0%BA%D0%B8";
     public const string DefaultCsvUrl = TotalRatingCsvUrl;
 
     private readonly AppDbContext _context;
@@ -47,6 +50,8 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
     private readonly string _seasonGid;
     private readonly string _seasonSheetName;
     private readonly string? _registrationsGid;
+    private readonly string _playersSheetName;
+    private readonly string? _playersGid;
     private readonly ILeaderboardCacheResetToken? _cacheResetToken;
 
     public GoogleSheetsSyncService(
@@ -87,6 +92,14 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
             configuration?["GoogleSheets:RegistrationsGid"]
                 ?? configuration?["REGISTRATIONS_GID"]
                 ?? Environment.GetEnvironmentVariable("GOOGLE_SHEETS_REGISTRATIONS_GID"),
+            configuration?["GoogleSheets:PlayersSheetName"]
+                ?? configuration?["GOOGLE_SHEETS_PLAYERS_SHEET_NAME"]
+                ?? configuration?["PLAYERS_SHEET_NAME"]
+                ?? PlayersSheetName,
+            configuration?["GoogleSheets:PlayersGid"]
+                ?? configuration?["GOOGLE_SHEETS_PLAYERS_GID"]
+                ?? configuration?["PLAYERS_GID"]
+                ?? Environment.GetEnvironmentVariable("GOOGLE_SHEETS_PLAYERS_GID"),
             cacheResetToken)
     {
     }
@@ -98,7 +111,7 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
         string spreadsheetId,
         string? registrationsGid = null,
         ILeaderboardCacheResetToken? cacheResetToken = null)
-        : this(context, httpClient, logger, spreadsheetId, DefaultSeasonGid, AutumnSeasonSheetName, registrationsGid, cacheResetToken)
+        : this(context, httpClient, logger, spreadsheetId, DefaultSeasonGid, AutumnSeasonSheetName, registrationsGid, PlayersSheetName, null, cacheResetToken)
     {
     }
 
@@ -111,6 +124,21 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
         string seasonSheetName,
         string? registrationsGid = null,
         ILeaderboardCacheResetToken? cacheResetToken = null)
+        : this(context, httpClient, logger, spreadsheetId, seasonGid, seasonSheetName, registrationsGid, PlayersSheetName, null, cacheResetToken)
+    {
+    }
+
+    public GoogleSheetsSyncService(
+        AppDbContext context,
+        HttpClient httpClient,
+        ILogger<GoogleSheetsSyncService> logger,
+        string spreadsheetId,
+        string seasonGid,
+        string seasonSheetName,
+        string? registrationsGid,
+        string? playersSheetName,
+        string? playersGid = null,
+        ILeaderboardCacheResetToken? cacheResetToken = null)
     {
         _context = context;
         _httpClient = httpClient;
@@ -119,6 +147,8 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
         _seasonGid = string.IsNullOrWhiteSpace(seasonGid) ? DefaultSeasonGid : seasonGid;
         _seasonSheetName = string.IsNullOrWhiteSpace(seasonSheetName) ? AutumnSeasonSheetName : seasonSheetName;
         _registrationsGid = registrationsGid;
+        _playersSheetName = string.IsNullOrWhiteSpace(playersSheetName) ? PlayersSheetName : playersSheetName;
+        _playersGid = playersGid;
         _cacheResetToken = cacheResetToken;
 
         try
@@ -182,7 +212,22 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
                 _logger.LogWarning("Лист «{RegistrationsSheetName}» не был загружен или пуст, продолжаем синхронизацию только по рейтингу.", RegistrationsSheetName);
             }
 
-            return await SyncFromCsvAsync(seasonCsvContent, totalCsvContent, registrationsCsvContent, cancellationToken);
+            string? playersCsvContent = null;
+            try
+            {
+                playersCsvContent = await DownloadCsvWithFallbackAsync(_playersSheetName, _playersGid, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Не удалось загрузить лист «{PlayersSheetName}», продолжаем синхронизацию без листа игроков.", _playersSheetName);
+            }
+
+            if (string.IsNullOrWhiteSpace(playersCsvContent))
+            {
+                _logger.LogWarning("Лист «{PlayersSheetName}» не был загружен или пуст, продолжаем синхронизацию без листа игроков.", _playersSheetName);
+            }
+
+            return await SyncFromCsvAsync(seasonCsvContent, totalCsvContent, registrationsCsvContent, playersCsvContent, cancellationToken);
         }
         catch (Exception ex)
         {
@@ -221,6 +266,11 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
             else if (string.Equals(sheetName, RegistrationsSheetName, StringComparison.OrdinalIgnoreCase))
             {
                 gid = _registrationsGid ?? RegistrationsGid;
+            }
+            else if (string.Equals(sheetName, PlayersSheetName, StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(sheetName, _playersSheetName, StringComparison.OrdinalIgnoreCase))
+            {
+                gid = _playersGid ?? PlayersGid;
             }
         }
 
@@ -419,10 +469,82 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
         return result;
     }
 
+    public record SheetPlayerCardInfo(
+        string CardId,
+        string FullName,
+        string? Status
+    );
+
+    public static List<SheetPlayerCardInfo> ParsePlayersSheet(string csvContent)
+    {
+        var result = new List<SheetPlayerCardInfo>();
+        if (string.IsNullOrWhiteSpace(csvContent)) return result;
+
+        var parsedRows = ParseCsv(csvContent);
+        foreach (var row in parsedRows)
+        {
+            if (row.Count < 1) continue;
+
+            var col0 = row[0].Trim();
+            var col1 = row.Count > 1 ? row[1].Trim() : "";
+            var col4 = row.Count > 4 ? row[4].Trim() : null;
+
+            // Пропускаем строку заголовка
+            if (col0.Contains("id", StringComparison.OrdinalIgnoreCase) ||
+                col0.Contains("номер", StringComparison.OrdinalIgnoreCase) ||
+                col0.Contains("карт", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(col1, "фио", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(col1, "имя", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(col1, "игрок", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(col1, "фио игрока", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(col0)) continue;
+
+            if (!IsCardStatusValid(col4))
+            {
+                continue;
+            }
+
+            result.Add(new SheetPlayerCardInfo(col0, col1, col4));
+        }
+
+        return result;
+    }
+
+    public static bool IsCardStatusValid(string? status)
+    {
+        if (string.IsNullOrWhiteSpace(status))
+        {
+            return true;
+        }
+
+        var s = status.Trim().ToLowerInvariant();
+        if (s.Contains("блок") || s.Contains("заблокир") || s.Contains("бан") ||
+            s.Contains("утер") || s.Contains("аннул") || s.Contains("неактив") || s.Contains("не актив"))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    public Task<GoogleSheetsSyncResult> SyncFromCsvAsync(
+        string? seasonRatingCsvContent,
+        string? totalRatingCsvContent,
+        string? registrationsCsvContent,
+        CancellationToken cancellationToken = default)
+    {
+        return SyncFromCsvAsync(seasonRatingCsvContent, totalRatingCsvContent, registrationsCsvContent, null, cancellationToken);
+    }
+
     public async Task<GoogleSheetsSyncResult> SyncFromCsvAsync(
         string? seasonRatingCsvContent,
         string? totalRatingCsvContent,
         string? registrationsCsvContent,
+        string? playersCsvContent,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(seasonRatingCsvContent) && string.IsNullOrWhiteSpace(totalRatingCsvContent))
@@ -499,6 +621,7 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
             if (matchedUser != null)
             {
                 matchedUser.TotalRating = row.Points;
+                matchedUser.SheetRank = row.Place;
                 matchedUser.TournamentsPlayed = row.TournamentsPlayed;
                 matchedUser.WinsCount = row.WinsCount;
                 matchedUser.Top3Count = row.Top3Count;
@@ -546,6 +669,7 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
                     FirstName = firstName,
                     LastName = lastName,
                     TotalRating = row.Points,
+                    SheetRank = row.Place,
                     SeasonRating = 0,
                     TournamentsPlayed = row.TournamentsPlayed,
                     WinsCount = row.WinsCount,
@@ -600,6 +724,10 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
             if (matchedUser != null)
             {
                 matchedUser.SeasonRating = row.Points;
+                if (matchedUser.SheetRank == null || totalRows.Count == 0)
+                {
+                    matchedUser.SheetRank = row.Place;
+                }
                 seasonMatchedUsers.Add(matchedUser);
 
                 // Если общий рейтинг не загружался или у пользователя еще не заполнены турниры
@@ -643,6 +771,7 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
                     FirstName = firstName,
                     LastName = lastName,
                     SeasonRating = row.Points,
+                    SheetRank = row.Place,
                     TotalRating = 0,
                     TournamentsPlayed = row.TournamentsPlayed,
                     WinsCount = row.WinsCount,
@@ -727,6 +856,88 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
                             updatedUsers.Add(matchedUser);
                         }
                     }
+                }
+            }
+        }
+
+        // 4. Загрузка и привязка клубных карт из листа «Игроки» (белый список карт клуба)
+        var playersRows = ParsePlayersSheet(playersCsvContent ?? "");
+        if (playersRows.Count > 0)
+        {
+            foreach (var playerCard in playersRows)
+            {
+                if (string.IsNullOrWhiteSpace(playerCard.CardId)) continue;
+                var trimmedCard = playerCard.CardId.Trim();
+
+                // 1. Ищем существующего пользователя по ClubCardId
+                var matchedUser = existingUsers.FirstOrDefault(u => 
+                    !string.IsNullOrWhiteSpace(u.ClubCardId) && 
+                    string.Equals(u.ClubCardId.Trim(), trimmedCard, StringComparison.OrdinalIgnoreCase));
+
+                if (matchedUser != null && matchedUser.VkId.StartsWith("sheet_card_") && !string.IsNullOrWhiteSpace(playerCard.FullName))
+                {
+                    var parts = playerCard.FullName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                    string lName = parts.Length > 0 ? parts[0] : playerCard.FullName;
+                    string fName = parts.Length > 1 ? string.Join(" ", parts.Skip(1)) : "Игрок";
+                    if (matchedUser.FirstName != fName || matchedUser.LastName != lName)
+                    {
+                        matchedUser.FirstName = fName;
+                        matchedUser.LastName = lName;
+                        processedUsers.Add(matchedUser);
+                        if (!createdUsers.Contains(matchedUser)) updatedUsers.Add(matchedUser);
+                    }
+                }
+
+                // 2. Если по карте не найден, ищем по имени среди пользователей без карты
+                if (matchedUser == null && !string.IsNullOrWhiteSpace(playerCard.FullName))
+                {
+                    var matchedByName = FindMatchingUserByName(existingUsers, playerCard.FullName);
+                    if (matchedByName != null && 
+                        string.IsNullOrWhiteSpace(matchedByName.ClubCardId) && 
+                        !MasterClubCardConstants.IsMasterAdminCard(matchedByName.ClubCardId))
+                    {
+                        matchedByName.ClubCardId = trimmedCard;
+                        processedUsers.Add(matchedByName);
+                        if (!createdUsers.Contains(matchedByName))
+                        {
+                            updatedUsers.Add(matchedByName);
+                        }
+                        matchedUser = matchedByName;
+                    }
+                }
+
+                // 3. Если такого игрока/карты нет в базе, создаем нового пользователя в белом списке
+                if (matchedUser == null)
+                {
+                    var nameParts = playerCard.FullName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                    string lastName = nameParts.Length > 0 ? nameParts[0] : playerCard.FullName;
+                    string firstName = nameParts.Length > 1 ? string.Join(" ", nameParts.Skip(1)) : "Игрок";
+
+                    var uid = Guid.NewGuid().ToString("N")[..8];
+                    var newVkId = $"sheet_card_{trimmedCard}_{uid}";
+                    if (newVkId.Length > 50) newVkId = newVkId[..50];
+
+                    var newUser = new User
+                    {
+                        VkId = newVkId,
+                        FirstName = firstName,
+                        LastName = lastName,
+                        ClubCardId = trimmedCard,
+                        TotalRating = 0,
+                        SeasonRating = 0,
+                        TournamentsPlayed = 0,
+                        WinsCount = 0,
+                        Top3Count = 0,
+                        Top10Count = 0,
+                        KnockoutsCount = 0,
+                        AvgPlace = 0.0,
+                        CreatedAt = DateTime.UtcNow
+                    };
+
+                    _context.Users.Add(newUser);
+                    existingUsers.Add(newUser);
+                    processedUsers.Add(newUser);
+                    createdUsers.Add(newUser);
                 }
             }
         }

@@ -33,7 +33,7 @@ export const CURRENT_BRANDING: ClubBranding = {
   clubName: 'Monte Carlo',
   clubSubtitle: 'Турнирный клуб спортивного покера',
   defaultCityName: 'Пермь',
-  defaultAddress: 'Монастырская улица, 59, Пермь',
+  defaultAddress: 'ул. Куйбышева, 7, кафе «Гости»',
   vkGroupId: Number(import.meta.env.VITE_VK_GROUP_ID) || 238367404,
   socialLinks: {
     vkGroup: 'https://vk.com/club238367404',

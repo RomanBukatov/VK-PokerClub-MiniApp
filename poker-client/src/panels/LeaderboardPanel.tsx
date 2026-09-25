@@ -51,6 +51,25 @@ export const getZoneStyle = (rank: number) => {
   };
 };
 
+// eslint-disable-next-line react-refresh/only-export-components
+export const getDisplayRank = (entry: { rank: number; sheetRank?: number | null }): number =>
+  entry.sheetRank ?? entry.rank;
+
+// eslint-disable-next-line react-refresh/only-export-components
+export const getUserRankLabel = (
+  currentUserRank: number | null,
+  userPoints: number,
+  leaderboardLength: number
+): string => {
+  if (currentUserRank != null && userPoints > 0) {
+    return `# ${currentUserRank}`;
+  }
+  if (userPoints > 0) {
+    return `${leaderboardLength > 0 ? `${leaderboardLength}+` : '50+'} в клубе`;
+  }
+  return 'Не в рейтинге';
+};
+
 export const LeaderboardPanel: React.FC = () => {
   const { 
     leaderboard, 
@@ -95,11 +114,11 @@ export const LeaderboardPanel: React.FC = () => {
     ? (currentUserEntry.points ?? 0)
     : (seasonTab === 'current' ? (profile?.seasonRating ?? 0) : (profile?.totalRating ?? 0));
 
-  const userRankLabel = currentUserEntry != null
-    ? `# ${currentUserEntry.rank}`
-    : userPoints > 0
-    ? `${leaderboard.length > 0 ? `${leaderboard.length}+` : '50+'} в клубе`
-    : 'Не в рейтинге';
+  const currentUserRank = currentUserEntry != null
+    ? (seasonTab === 'current' ? currentUserEntry.rank : getDisplayRank(currentUserEntry))
+    : (seasonTab === 'all' && (profile?.totalRating ?? 0) > 0 ? (profile?.sheetRank ?? null) : null);
+
+  const userRankLabel = getUserRankLabel(currentUserRank, userPoints, leaderboard.length);
 
   return (
     <div className="px-5 pb-24 animate-fade-in space-y-4">
@@ -202,7 +221,8 @@ export const LeaderboardPanel: React.FC = () => {
       ) : (
         <div className="space-y-2.5">
           {leaderboard.map((player) => {
-            const zone = getZoneStyle(player.rank);
+            const displayRank = seasonTab === 'current' ? player.rank : getDisplayRank(player);
+            const zone = getZoneStyle(displayRank);
 
             return (
               <div
@@ -215,7 +235,7 @@ export const LeaderboardPanel: React.FC = () => {
               >
                 <div className="flex items-center gap-3.5">
                   <span className={`w-5 text-sm text-center ${zone.rankColor}`}>
-                    {player.rank}
+                    {displayRank}
                   </span>
 
                   <PlayerAvatar

@@ -185,6 +185,49 @@ public class LeaderboardAndCleanupTests
     }
 
     [Fact]
+    public async Task RatingsController_GetLeaderboard_WithSheetRank_UsesCalculatedForSeasonAndSheetRankForAllTime()
+    {
+        using var context = CreateInMemoryDbContext();
+
+        var player1 = new User { VkId = "sheet_1", FirstName = "Яна", LastName = "Федотова", SeasonRating = 100, TotalRating = 50, SheetRank = 157 };
+        var player2 = new User { VkId = "sheet_2", FirstName = "Иван", LastName = "Петров", SeasonRating = 80, TotalRating = 40, SheetRank = null };
+
+        context.Users.AddRange(player1, player2);
+        await context.SaveChangesAsync();
+
+        var ratingService = new RatingService(context);
+        var controller = new RatingsController(ratingService);
+
+        // 1. Season leaderboard: rank must be calculated (1, 2) and SheetRank must be null
+        var seasonResult = await controller.GetLeaderboard(limit: 50, offset: 0, type: "season");
+        var okSeason = Assert.IsType<OkObjectResult>(seasonResult.Result);
+        var seasonResponse = Assert.IsType<LeaderboardResponseDto>(okSeason.Value);
+        var seasonList = seasonResponse.Items;
+
+        Assert.Equal(2, seasonList.Count);
+        Assert.Equal(1, seasonList[0].Rank);
+        Assert.Null(seasonList[0].SheetRank);
+        Assert.Equal(2, seasonList[1].Rank);
+        Assert.Null(seasonList[1].SheetRank);
+
+        // 2. All-time leaderboard:
+        // player1 with points 50 and SheetRank 157 should have Rank 157 and SheetRank 157
+        // player2 with points 40 and SheetRank null should have calculated rank (2) and SheetRank null
+        var allResult = await controller.GetLeaderboard(limit: 50, offset: 0, type: "all");
+        var okAll = Assert.IsType<OkObjectResult>(allResult.Result);
+        var allResponse = Assert.IsType<LeaderboardResponseDto>(okAll.Value);
+        var allList = allResponse.Items;
+
+        var yana = allList.First(u => u.FirstName == "Яна");
+        Assert.Equal(157, yana.Rank);
+        Assert.Equal(157, yana.SheetRank);
+
+        var ivan = allList.First(u => u.FirstName == "Иван");
+        Assert.Equal(2, ivan.Rank);
+        Assert.Null(ivan.SheetRank);
+    }
+
+    [Fact]
     public async Task CleanFakeUsersAsync_IsIdempotent_And_NeverDeletesLinkedRealVkUsers()
     {
         using var context = CreateInMemoryDbContext();

@@ -9,7 +9,8 @@ public record LeaderboardUserDto(
     string? AvatarUrl,
     int TotalRating,
     int SeasonRating = 0,
-    int Points = 0
+    int Points = 0,
+    int? SheetRank = null
 );
 
 public record LeaderboardEntryDto(
@@ -21,7 +22,8 @@ public record LeaderboardEntryDto(
     string? AvatarUrl,
     int TotalRating,
     int SeasonRating = 0,
-    int Points = 0
+    int Points = 0,
+    int? SheetRank = null
 );
 
 public record LeaderboardResponseDto(

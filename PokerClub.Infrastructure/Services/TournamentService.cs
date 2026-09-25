@@ -429,6 +429,48 @@ public class TournamentService : ITournamentService
         }
     }
 
+    public static string BuildRegistrationConfirmationMessage(Tournament tournament)
+    {
+        // Пермское время (UTC+5)
+        var permTime = tournament.StartTime.Kind == DateTimeKind.Utc
+            ? tournament.StartTime.AddHours(5)
+            : tournament.StartTime;
+
+        var gatheringTime = permTime.AddMinutes(-30);
+
+        var cleanTitle = !string.IsNullOrWhiteSpace(tournament.Title)
+            ? tournament.Title.Trim().Trim('«', '»', '"')
+            : "Турнир";
+
+        var clubAddress = !string.IsNullOrWhiteSpace(tournament.Club?.Address)
+            ? tournament.Club.Address.Trim()
+            : "ул. Куйбышева, 7, кафе «Гости»";
+
+        string addressBlock;
+        if (string.IsNullOrWhiteSpace(clubAddress) ||
+            clubAddress.Contains("Куйбышева", StringComparison.OrdinalIgnoreCase) ||
+            clubAddress.Contains("Монастырск", StringComparison.OrdinalIgnoreCase) ||
+            clubAddress.Contains("Гости", StringComparison.OrdinalIgnoreCase))
+        {
+            addressBlock = "📍 Адрес: ул. Куйбышева, 7, кафе «Гости».\nВход с улицы Монастырской — в первую арку.";
+        }
+        else
+        {
+            addressBlock = $"📍 Адрес: {clubAddress}.";
+        }
+
+        return
+            $"♠️ Вы успешно зарегистрированы на турнир «{cleanTitle}»!\n\n" +
+            $"📅 Дата: {permTime:dd.MM}\n" +
+            $"🕗 Начало турнира: {permTime:HH:mm}\n" +
+            $"🕕 Сбор гостей и регистрация на турнир: с {gatheringTime:HH:mm}\n\n" +
+            $"{addressBlock}\n\n" +
+            $"🍽 Меню клуба:\nhttps://vk.ru/wall-238367404_5\n\n" +
+            $"💨 Кальян для игроков — всего 300 ₽.\n\n" +
+            $"💵 Обратите внимание: вся оплата в клубе производится только наличными.\n\n" +
+            $"Ждём вас за столом Monte Carlo! ♠️";
+    }
+
     private async Task SendVkConfirmationMessageAsync(Tournament tournament, User user)
     {
         try
@@ -453,11 +495,7 @@ public class TournamentService : ITournamentService
                 return;
             }
 
-            var clubAddress = !string.IsNullOrWhiteSpace(tournament.Club?.Address)
-                ? tournament.Club.Address.Trim()
-                : "Монастырская улица, 59, Пермь";
-
-            var message = $"♠️ Вы успешно зарегистрированы на турнир \"{tournament.Title}\"!\n📅 Дата: {tournament.StartTime.AddHours(5):dd.MM в HH:mm}\n📍 Адрес: {clubAddress}\n\nЖдем вас за столом клуба Monte Carlo!";
+            var message = BuildRegistrationConfirmationMessage(tournament);
 
             var parameters = new Dictionary<string, string>
             {
@@ -629,7 +667,7 @@ public class TournamentService : ITournamentService
             {
                 CityId = city.Id,
                 Name = "Monte Carlo",
-                Address = !string.IsNullOrWhiteSpace(address) ? address.Trim() : "Монастырская улица, 59, Пермь",
+                Address = !string.IsNullOrWhiteSpace(address) ? address.Trim() : "ул. Куйбышева, 7, кафе «Гости»",
                 IsActive = true,
                 City = city
             };
@@ -723,8 +761,41 @@ public class TournamentService : ITournamentService
         bool clearRegistrationEnd = false,
         int? startingStack = null)
     {
+        if (id <= 0)
+            return (false, null, "Турнир не найден.");
+
+        if (title != null)
+        {
+            if (string.IsNullOrWhiteSpace(title) || title.Trim().Length < 3)
+                return (false, null, "Название турнира должно содержать не менее 3 символов.");
+        }
+
+        if (buyIn.HasValue && buyIn.Value < 0)
+            return (false, null, "Бай-ин не может быть отрицательным.");
+
+        if (maxSeats.HasValue && (maxSeats.Value <= 0 || maxSeats.Value > 1000))
+            return (false, null, "Количество мест должно быть в диапазоне от 1 до 1 000.");
+
+        if (startTime.HasValue && (startTime.Value == default || startTime.Value.Year < 2020 || startTime.Value.Year > 2100))
+            return (false, null, "Укажите корректную дату и время начала турнира.");
+
+        if (startingStack.HasValue && startingStack.Value <= 0)
+            return (false, null, "Стартовый стек должен быть больше 0.");
+
+        using var transaction = await _context.Database.BeginTransactionAsync();
         try
         {
+            if (_context.Database.IsRelational())
+            {
+                try
+                {
+                    await _context.Database.ExecuteSqlRawAsync("SET LOCAL lock_timeout = '3000ms';");
+                }
+                catch
+                {
+                }
+            }
+
             var tournament = await _context.Tournaments
                 .Include(t => t.Club)
                     .ThenInclude(c => c!.City)
@@ -732,154 +803,148 @@ public class TournamentService : ITournamentService
                     .ThenInclude(r => r.User)
                 .FirstOrDefaultAsync(t => t.Id == id);
 
-        if (tournament == null)
-            return (false, null, "Турнир не найден.");
+            if (tournament == null)
+                return (false, null, "Турнир не найден.");
 
-        if (title != null)
-        {
-            if (string.IsNullOrWhiteSpace(title) || title.Trim().Length < 3)
-                return (false, null, "Название турнира должно содержать не менее 3 символов.");
-            tournament.Title = title.Trim();
-        }
-
-        if (format != null)
-        {
-            tournament.Format = string.IsNullOrWhiteSpace(format) ? "NL Holdem" : format.Trim();
-        }
-
-        if (buyIn.HasValue)
-        {
-            if (buyIn.Value < 0)
-                return (false, null, "Бай-ин не может быть отрицательным.");
-            tournament.BuyIn = buyIn.Value;
-        }
-
-        if (maxSeats.HasValue)
-        {
-            if (maxSeats.Value <= 0 || maxSeats.Value > 1000)
-                return (false, null, "Количество мест должно быть в диапазоне от 1 до 1 000.");
-
-            var activeRegistrationsCount = tournament.Registrations.Count(r => r.Status == RegStatus.Active);
-            if (maxSeats.Value < activeRegistrationsCount)
-                return (false, null, $"Количество мест ({maxSeats.Value}) не может быть меньше числа уже зарегистрированных игроков ({activeRegistrationsCount}).");
-
-            tournament.MaxSeats = maxSeats.Value;
-        }
-
-        if (startTime.HasValue)
-        {
-            if (startTime.Value == default || startTime.Value.Year < 2020 || startTime.Value.Year > 2100)
-                return (false, null, "Укажите корректную дату и время начала турнира.");
-
-            tournament.StartTime = startTime.Value.Kind == DateTimeKind.Unspecified
-                ? DateTime.SpecifyKind(startTime.Value, DateTimeKind.Utc)
-                : startTime.Value.ToUniversalTime();
-        }
-
-        if (clearRegistrationEnd)
-        {
-            tournament.RegistrationEnd = null;
-        }
-        else if (registrationEnd.HasValue)
-        {
-            tournament.RegistrationEnd = registrationEnd.Value.Kind == DateTimeKind.Unspecified
-                ? DateTime.SpecifyKind(registrationEnd.Value, DateTimeKind.Utc)
-                : registrationEnd.Value.ToUniversalTime();
-        }
-
-        if (description != null)
-        {
-            tournament.Description = string.IsNullOrWhiteSpace(description) ? null : description.Trim();
-        }
-
-        if (status.HasValue)
-        {
-            tournament.Status = status.Value;
-        }
-
-        if (startingStack.HasValue && startingStack.Value > 0)
-        {
-            tournament.StartingStack = startingStack.Value;
-        }
-
-        // 1. Если передан clubId > 0, ищем клуб по Id
-        if (clubId.HasValue && clubId.Value > 0 && clubId.Value != tournament.ClubId)
-        {
-            var newClub = await _context.Clubs
-                .Include(c => c.City)
-                .FirstOrDefaultAsync(c => c.Id == clubId.Value);
-            if (newClub != null)
+            if (title != null)
             {
-                tournament.ClubId = newClub.Id;
-                tournament.Club = newClub;
+                if (string.IsNullOrWhiteSpace(title) || title.Trim().Length < 3)
+                    return (false, null, "Название турнира должно содержать не менее 3 символов.");
+                tournament.Title = title.Trim();
             }
-        }
-        else if (cityId.HasValue && cityId.Value > 0 && (tournament.Club == null || tournament.Club.CityId != cityId.Value))
-        {
-            var clubInCity = await _context.Clubs
-                .Include(c => c.City)
-                .FirstOrDefaultAsync(c => c.CityId == cityId.Value && c.IsActive)
-                ?? await _context.Clubs
-                .Include(c => c.City)
-                .FirstOrDefaultAsync(c => c.CityId == cityId.Value);
 
-            if (clubInCity != null)
+            if (format != null)
             {
-                tournament.ClubId = clubInCity.Id;
-                tournament.Club = clubInCity;
+                tournament.Format = string.IsNullOrWhiteSpace(format) ? "NL Holdem" : format.Trim();
             }
-        }
 
-        if (!string.IsNullOrWhiteSpace(address))
-        {
-            var trimmedAddress = address.Trim();
-            if (tournament.Club == null || tournament.Club.Address != trimmedAddress)
+            if (buyIn.HasValue)
             {
-                var existingClubWithAddress = await _context.Clubs
+                if (buyIn.Value < 0)
+                    return (false, null, "Бай-ин не может быть отрицательным.");
+                tournament.BuyIn = buyIn.Value;
+            }
+
+            if (maxSeats.HasValue)
+            {
+                if (maxSeats.Value <= 0 || maxSeats.Value > 1000)
+                    return (false, null, "Количество мест должно быть в диапазоне от 1 до 1 000.");
+
+                var activeRegistrationsCount = tournament.Registrations.Count(r => r.Status == RegStatus.Active);
+                if (maxSeats.Value < activeRegistrationsCount)
+                    return (false, null, $"Количество мест ({maxSeats.Value}) не может быть меньше числа уже зарегистрированных игроков ({activeRegistrationsCount}).");
+
+                tournament.MaxSeats = maxSeats.Value;
+            }
+
+            if (startTime.HasValue)
+            {
+                if (startTime.Value == default || startTime.Value.Year < 2020 || startTime.Value.Year > 2100)
+                    return (false, null, "Укажите корректную дату и время начала турнира.");
+
+                tournament.StartTime = startTime.Value.Kind == DateTimeKind.Unspecified
+                    ? DateTime.SpecifyKind(startTime.Value, DateTimeKind.Utc)
+                    : startTime.Value.ToUniversalTime();
+            }
+
+            if (clearRegistrationEnd)
+            {
+                tournament.RegistrationEnd = null;
+            }
+            else if (registrationEnd.HasValue)
+            {
+                tournament.RegistrationEnd = registrationEnd.Value.Kind == DateTimeKind.Unspecified
+                    ? DateTime.SpecifyKind(registrationEnd.Value, DateTimeKind.Utc)
+                    : registrationEnd.Value.ToUniversalTime();
+            }
+
+            if (description != null)
+            {
+                tournament.Description = string.IsNullOrWhiteSpace(description) ? null : description.Trim();
+            }
+
+            if (status.HasValue)
+            {
+                tournament.Status = status.Value;
+            }
+
+            if (startingStack.HasValue && startingStack.Value > 0)
+            {
+                tournament.StartingStack = startingStack.Value;
+            }
+
+            // 1. Если передан clubId > 0, ищем клуб по Id
+            if (clubId.HasValue && clubId.Value > 0 && clubId.Value != tournament.ClubId)
+            {
+                var newClub = await _context.Clubs
                     .Include(c => c.City)
-                    .FirstOrDefaultAsync(c => c.Address == trimmedAddress);
-                if (existingClubWithAddress != null)
+                    .FirstOrDefaultAsync(c => c.Id == clubId.Value);
+                if (newClub != null)
                 {
-                    tournament.ClubId = existingClubWithAddress.Id;
-                    tournament.Club = existingClubWithAddress;
-                }
-                else if (tournament.Club != null)
-                {
-                    tournament.Club.Address = trimmedAddress;
+                    tournament.ClubId = newClub.Id;
+                    tournament.Club = newClub;
                 }
             }
-        }
+            else if (cityId.HasValue && cityId.Value > 0 && (tournament.Club == null || tournament.Club.CityId != cityId.Value))
+            {
+                var clubInCity = await _context.Clubs
+                    .Include(c => c.City)
+                    .FirstOrDefaultAsync(c => c.CityId == cityId.Value && c.IsActive)
+                    ?? await _context.Clubs
+                    .Include(c => c.City)
+                    .FirstOrDefaultAsync(c => c.CityId == cityId.Value);
 
-        try
-        {
+                if (clubInCity != null)
+                {
+                    tournament.ClubId = clubInCity.Id;
+                    tournament.Club = clubInCity;
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(address))
+            {
+                var trimmedAddress = address.Trim();
+                if (tournament.Club == null || tournament.Club.Address != trimmedAddress)
+                {
+                    var existingClubWithAddress = await _context.Clubs
+                        .Include(c => c.City)
+                        .FirstOrDefaultAsync(c => c.Address == trimmedAddress);
+                    if (existingClubWithAddress != null)
+                    {
+                        tournament.ClubId = existingClubWithAddress.Id;
+                        tournament.Club = existingClubWithAddress;
+                    }
+                    else if (tournament.Club != null)
+                    {
+                        tournament.Club.Address = trimmedAddress;
+                    }
+                    else
+                    {
+                        var defaultClub = await _context.Clubs.Include(c => c.City).FirstOrDefaultAsync();
+                        if (defaultClub != null)
+                        {
+                            tournament.ClubId = defaultClub.Id;
+                            tournament.Club = defaultClub;
+                            defaultClub.Address = trimmedAddress;
+                        }
+                    }
+                }
+            }
+
             await _context.SaveChangesAsync();
-        }
-        catch (Exception ex)
-        {
-            _logger?.LogError(ex, "Ошибка при обновлении турнира в БД.");
-            if (_context.Database.IsRelational())
-            {
-                try
-                {
-                    await _context.Database.ExecuteSqlRawAsync("ALTER TABLE \"Tournaments\" ADD COLUMN IF NOT EXISTS \"StartingStack\" integer NOT NULL DEFAULT 10000;");
-                    await _context.SaveChangesAsync();
-                }
-                catch (Exception retryEx)
-                {
-                    _logger?.LogError(retryEx, "Не удалось обновить турнир после попытки исправления схемы.");
-                    return (false, null, "Ошибка обновления турнира в базе данных.");
-                }
-            }
-            else
-            {
-                return (false, null, "Ошибка обновления турнира в базе данных.");
-            }
-        }
+            await transaction.CommitAsync();
 
             return (true, tournament, "Турнир успешно обновлен.");
         }
         catch (Exception ex)
         {
+            try
+            {
+                await transaction.RollbackAsync();
+            }
+            catch
+            {
+            }
             _logger?.LogError(ex, "Ошибка при обновлении турнира {TournamentId}", id);
             return (false, null, "Ошибка обновления турнира в базе данных.");
         }

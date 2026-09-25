@@ -54,8 +54,14 @@ public class RatingsController : ControllerBase
         
         var items = users.Select((u, index) => {
             var activePoints = isSeason ? u.SeasonRating : u.TotalRating;
+            var calculatedRank = offset + index + 1;
+            var rank = isSeason
+                ? calculatedRank
+                : ((activePoints > 0 && u.SheetRank.HasValue) ? u.SheetRank.Value : calculatedRank);
+            var dtoSheetRank = isSeason ? null : ((activePoints > 0) ? u.SheetRank : null);
+
             return new LeaderboardEntryDto(
-                offset + index + 1,
+                rank,
                 u.Id,
                 u.VkId,
                 u.FirstName,
@@ -63,7 +69,8 @@ public class RatingsController : ControllerBase
                 u.AvatarUrl,
                 activePoints,
                 u.SeasonRating,
-                activePoints
+                activePoints,
+                dtoSheetRank
             );
         }).ToList();
 

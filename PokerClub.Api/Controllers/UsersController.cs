@@ -259,6 +259,16 @@ public class UsersController : ControllerBase
 
             if (!string.IsNullOrEmpty(requestedCardId))
             {
+                // Проверка на валидность клубной карты по базе Monte Carlo (белый список карт)
+                var cardExists = await _context.Users.AnyAsync(u =>
+                    u.ClubCardId != null &&
+                    u.ClubCardId.ToLower() == requestedCardId.ToLower());
+
+                if (!cardExists)
+                {
+                    return BadRequest(new { Message = "Клубный ID не найден в базе Monte Carlo. Напишите в сообщения сообщества для получения карты." });
+                }
+
                 // Проверка на дубликаты среди РЕАЛЬНЫХ пользователей (1 карта = 1 аккаунт)
                 bool alreadyOwnsCard = !string.IsNullOrWhiteSpace(user.ClubCardId) &&
                                        string.Equals(user.ClubCardId.Trim(), requestedCardId, StringComparison.OrdinalIgnoreCase);
@@ -295,6 +305,7 @@ public class UsersController : ControllerBase
                 // Перенос накопленных очков и статистики из таблицы
                 user.TotalRating = sheetUser.TotalRating;
                 user.SeasonRating = sheetUser.SeasonRating;
+                user.SheetRank = sheetUser.SheetRank;
                 user.TournamentsPlayed = sheetUser.TournamentsPlayed;
                 user.WinsCount = sheetUser.WinsCount;
                 user.Top3Count = sheetUser.Top3Count;
@@ -449,7 +460,8 @@ public class UsersController : ControllerBase
             user.AvatarUrl,
             user.VkId,
             clubCardId,
-            phoneNumber
+            phoneNumber,
+            user.SheetRank
         ));
     }
 
@@ -528,7 +540,8 @@ public class UsersController : ControllerBase
             user.AvgPlace,
             user.CreatedAt,
             user.SeasonRating,
-            isAdmin
+            isAdmin,
+            user.SheetRank
         );
     }
 

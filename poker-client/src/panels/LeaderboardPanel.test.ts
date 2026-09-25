@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test';
-import { getZoneStyle, getLeaderboardSubtitle } from './LeaderboardPanel';
+import { getZoneStyle, getLeaderboardSubtitle, getDisplayRank, getUserRankLabel } from './LeaderboardPanel';
 
 describe('getZoneStyle', () => {
   it('assigns "Финал" (emerald) for ranks 1 to 70', () => {
@@ -55,5 +55,36 @@ describe('getLeaderboardSubtitle', () => {
   it('returns season name when seasonTab is "current"', () => {
     expect(getLeaderboardSubtitle('current', 'Осень 2026')).toBe('Сезон: Осень 2026');
     expect(getLeaderboardSubtitle('current')).toBe('Сезон: Осень 2026');
+  });
+});
+
+describe('getDisplayRank', () => {
+  it('returns sheetRank when sheetRank is defined', () => {
+    expect(getDisplayRank({ rank: 1, sheetRank: 157 })).toBe(157);
+    expect(getDisplayRank({ rank: 5, sheetRank: 2 })).toBe(2);
+  });
+
+  it('falls back to rank when sheetRank is null or undefined', () => {
+    expect(getDisplayRank({ rank: 1, sheetRank: null })).toBe(1);
+    expect(getDisplayRank({ rank: 42 })).toBe(42);
+    expect(getDisplayRank({ rank: 10, sheetRank: undefined })).toBe(10);
+  });
+});
+
+describe('getUserRankLabel', () => {
+  it('formats rank when user has points and rank', () => {
+    expect(getUserRankLabel(157, 10, 50)).toBe('# 157');
+    expect(getUserRankLabel(1, 486, 50)).toBe('# 1');
+  });
+
+  it('returns "Не в рейтинге" when user has 0 points even if rank exists', () => {
+    expect(getUserRankLabel(157, 0, 50)).toBe('Не в рейтинге');
+    expect(getUserRankLabel(null, 0, 50)).toBe('Не в рейтинге');
+  });
+
+  it('returns club size overflow when user has points but rank is null', () => {
+    expect(getUserRankLabel(null, 15, 50)).toBe('50+ в клубе');
+    expect(getUserRankLabel(null, 15, 0)).toBe('50+ в клубе');
+    expect(getUserRankLabel(null, 15, 75)).toBe('75+ в клубе');
   });
 });

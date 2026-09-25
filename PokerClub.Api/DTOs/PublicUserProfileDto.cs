@@ -16,5 +16,6 @@ public record PublicUserProfileDto(
     string? AvatarUrl = null,
     string? VkId = null,
     string? ClubCardId = null,
-    string? PhoneNumber = null
+    string? PhoneNumber = null,
+    int? SheetRank = null
 );

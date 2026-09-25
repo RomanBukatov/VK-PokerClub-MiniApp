@@ -55,7 +55,7 @@ export const tournamentsApi = {
   },
 
   async updateTournament(id: number, data: UpdateTournamentRequest): Promise<TournamentDetail> {
-    const response = await apiClient.put<TournamentDetail>(`/api/tournaments/${id}`, data, { timeout: 45000 });
+    const response = await apiClient.put<TournamentDetail>(`/api/tournaments/${id}`, data, { timeout: 15000 });
     return response.data;
   },
 

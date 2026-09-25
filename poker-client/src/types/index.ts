@@ -68,6 +68,7 @@ export interface TournamentDetail extends Tournament {
 
 export interface LeaderboardEntry {
   rank: number;
+  sheetRank?: number | null;
   id: number;
   vkId: string;
   firstName?: string;
@@ -163,6 +164,7 @@ export interface UserProfile {
   avgPlace: number;
   createdAt: string;
   isAdmin?: boolean;
+  sheetRank?: number | null;
 }
 
 export interface UpdateProfilePayload {
@@ -206,6 +208,7 @@ export interface PublicUserProfile {
   vkId?: string;
   clubCardId?: string | null;
   phoneNumber?: string | null;
+  sheetRank?: number | null;
 }
 
 

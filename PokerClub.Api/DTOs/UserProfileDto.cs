@@ -21,5 +21,6 @@ public record UserProfileDto(
     double AvgPlace,
     DateTime CreatedAt,
     int SeasonRating = 0,
-    bool IsAdmin = false
+    bool IsAdmin = false,
+    int? SheetRank = null
 );
