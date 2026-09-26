@@ -15,6 +15,8 @@ namespace PokerClub.Infrastructure.Services;
 public class GoogleSheetsSyncService : IGoogleSheetsSyncService
 {
     public const string DefaultSpreadsheetId = "1zxU_LOSjIsjrEHw7eq366BQMLWQ4x8pSDIiMdUxWPOs";
+    public const string MonteCarloLiveSpreadsheetId = "1GRINVjwfqXsG0vccHfFFOaxzTbo5pcxWBGn1YOgzOn0";
+    public const string DefaultPlayersSpreadsheetId = "1aY-ppEFwQ9AkkukqnJHH3OrpjQm0SPa9cl3Qms8n78Y";
     public const string AutumnSeasonSheetName = "Осенний сезон 2026";
     public const string LegacySeasonRatingSheetName = "Рейтинг сезона";
     public const string SeasonRatingSheetName = "Рейтинг сезона";
@@ -25,7 +27,8 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
     public const string RegistrationsSheetName = "РЕГИСТРАЦИИ";
     public const string? RegistrationsGid = null;
     public const string PlayersSheetName = "Игроки";
-    public const string? PlayersGid = null;
+    public const string DefaultPlayersGid = "938946960";
+    public const string? PlayersGid = DefaultPlayersGid;
     public const string DefaultSeasonName = "Осень 2026";
 
     private static string _activeSeasonName = DefaultSeasonName;
@@ -41,7 +44,7 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
     public const string SeasonRatingCsvUrl = $"https://docs.google.com/spreadsheets/d/{DefaultSpreadsheetId}/gviz/tq?tqx=out:csv&sheet=%D0%9E%D1%81%D0%B5%D0%BD%D0%BD%D0%B8%D0%B9%20%D1%81%D0%B5%D0%B7%D0%BE%D0%BD%202026";
     public const string TotalRatingCsvUrl = $"https://docs.google.com/spreadsheets/d/{DefaultSpreadsheetId}/gviz/tq?tqx=out:csv&sheet=%D0%9E%D0%B1%D1%89%D0%B8%D0%B9%20%D1%80%D0%B5%D0%B9%D1%82%D0%B8%D0%BD%D0%B3";
     public const string RegistrationsCsvUrl = $"https://docs.google.com/spreadsheets/d/{DefaultSpreadsheetId}/gviz/tq?tqx=out:csv&sheet=%D0%A0%D0%95%D0%93%D0%98%D0%A1%D0%A2%D0%A0%D0%90%D0%A6%D0%98%D0%98";
-    public const string PlayersCsvUrl = $"https://docs.google.com/spreadsheets/d/{DefaultSpreadsheetId}/gviz/tq?tqx=out:csv&sheet=%D0%98%D0%B3%D1%80%D0%BE%D0%BA%D0%B8";
+    public const string PlayersCsvUrl = $"https://docs.google.com/spreadsheets/d/{DefaultPlayersSpreadsheetId}/export?format=csv&gid={DefaultPlayersGid}";
     public const string DefaultCsvUrl = TotalRatingCsvUrl;
 
     private readonly AppDbContext _context;
@@ -52,6 +55,7 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
     private readonly string _seasonSheetName;
     private readonly string? _registrationsGid;
     private readonly string _playersSheetName;
+    private readonly string _playersSpreadsheetId;
     private readonly string? _playersGid;
     private readonly ILeaderboardCacheResetToken? _cacheResetToken;
 
@@ -71,37 +75,44 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
         IConfiguration? configuration,
         ILeaderboardCacheResetToken? cacheResetToken = null)
         : this(
-            context,
-            httpClient,
-            logger,
-            configuration?["GoogleSheets:SpreadsheetId"]
+            context: context,
+            httpClient: httpClient,
+            logger: logger,
+            spreadsheetId: configuration?["GoogleSheets:SpreadsheetId"]
                 ?? configuration?["GOOGLE_SHEETS_SPREADSHEET_ID"]
                 ?? configuration?["SPREADSHEET_ID"]
                 ?? configuration?["SpreadsheetId"]
                 ?? Environment.GetEnvironmentVariable("GOOGLE_SHEETS_SPREADSHEET_ID")
                 ?? DefaultSpreadsheetId,
-            configuration?["GoogleSheets:SeasonGid"]
+            seasonGid: configuration?["GoogleSheets:SeasonGid"]
                 ?? configuration?["GOOGLE_SHEETS_SEASON_GID"]
                 ?? configuration?["SEASON_GID"]
                 ?? configuration?["SeasonGid"]
                 ?? Environment.GetEnvironmentVariable("GOOGLE_SHEETS_SEASON_GID")
                 ?? DefaultSeasonGid,
-            configuration?["GoogleSheets:SeasonSheetName"]
+            seasonSheetName: configuration?["GoogleSheets:SeasonSheetName"]
                 ?? configuration?["GOOGLE_SHEETS_SEASON_SHEET_NAME"]
                 ?? configuration?["SEASON_SHEET_NAME"]
                 ?? AutumnSeasonSheetName,
-            configuration?["GoogleSheets:RegistrationsGid"]
+            registrationsGid: configuration?["GoogleSheets:RegistrationsGid"]
                 ?? configuration?["REGISTRATIONS_GID"]
                 ?? Environment.GetEnvironmentVariable("GOOGLE_SHEETS_REGISTRATIONS_GID"),
-            configuration?["GoogleSheets:PlayersSheetName"]
+            playersSheetName: configuration?["GoogleSheets:PlayersSheetName"]
                 ?? configuration?["GOOGLE_SHEETS_PLAYERS_SHEET_NAME"]
                 ?? configuration?["PLAYERS_SHEET_NAME"]
                 ?? PlayersSheetName,
-            configuration?["GoogleSheets:PlayersGid"]
+            playersGid: configuration?["GoogleSheets:PlayersGid"]
                 ?? configuration?["GOOGLE_SHEETS_PLAYERS_GID"]
                 ?? configuration?["PLAYERS_GID"]
-                ?? Environment.GetEnvironmentVariable("GOOGLE_SHEETS_PLAYERS_GID"),
-            cacheResetToken)
+                ?? configuration?["PlayersGid"]
+                ?? Environment.GetEnvironmentVariable("GOOGLE_SHEETS_PLAYERS_GID")
+                ?? DefaultPlayersGid,
+            cacheResetToken: cacheResetToken,
+            playersSpreadsheetId: configuration?["GoogleSheets:PlayersSpreadsheetId"]
+                ?? configuration?["GOOGLE_SHEETS_PLAYERS_SPREADSHEET_ID"]
+                ?? configuration?["PLAYERS_SPREADSHEET_ID"]
+                ?? Environment.GetEnvironmentVariable("GOOGLE_SHEETS_PLAYERS_SPREADSHEET_ID")
+                ?? DefaultPlayersSpreadsheetId)
     {
     }
 
@@ -112,7 +123,7 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
         string spreadsheetId,
         string? registrationsGid = null,
         ILeaderboardCacheResetToken? cacheResetToken = null)
-        : this(context, httpClient, logger, spreadsheetId, DefaultSeasonGid, AutumnSeasonSheetName, registrationsGid, PlayersSheetName, null, cacheResetToken)
+        : this(context, httpClient, logger, spreadsheetId, DefaultSeasonGid, AutumnSeasonSheetName, registrationsGid, PlayersSheetName, DefaultPlayersGid, cacheResetToken, DefaultPlayersSpreadsheetId)
     {
     }
 
@@ -125,7 +136,7 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
         string seasonSheetName,
         string? registrationsGid = null,
         ILeaderboardCacheResetToken? cacheResetToken = null)
-        : this(context, httpClient, logger, spreadsheetId, seasonGid, seasonSheetName, registrationsGid, PlayersSheetName, null, cacheResetToken)
+        : this(context, httpClient, logger, spreadsheetId, seasonGid, seasonSheetName, registrationsGid, PlayersSheetName, DefaultPlayersGid, cacheResetToken, DefaultPlayersSpreadsheetId)
     {
     }
 
@@ -139,7 +150,8 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
         string? registrationsGid,
         string? playersSheetName,
         string? playersGid = null,
-        ILeaderboardCacheResetToken? cacheResetToken = null)
+        ILeaderboardCacheResetToken? cacheResetToken = null,
+        string? playersSpreadsheetId = null)
     {
         _context = context;
         _httpClient = httpClient;
@@ -149,7 +161,8 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
         _seasonSheetName = string.IsNullOrWhiteSpace(seasonSheetName) ? AutumnSeasonSheetName : seasonSheetName;
         _registrationsGid = registrationsGid;
         _playersSheetName = string.IsNullOrWhiteSpace(playersSheetName) ? PlayersSheetName : playersSheetName;
-        _playersGid = playersGid;
+        _playersSpreadsheetId = string.IsNullOrWhiteSpace(playersSpreadsheetId) ? DefaultPlayersSpreadsheetId : playersSpreadsheetId;
+        _playersGid = string.IsNullOrWhiteSpace(playersGid) ? DefaultPlayersGid : playersGid;
         _cacheResetToken = cacheResetToken;
 
         try
@@ -269,10 +282,64 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
                 gid = _registrationsGid ?? RegistrationsGid;
             }
             else if (string.Equals(sheetName, PlayersSheetName, StringComparison.OrdinalIgnoreCase) ||
-                     string.Equals(sheetName, _playersSheetName, StringComparison.OrdinalIgnoreCase))
+                     string.Equals(sheetName, _playersSheetName, StringComparison.OrdinalIgnoreCase) ||
+                     IsPlayersSheetName(sheetName))
             {
-                gid = _playersGid ?? PlayersGid;
+                gid = _playersGid ?? DefaultPlayersGid;
             }
+        }
+
+        // Для листа «Игроки» прекращаем запросы через gviz/tq?sheet=... (GViz обрезает данные и возвращает gid=0)
+        // Запрашиваем строго напрямую через экспорт CSV по GID из таблицы игроков:
+        // https://docs.google.com/spreadsheets/d/{_playersSpreadsheetId}/export?format=csv&gid={_playersGid}
+        if (IsPlayersSheetName(sheetName))
+        {
+            var playersGid = !string.IsNullOrWhiteSpace(gid) ? gid : (_playersGid ?? DefaultPlayersGid);
+            var exportUrl = $"https://docs.google.com/spreadsheets/d/{_playersSpreadsheetId}/export?format=csv&gid={playersGid}";
+            try
+            {
+                _logger.LogInformation("Прямая загрузка листа «{SheetName}» по GID={Gid} из таблицы игроков {_PlayersSpreadsheetId}. URL: {Url}", sheetName, playersGid, _playersSpreadsheetId, exportUrl);
+                var response = await _httpClient.GetAsync(exportUrl, cancellationToken);
+                if (response.IsSuccessStatusCode)
+                {
+                    var content = await response.Content.ReadAsStringAsync(cancellationToken);
+                    if (IsValidCsvContent(content) && IsPlayersSheetCsv(content))
+                    {
+                        _logger.LogInformation("Лист «{SheetName}» успешно загружен по прямому экспорту GID={Gid}.", sheetName, playersGid);
+                        return content;
+                    }
+                    else
+                    {
+                        _logger.LogWarning("Прямой экспорт листа «{SheetName}» (GID={Gid}) вернул невалидный контент или не прошел валидацию заголовков.", sheetName, playersGid);
+                    }
+                }
+                else if (response.StatusCode == System.Net.HttpStatusCode.BadRequest &&
+                         !string.Equals(_playersSpreadsheetId, DefaultPlayersSpreadsheetId, StringComparison.OrdinalIgnoreCase))
+                {
+                    var fallbackDefaultUrl = $"https://docs.google.com/spreadsheets/d/{DefaultPlayersSpreadsheetId}/export?format=csv&gid={playersGid}";
+                    _logger.LogWarning("Таблица игроков {_PlayersSpreadsheetId} вернула 400 для gid={Gid}. Пробуем резервный URL к эталонной таблице игроков: {Url}", _playersSpreadsheetId, playersGid, fallbackDefaultUrl);
+                    var fallbackResp = await _httpClient.GetAsync(fallbackDefaultUrl, cancellationToken);
+                    if (fallbackResp.IsSuccessStatusCode)
+                    {
+                        var content = await fallbackResp.Content.ReadAsStringAsync(cancellationToken);
+                        if (IsValidCsvContent(content) && IsPlayersSheetCsv(content))
+                        {
+                            _logger.LogInformation("Лист «{SheetName}» успешно загружен по резервному URL эталонной таблицы игроков.", sheetName);
+                            return content;
+                        }
+                    }
+                }
+                else
+                {
+                    _logger.LogWarning("Прямой экспорт листа «{SheetName}» (GID={Gid}) вернул HTTP {StatusCode}.", sheetName, playersGid, response.StatusCode);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Исключение при прямой загрузке листа «{SheetName}» по GID={Gid}. URL: {Url}", sheetName, playersGid, exportUrl);
+            }
+
+            return null;
         }
 
         var gvizUrl = !string.IsNullOrWhiteSpace(sheetName)
@@ -291,10 +358,6 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
                     if (!IsExpectedRatingSheet(sheetName) && (IsRatingSheetCsv(content) || content.Contains("ОБЩИЙ РЕЙТИНГ", StringComparison.OrdinalIgnoreCase)))
                     {
                         _logger.LogWarning("Лист «{SheetName}» вернул содержимое общего рейтинга вместо запрошенного листа (gviz вернул gid=0). Считаем лист не найденным.", sheetName);
-                    }
-                    else if (IsPlayersSheetName(sheetName) && !IsPlayersSheetCsv(content))
-                    {
-                        _logger.LogWarning("Лист «{SheetName}» вернул другой лист (проверка заголовков не совпадает с листом игроков). Считаем лист не найденным.", sheetName);
                     }
                     else
                     {
@@ -597,6 +660,12 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
         if (string.IsNullOrWhiteSpace(csvContent)) return false;
         if (!IsValidCsvContent(csvContent)) return false;
 
+        // Признак эталонного листа игроков Monte Carlo
+        if (csvContent.Contains("БАЗА ИГРОКОВ", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
         // Отклоняем, если контент содержит характерные заголовки таблицы рейтинга
         if (IsRatingSheetCsv(csvContent) ||
             csvContent.Contains("Сумма очков", StringComparison.OrdinalIgnoreCase) ||
@@ -619,8 +688,8 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
         var rows = ParseCsv(csvContent);
         if (rows.Count == 0) return false;
 
-        // Проверка заголовков в первых нескольких строках
-        foreach (var row in rows.Take(5))
+        // Проверка заголовков в первых 10 строках
+        foreach (var row in rows.Take(10))
         {
             if (row.Count == 0) continue;
 
@@ -646,14 +715,14 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
             }
 
             bool hasId = row.Any(c => c.Contains("id", StringComparison.OrdinalIgnoreCase) || c.Contains("карт", StringComparison.OrdinalIgnoreCase));
-            bool hasStatusOrPhone = row.Any(c => c.Contains("статус", StringComparison.OrdinalIgnoreCase) || c.Contains("телефон", StringComparison.OrdinalIgnoreCase));
+            bool hasStatusOrPhone = row.Any(c => c.Contains("статус", StringComparison.OrdinalIgnoreCase) || c.Contains("телефон", StringComparison.OrdinalIgnoreCase) || c.Contains("фио", StringComparison.OrdinalIgnoreCase));
             if (hasId && hasStatusOrPhone)
             {
                 return true;
             }
         }
 
-        // Если заголовков нет, но первая строка явно похожа на валидную карту клуба
+        // Если явных заголовков нет, но первая строка похожа на валидную карту клуба
         var firstRow = rows[0];
         if (firstRow.Count >= 1)
         {
@@ -679,18 +748,46 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
         }
 
         var parsedRows = ParseCsv(csvContent);
+        bool headerFound = false;
+
         foreach (var row in parsedRows)
         {
             if (row.Count < 1) continue;
 
-            var col0 = row[0].Replace('\u00A0', ' ').Trim().TrimStart('№', '#').Trim();
+            var col0 = row[0].Replace('\u00A0', ' ').Trim();
             var col1 = row.Count > 1 ? row[1].Replace('\u00A0', ' ').Trim() : "";
             var col2 = row.Count > 2 ? row[2].Replace('\u00A0', ' ').Trim() : null;
             var col3 = row.Count > 3 ? row[3].Replace('\u00A0', ' ').Trim() : null;
             var col4 = row.Count > 4 ? row[4].Replace('\u00A0', ' ').Trim() : null;
             var col5 = row.Count > 5 ? row[5].Replace('\u00A0', ' ').Trim() : null;
 
-            // Пропускаем строку заголовка
+            var cleanCol0 = col0.TrimStart('№', '#').Trim();
+
+            if (!headerFound)
+            {
+                // 1) Строка с заголовками колонок ("ФИО" во 2-й колонке)
+                if (col1.Contains("фио", StringComparison.OrdinalIgnoreCase) ||
+                    col1.Contains("имя", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(col1, "игрок", StringComparison.OrdinalIgnoreCase))
+                {
+                    headerFound = true;
+                    continue; // Пропускаем строку заголовка
+                }
+
+                // 2) Либо в 1-й колонке уже начался числовой ID игрока
+                if (int.TryParse(cleanCol0, out var startId) && startId >= 100)
+                {
+                    headerFound = true;
+                    // Не пропускаем, сразу парсим эту строку
+                }
+                else
+                {
+                    // Пропускаем объединенный заголовок ("БАЗА ИГРОКОВ MONTE CARLO") и пустые строки
+                    continue;
+                }
+            }
+
+            // Дополнительная защита от строк-заголовков
             if (col0.Contains("id", StringComparison.OrdinalIgnoreCase) ||
                 col0.Contains("номер", StringComparison.OrdinalIgnoreCase) ||
                 col0.Contains("карт", StringComparison.OrdinalIgnoreCase) ||
@@ -704,15 +801,15 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
                 continue;
             }
 
-            if (string.IsNullOrWhiteSpace(col0)) continue;
+            if (string.IsNullOrWhiteSpace(cleanCol0)) continue;
 
             // Игнорируем невалидные плейсхолдеры для карты
-            if (string.Equals(col0, "-", StringComparison.Ordinal) ||
-                string.Equals(col0, "нет", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(col0, "б/н", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(col0, "none", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(col0, "null", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(col0, "0", StringComparison.Ordinal))
+            if (string.Equals(cleanCol0, "-", StringComparison.Ordinal) ||
+                string.Equals(cleanCol0, "нет", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(cleanCol0, "б/н", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(cleanCol0, "none", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(cleanCol0, "null", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(cleanCol0, "0", StringComparison.Ordinal))
             {
                 continue;
             }
@@ -738,7 +835,7 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
                 phone = ExtractAndNormalizePhoneNumber(col2);
             }
 
-            result.Add(new SheetPlayerCardInfo(col0, col1, col4, phone));
+            result.Add(new SheetPlayerCardInfo(cleanCol0, col1, col4, phone));
         }
 
         return result;
@@ -751,13 +848,37 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
         if (!IsPlayersSheetCsv(csvContent)) return result;
 
         var parsedRows = ParseCsv(csvContent);
+        bool headerFound = false;
+
         foreach (var row in parsedRows)
         {
             if (row.Count < 1) continue;
 
-            var col0 = row[0].Replace('\u00A0', ' ').Trim().TrimStart('№', '#').Trim();
+            var col0 = row[0].Replace('\u00A0', ' ').Trim();
             var col1 = row.Count > 1 ? row[1].Replace('\u00A0', ' ').Trim() : "";
             var col4 = row.Count > 4 ? row[4].Replace('\u00A0', ' ').Trim() : null;
+
+            var cleanCol0 = col0.TrimStart('№', '#').Trim();
+
+            if (!headerFound)
+            {
+                if (col1.Contains("фио", StringComparison.OrdinalIgnoreCase) ||
+                    col1.Contains("имя", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(col1, "игрок", StringComparison.OrdinalIgnoreCase))
+                {
+                    headerFound = true;
+                    continue;
+                }
+
+                if (int.TryParse(cleanCol0, out var startId) && startId >= 100)
+                {
+                    headerFound = true;
+                }
+                else
+                {
+                    continue;
+                }
+            }
 
             // Пропускаем строку заголовка
             if (col0.Contains("id", StringComparison.OrdinalIgnoreCase) ||
@@ -773,21 +894,21 @@ public class GoogleSheetsSyncService : IGoogleSheetsSyncService
                 continue;
             }
 
-            if (string.IsNullOrWhiteSpace(col0)) continue;
+            if (string.IsNullOrWhiteSpace(cleanCol0)) continue;
 
-            if (string.Equals(col0, "-", StringComparison.Ordinal) ||
-                string.Equals(col0, "нет", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(col0, "б/н", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(col0, "none", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(col0, "null", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(col0, "0", StringComparison.Ordinal))
+            if (string.Equals(cleanCol0, "-", StringComparison.Ordinal) ||
+                string.Equals(cleanCol0, "нет", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(cleanCol0, "б/н", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(cleanCol0, "none", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(cleanCol0, "null", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(cleanCol0, "0", StringComparison.Ordinal))
             {
                 continue;
             }
 
             if (!IsCardStatusValid(col4))
             {
-                result.Add(col0);
+                result.Add(cleanCol0);
             }
         }
 

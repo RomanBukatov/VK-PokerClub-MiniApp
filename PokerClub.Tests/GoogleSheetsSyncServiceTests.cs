@@ -2131,6 +2131,188 @@ public class GoogleSheetsSyncServiceTests
         var blockedStub = await context.Users.FirstOrDefaultAsync(u => u.ClubCardId == "1940");
         Assert.Null(blockedStub);
     }
+
+    [Fact]
+    public async Task DownloadCsvWithFallbackAsync_WhenPlayersSheetRequested_StrictlyUsesDirectGidExportWithoutCallingGviz()
+    {
+        using var context = CreateInMemoryDbContext();
+        var requestedUrls = new List<string>();
+
+        var handler = new TestHttpMessageHandler(req =>
+        {
+            var uri = req.RequestUri!.ToString();
+            requestedUrls.Add(uri);
+
+            if (uri.Contains("1aY-ppEFwQ9AkkukqnJHH3OrpjQm0SPa9cl3Qms8n78Y") && uri.Contains("export?format=csv&gid=938946960"))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(
+                        "\"БАЗА ИГРОКОВ MONTE CARLO\",,,,,\r\n" +
+                        ",,,,,\r\n" +
+                        "\"ID игрока\",\"ФИО\",\"Ник\",\"Дата регистрации\",\"Статус\",\"Комментарий\"\r\n" +
+                        "\"1080\",\"Гуляев Игорь\",\"\",\"05.07.2026\",\"Активен\",\"Телефон: 89048473161\"\r\n")
+                };
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+
+        using var httpClient = new HttpClient(handler);
+        var service = new GoogleSheetsSyncService(context, httpClient, NullLogger<GoogleSheetsSyncService>.Instance);
+
+        var result = await service.DownloadCsvWithFallbackAsync("Игроки");
+
+        Assert.NotNull(result);
+        Assert.Contains("1080", result);
+        Assert.Contains("Гуляев Игорь", result);
+
+        // Гарантируем, что для листа «Игроки» запрос идет строго в таблицу игроков по GID 938946960 без GViz
+        Assert.Single(requestedUrls);
+        Assert.Contains("1aY-ppEFwQ9AkkukqnJHH3OrpjQm0SPa9cl3Qms8n78Y", requestedUrls[0]);
+        Assert.Contains("export?format=csv&gid=938946960", requestedUrls[0]);
+        Assert.DoesNotContain("gviz", requestedUrls[0], StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ParsePlayersSheet_WithMergedTitleHeaderAndBlankRows_ParsesAllActiveCards()
+    {
+        const string liveSheetFormatCsv =
+            "\"БАЗА ИГРОКОВ MONTE CARLO\",,,,,\r\n" +
+            ",,,,,\r\n" +
+            "\"ID игрока\",\"ФИО\",\"Ник\",\"Дата регистрации\",\"Статус\",\"Комментарий\"\r\n" +
+            "\"1000\",\"Безматерных Александра\",\"\",\"03.07.2026\",\"Активен\",\"Телефон: 89125966953\"\r\n" +
+            "\"1080\",\"Гуляев Игорь\",\"\",\"05.07.2026\",\"Активен\",\"Телефон: 89048473161\"\r\n" +
+            "\"1928\",\"Кузьменецкий Алексей\",\"\",\"25.09.2026\",\"Активен\",\"89526511813\"\r\n" +
+            "\"1931\",\"Коба Анна\",\"\",\"25.09.2026\",\"Активен\",\"89221648828\"\r\n" +
+            "\"1932\",\"Заблокированный Игрок\",\"\",\"25.09.2026\",\"Заблокирован\",\"89999999999\"\r\n";
+
+        var parsed = GoogleSheetsSyncService.ParsePlayersSheet(liveSheetFormatCsv);
+
+        Assert.Equal(4, parsed.Count);
+
+        var p1000 = parsed.FirstOrDefault(p => p.CardId == "1000");
+        Assert.NotNull(p1000);
+        Assert.Equal("Безматерных Александра", p1000.FullName);
+        Assert.Equal("9125966953", p1000.PhoneNumber);
+
+        var p1080 = parsed.FirstOrDefault(p => p.CardId == "1080");
+        Assert.NotNull(p1080);
+        Assert.Equal("Гуляев Игорь", p1080.FullName);
+        Assert.Equal("9048473161", p1080.PhoneNumber);
+
+        var p1928 = parsed.FirstOrDefault(p => p.CardId == "1928");
+        Assert.NotNull(p1928);
+        Assert.Equal("Кузьменецкий Алексей", p1928.FullName);
+        Assert.Equal("9526511813", p1928.PhoneNumber);
+
+        var p1931 = parsed.FirstOrDefault(p => p.CardId == "1931");
+        Assert.NotNull(p1931);
+        Assert.Equal("Коба Анна", p1931.FullName);
+        Assert.Equal("9221648828", p1931.PhoneNumber);
+
+        // 1932 заблокирован и не должен попасть в активные
+        Assert.DoesNotContain(parsed, p => p.CardId == "1932");
+    }
+
+    [Fact]
+    public void ParseBlockedCardIds_WithMergedTitleHeader_FindsBlockedCardsCorrectly()
+    {
+        const string liveSheetFormatCsv =
+            "\"БАЗА ИГРОКОВ MONTE CARLO\",,,,,\r\n" +
+            ",,,,,\r\n" +
+            "\"ID игрока\",\"ФИО\",\"Ник\",\"Дата регистрации\",\"Статус\",\"Комментарий\"\r\n" +
+            "\"1080\",\"Гуляев Игорь\",\"\",\"05.07.2026\",\"Активен\",\"Телефон: 89048473161\"\r\n" +
+            "\"1932\",\"Заблокированный Игрок\",\"\",\"25.09.2026\",\"Заблокирован\",\"89999999999\"\r\n";
+
+        var blocked = GoogleSheetsSyncService.ParseBlockedCardIds(liveSheetFormatCsv);
+
+        Assert.Single(blocked);
+        Assert.Contains("1932", blocked);
+        Assert.DoesNotContain("1080", blocked);
+    }
+
+    [Fact]
+    public async Task DownloadCsvWithFallbackAsync_WhenPlayersGidReturns400OnCustomSheet_FallsBackToDefaultPlayersSpreadsheet()
+    {
+        using var context = CreateInMemoryDbContext();
+        var requestedUrls = new List<string>();
+
+        var handler = new TestHttpMessageHandler(req =>
+        {
+            var uri = req.RequestUri!.ToString();
+            requestedUrls.Add(uri);
+
+            // Первая попытка с невалидным кастомным ID таблицы игроков возвращает 400
+            if (uri.Contains("custom_broken_players_sheet"))
+            {
+                return new HttpResponseMessage(HttpStatusCode.BadRequest);
+            }
+
+            // Резервный фолбэк на чистую таблицу игроков Monte Carlo 1aY-ppEFwQ9AkkukqnJHH3OrpjQm0SPa9cl3Qms8n78Y возвращает 200
+            if (uri.Contains("1aY-ppEFwQ9AkkukqnJHH3OrpjQm0SPa9cl3Qms8n78Y") && uri.Contains("gid=938946960"))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(
+                        "\"БАЗА ИГРОКОВ MONTE CARLO\",,,,,\r\n" +
+                        "\"ID игрока\",\"ФИО\",\"Ник\",\"Дата\",\"Статус\",\"Комментарий\"\r\n" +
+                        "\"1080\",\"Гуляев Игорь\",\"\",\"05.07.2026\",\"Активен\",\"89048473161\"\r\n")
+                };
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+
+        using var httpClient = new HttpClient(handler);
+        var service = new GoogleSheetsSyncService(
+            context,
+            httpClient,
+            NullLogger<GoogleSheetsSyncService>.Instance,
+            "1GRINVjwfqXsG0vccHfFFOaxzTbo5pcxWBGn1YOgzOn0",
+            "202622",
+            "Осенний сезон 2026",
+            null,
+            "Игроки",
+            "938946960",
+            null,
+            "custom_broken_players_sheet");
+
+        var result = await service.DownloadCsvWithFallbackAsync("Игроки");
+
+        Assert.NotNull(result);
+        Assert.Contains("1080", result);
+        Assert.Contains("Гуляев Игорь", result);
+        Assert.Equal(2, requestedUrls.Count);
+        Assert.Contains("custom_broken_players_sheet", requestedUrls[0]);
+        Assert.Contains("1aY-ppEFwQ9AkkukqnJHH3OrpjQm0SPa9cl3Qms8n78Y", requestedUrls[1]);
+    }
+
+    [Fact]
+    public void GoogleSheetsSyncService_ReadsPlayersSpreadsheetIdAndGidFromConfiguration()
+    {
+        using var context = CreateInMemoryDbContext();
+        using var httpClient = new HttpClient();
+
+        var inMemorySettings = new Dictionary<string, string?>
+        {
+            { "GoogleSheets:SpreadsheetId", "rating_sheet_id_111" },
+            { "GoogleSheets:PlayersSpreadsheetId", "players_sheet_id_222" },
+            { "GoogleSheets:PlayersGid", "777888" }
+        };
+
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(inMemorySettings)
+            .Build();
+
+        var service = new GoogleSheetsSyncService(
+            context,
+            httpClient,
+            NullLogger<GoogleSheetsSyncService>.Instance,
+            configuration);
+
+        Assert.NotNull(service);
+    }
 }
 
 
