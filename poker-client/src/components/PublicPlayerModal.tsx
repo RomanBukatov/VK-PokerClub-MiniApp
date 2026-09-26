@@ -27,7 +27,7 @@ import { PlayerAvatar } from './PlayerAvatar';
 import type { PublicUserProfile, Achievement } from '../types';
 import { getRankProgress } from '../config/ranks.config';
 import { getAchievements } from '../config/achievements.config';
-import { triggerHaptic } from '../utils/vkBridge';
+import { triggerHaptic, openExternalUrl } from '../utils/vkBridge';
 import { useUserStore } from '../store/useUserStore';
 
 interface PublicPlayerModalProps {
@@ -256,9 +256,14 @@ export const PublicPlayerModal: React.FC<PublicPlayerModalProps> = ({ playerId, 
                 <div className="flex flex-col sm:flex-row gap-2">
                   {player.vkId && player.vkId.trim() && !player.vkId.trim().startsWith('sheet_') ? (
                     <a
-                      href={`https://vk.com/im?sel=${player.vkId.trim()}`}
-                      target="_blank"
+                      href={`https://vk.com/im?sel=${(player.vkId || '').trim()}`}
+                      target="_top"
                       rel="noopener noreferrer"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        triggerHaptic('light');
+                        openExternalUrl(`https://vk.com/im?sel=${(player.vkId || '').trim()}`);
+                      }}
                       className="flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-2xl bg-[#2787f5] hover:bg-[#2275d7] text-white font-bold text-xs shadow-md shadow-[#2787f5]/20 transition-all active:scale-95 cursor-pointer"
                     >
                       <MessageCircle className="w-4 h-4 shrink-0" />

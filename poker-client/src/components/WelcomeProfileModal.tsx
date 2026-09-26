@@ -374,7 +374,7 @@ const ProfileModalContent: React.FC = () => {
               </p>
               <a
                 href="https://vk.me/club238367404"
-                target="_blank"
+                target="_top"
                 rel="noopener noreferrer"
                 onClick={(e) => {
                   e.preventDefault();

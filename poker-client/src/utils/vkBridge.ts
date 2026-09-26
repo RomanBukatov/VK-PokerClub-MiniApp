@@ -177,18 +177,69 @@ export const requestGroupMessagesPermission = async (groupId: number = 238367404
 };
 
 export const openExternalUrl = (url: string) => {
+  if (!url || typeof window === 'undefined') return;
+
+  // 1. Telegram WebApp: нативное открытие внешней ссылки
   try {
-    const tgWebApp = typeof window !== 'undefined' ? window.Telegram?.WebApp : undefined;
+    const tgWebApp = window.Telegram?.WebApp;
     if (tgWebApp && typeof (tgWebApp as unknown as { openLink?: (u: string) => void }).openLink === 'function') {
       (tgWebApp as unknown as { openLink: (u: string) => void }).openLink(url);
       return;
     }
   } catch (err) {
-    console.warn('Telegram openLink failed, fallback to window.open:', err);
+    console.warn('Telegram openLink failed:', err);
   }
 
-  if (typeof window !== 'undefined') {
-    window.open(url, '_blank', 'noopener,noreferrer');
+  // 2. VK Bridge: отправка события VKWebAppOpenURL в клиент/контейнер VK
+  try {
+    const sendBridge = vkBridge.send as unknown as (method: string, props?: Record<string, unknown>) => Promise<unknown>;
+    sendBridge('VKWebAppOpenURL', { url }).catch((err) => {
+      console.warn('vkBridge VKWebAppOpenURL ignored/unsupported:', err);
+    });
+  } catch (err) {
+    console.warn('vkBridge send threw:', err);
+  }
+
+  // 3. iOS Safari в iframe (например, m.vk.ru на iPhone)
+  // На iOS в iframe системный блокировщик всплывающих окон Safari блокирует window.open.
+  // Перенаправление window.top открывает Universal Link vk.me в приложении VK или в Safari!
+  const isIframe = window.self !== window.top;
+  const userAgent = typeof navigator !== 'undefined' ? (navigator.userAgent || '') : '';
+  const isIOS = /iPad|iPhone|iPod/.test(userAgent) ||
+    (typeof navigator !== 'undefined' && navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+  if (isIframe && isIOS) {
+    try {
+      if (window.top) {
+        window.top.location.href = url;
+        return;
+      }
+    } catch {
+      // Игнорируем ошибку cross-origin доступа к top
+    }
+    window.location.href = url;
+    return;
+  }
+
+  // 4. Обычные браузеры (ПК, Android): пробуем открыть новую вкладку
+  let popup: Window | null = null;
+  try {
+    popup = window.open(url, '_blank', 'noopener,noreferrer');
+  } catch {
+    // Popup creation blocked
+  }
+
+  // Если окно заблокировано браузером (Safari на десктопе или блокировщик всплывающих окон)
+  if (!popup || popup.closed || typeof popup.closed === 'undefined') {
+    try {
+      if (window.top && window.top !== window) {
+        window.top.location.href = url;
+        return;
+      }
+    } catch {
+      // Игнорируем ошибку cross-origin доступа к top
+    }
+    window.location.href = url;
   }
 };
 

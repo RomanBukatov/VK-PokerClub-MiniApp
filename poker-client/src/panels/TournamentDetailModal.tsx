@@ -372,7 +372,7 @@ export const TournamentDetailModal: React.FC = () => {
               <div className="flex items-center justify-between pt-0.5">
                 <a
                   href={communityMessagesUrl}
-                  target="_blank"
+                  target="_top"
                   rel="noopener noreferrer"
                   onClick={(e) => {
                     e.preventDefault();
@@ -508,9 +508,13 @@ export const TournamentDetailModal: React.FC = () => {
                           <div className="text-xs text-neutral-500">
                             <a
                               href={`https://vk.com/id${player.vkId}`}
-                              target="_blank"
+                              target="_top"
                               rel="noreferrer"
-                              onClick={(e) => e.stopPropagation()}
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                openExternalUrl(`https://vk.com/id${player.vkId}`);
+                              }}
                               className="hover:text-[#c39a44] transition-colors truncate inline-flex items-center gap-0.5 text-inherit"
                             >
                               <span>VK ID: {player.vkId}</span>
